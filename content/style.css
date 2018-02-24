@@ -1,0 +1,9 @@
+.book-item-clicked {
+    background-color: darkcyan !important;
+    color: white;
+}
+
+.book-item {
+    background-color: darkgray;
+    color: black;
+}

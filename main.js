@@ -44,7 +44,12 @@ function createWindow () {
 	let menu = Menu.buildFromTemplate(mainMenuTemplate);
 	Menu.setApplicationMenu(menu);
 
-	mainWindow = new BrowserWindow({width: 800, height: 600})
+	mainWindow = new BrowserWindow({
+		width: 800, 
+		height: 600,
+		//resizable: false,
+		fullscreen: false,
+	});
 
 	mainWindow.loadURL(url.format({
 		pathname: path.join(__dirname, 'login.html'),
@@ -110,12 +115,6 @@ ipcMain.on("login:check", function (e, login) {
 				protocol: 'file:',
 				slashes: true
 			}));
-		
-			db.getAllBook(function(err, books) {
-				console.log(books);
-				//mainWindow.webContents.send("book:list", books);
-				mainWindow.webContents.send("book:add", books[0]);
-			});
         };
     });	
 });
