@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="UTF-8">
+	<head>
     <link rel="stylesheet" type="text/css" href="./node_modules/materialize-css/dist/css/materialize.min.css">
     <title>Pass Book</title>
   </head>
@@ -11,19 +10,20 @@
       <a id="logo-container" class="brand-logo">Pass Book</a>
     </div>
   </nav>
-    <div class="row">
-    <div class="col s4">
-      <button class="btn" id="new_book">Add New Book</button>
-      <ul id="book_list">
+      <div class="row">
+    <div class="col s4" style="background-color:gray">
+    	<ul id="book_list">
       
-      </ul>
+		</ul>
+		
+		<a class="btn-floating btn-large waves-effect waves-light red" id="new_book"><i class="material-icons"></i></a>
     </div>
     <div class="col s8">
       
     </div>
   </div>
     
-    
+  
     <script>
       require("./bower_components/jquery/dist/jquery.min.js");
       require('./renderer.js')

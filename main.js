@@ -11,6 +11,7 @@ const db = require("./storage.js");
 let mainWindow;
 let addBookWindow;
 let addLogin;
+let loginWindow;
 
 let mainMenuTemplate = [{
 	label: "Add",
@@ -46,12 +47,13 @@ function createWindow () {
 	mainWindow = new BrowserWindow({width: 800, height: 600})
 
 	mainWindow.loadURL(url.format({
-		pathname: path.join(__dirname, 'index.html'),
+		pathname: path.join(__dirname, 'login.html'),
 		protocol: 'file:',
 		slashes: true
 	}));
 	//mainWindow.webContents.openDevTools()
-
+	
+	
 	mainWindow.on('closed', function () {
 		app.quit(); // should remove
 		mainWindow = null
@@ -92,9 +94,30 @@ ipcMain.on("click:bookadd", function(e, item) {
 });
 
 ipcMain.on("book:add", function (e, item) {
-	mainWindow.webContents.send("book:add", item);
 	addBookWindow.close();
-	db.addBook(item);
+	db.addBook(item, function (err, newBook) {
+		mainWindow.webContents.send("book:add", newBook);
+	});
+});
+
+ipcMain.on("login:check", function (e, login) {
+	const bcrypt = require("bcryptjs");
+	
+    let dbhash = db.getUser(login.username, function(err, user) {
+		if(bcrypt.compareSync(login.password, user.password)) {
+			mainWindow.loadURL(url.format({
+				pathname: path.join(__dirname, 'index.html'),
+				protocol: 'file:',
+				slashes: true
+			}));
+		
+			db.getAllBook(function(err, books) {
+				console.log(books);
+				//mainWindow.webContents.send("book:list", books);
+				mainWindow.webContents.send("book:add", books[0]);
+			});
+        };
+    });	
 });
 
 

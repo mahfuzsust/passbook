@@ -24,6 +24,7 @@
     "electron-packager": "^11.0.1"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "materialize-css": "^0.100.2",
     "nedb": "^1.8.0"
   }

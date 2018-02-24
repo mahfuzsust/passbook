@@ -6,6 +6,7 @@ form.addEventListener("submit", function(e) {
 	e.preventDefault();
 	e.stopPropagation();
 
-	let val = document.getElementById("book_name").value;
-	ipcRenderer.send("book:add", val);
+    let username = document.getElementById("username").value;
+    let password = document.getElementById("password").value;
+    ipcRenderer.send("login:check", {username: username, password:password});
 });
