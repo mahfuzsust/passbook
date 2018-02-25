@@ -19,7 +19,9 @@ var editBook = function (book, callback) {
   }, {returnUpdatedDocs: true}, callback);
 };
 var deleteBook = function (bookId, callback) {
-	books.remove({_id: bookId}, callback);
+	books.remove({_id: bookId}, function(err, num){
+    credentials.remove({bookId: bookId}, { multi: true }, callback);
+  });
 };
 
 //user 
@@ -32,7 +34,7 @@ var addUser = function(user, callback) {
 var updatePassword = function(user, callback) {
   users.update({ username: user.username }, { 
     $set: { password: bcrypt.hashSync(user.password, 8), updated: new Date()  } 
-  }, callback);
+  }, {returnUpdatedDocs: true}, callback);
 };
 
 // credential

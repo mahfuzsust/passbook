@@ -27,6 +27,11 @@ var addBookToBooklist = function(item, liEl) {
 	li.className = "collection-item book-item";
 	let deleteIcon = document.createElement("span");
 	deleteIcon.innerHTML = "<i class='fas fa-trash-alt' style='float:right; margin-left:5px;'></i>";
+	deleteIcon.addEventListener("click", function(e){
+		ipcRenderer.send("book:delete", item);
+		selectedBookItem = li;
+	});
+
 	let edit = document.createElement("span");
 	edit.innerHTML = "<i class='fas fa-pencil-alt' style='float:right;'></i>";
 	edit.addEventListener("click", function(e){
@@ -132,6 +137,13 @@ ipcRenderer.on("book:add", function(e, item) {
 
 ipcRenderer.on("book:edited", function(e, item) {
 	addBookToBooklist(item, selectedBookItem);
+});
+ipcRenderer.on("book:deleted", function(e) {
+	selectedBookItem.remove();
+	if(isBookListEmpty()) {
+		document.getElementById("empty_book").style.display = "block";
+		ul.style.display = "none";
+	}
 });
 
 ipcRenderer.on("credential:added", function(e, item) {

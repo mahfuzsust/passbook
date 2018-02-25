@@ -83,39 +83,15 @@ ipcMain.on("click:bookadd", function(e, item) {
 	createAddBookWindow();
 });
 
-ipcMain.on("book:add", function (e, item) {
-	addBookWindow.close();
-	item.name = crypt.encrypt(item.name, loggedInUser._id);
-	db.addBook(item, function (err, newBook) {
-		mainWindow.webContents.send("book:add", newBook);
-	});
-});
+ipcMain.on("book:add", addBook());
 
 ipcMain.on("click:bookedit", function(e, item) {
 	createAddBookWindow(item);
 });
 
-ipcMain.on("book:edit", function (e, item) {
-	addBookWindow.close();
-	item.name = crypt.encrypt(item.name, loggedInUser._id);
-	db.editBook(item, function (err, numAffected, affectedDocuments, upsert) {
-		mainWindow.webContents.send("book:edited", affectedDocuments);
-	});
-});
-
-ipcMain.on("login:check", function (e, login) {
-    db.getUser(login.username, function(err, user) {
-		if(bcrypt.compareSync(login.password, user.password)) {
-			mainWindow.loadURL(url.format({
-				pathname: path.join(__dirname, 'index.html'),
-				protocol: 'file:',
-				slashes: true
-			}));
-			loggedInUser = user;
-			mainWindow.userId = loggedInUser._id;
-        };
-    });	
-});
+ipcMain.on("book:edit", editBook());
+ipcMain.on("book:delete", deleteBook());
+ipcMain.on("login:check", login());
 
 ipcMain.on("register:click", function (e) {
 	mainWindow.loadURL(url.format({
@@ -133,6 +109,51 @@ ipcMain.on("register", function (e, login) {
 		}));
     });	
 });
+
+function addBook() {
+	return function (e, item) {
+		addBookWindow.close();
+		item.name = crypt.encrypt(item.name, loggedInUser._id);
+		db.addBook(item, function (err, newBook) {
+			mainWindow.webContents.send("book:add", newBook);
+		});
+	};
+}
+
+function editBook() {
+	return function (e, item) {
+		addBookWindow.close();
+		item.name = crypt.encrypt(item.name, loggedInUser._id);
+		db.editBook(item, function (err, numAffected, affectedDocuments, upsert) {
+			mainWindow.webContents.send("book:edited", affectedDocuments);
+		});
+	};
+}
+
+function login() {
+	return function (e, login) {
+		db.getUser(login.username, function (err, user) {
+			if (bcrypt.compareSync(login.password, user.password)) {
+				mainWindow.loadURL(url.format({
+					pathname: path.join(__dirname, 'index.html'),
+					protocol: 'file:',
+					slashes: true
+				}));
+				loggedInUser = user;
+				mainWindow.userId = loggedInUser._id;
+			}
+			;
+		});
+	};
+}
+
+function deleteBook() {
+	return function (e, item) {
+		db.deleteBook(item._id, function (err, numRemoved) {
+			mainWindow.webContents.send("book:deleted");
+		});
+	};
+}
 
 function createAddCredentialWindow (bookId) {
 	addCredentialWindow = new BrowserWindow({width: 400, height: 600, title: "Add Credential"})
