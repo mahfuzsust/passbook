@@ -68,6 +68,8 @@ var addCredentialToTable = function(item) {
 
 db.getAllBook(userId, function(err, books) {
 	if(isBookListEmpty() && books.length > 0) {
+		document.getElementById("empty_book").style.display = "none";
+		ul.style.display = "block";
 		ul.className += " collection";
 
 		for (var i = 0; i < books.length; i++) 
@@ -77,11 +79,12 @@ db.getAllBook(userId, function(err, books) {
 		}
 		ul.children[0].click();
 	}
-	
 });
 
 ipcRenderer.on("book:add", function(e, item) {
 	if(isBookListEmpty()) {
+		document.getElementById("empty_book").style.display = "none";
+		ul.style.display = "block";
 		ul.className += " collection";
 	}
 	addBookToBooklist(item);
