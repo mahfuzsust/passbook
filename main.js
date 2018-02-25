@@ -1,4 +1,5 @@
 const electron = require('electron');
+const bcrypt = require("bcryptjs");
 const app = electron.app;
 const BrowserWindow = electron.BrowserWindow;
 const Menu = electron.Menu;
@@ -86,9 +87,7 @@ ipcMain.on("book:add", function (e, item) {
 });
 
 ipcMain.on("login:check", function (e, login) {
-	const bcrypt = require("bcryptjs");
-	
-    let dbhash = db.getUser(login.username, function(err, user) {
+    db.getUser(login.username, function(err, user) {
 		if(bcrypt.compareSync(login.password, user.password)) {
 			mainWindow.loadURL(url.format({
 				pathname: path.join(__dirname, 'index.html'),
@@ -98,6 +97,23 @@ ipcMain.on("login:check", function (e, login) {
 			loggedInUser = user;
 			mainWindow.userId = loggedInUser._id;
         };
+    });	
+});
+
+ipcMain.on("register:click", function (e) {
+	mainWindow.loadURL(url.format({
+		pathname: path.join(__dirname, 'register.html'),
+		protocol: 'file:',
+		slashes: true
+	}));
+});
+ipcMain.on("register", function (e, login) {
+	db.addUser(login, function(err, user) {
+		mainWindow.loadURL(url.format({
+			pathname: path.join(__dirname, 'login.html'),
+			protocol: 'file:',
+			slashes: true
+		}));
     });	
 });
 

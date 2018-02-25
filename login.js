@@ -10,3 +10,6 @@ form.addEventListener("submit", function(e) {
     let password = document.getElementById("password").value;
     ipcRenderer.send("login:check", {username: username, password:password});
 });
+document.getElementById("register").addEventListener("click", function(e) {
+    ipcRenderer.send("register:click");
+});
