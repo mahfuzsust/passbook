@@ -26,6 +26,7 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "crypto": "^1.0.1",
+    "generate-password": "^1.4.0",
     "materialize-css": "^0.100.2",
     "nedb": "^1.8.0"
   }

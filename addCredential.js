@@ -1,5 +1,6 @@
 const electron = require("electron");
 const {ipcRenderer, remote} = electron;
+const passgen = require("./passgen");
 
 let form = document.querySelector("form");
 form.addEventListener("submit", function(e) {
@@ -14,4 +15,8 @@ form.addEventListener("submit", function(e) {
         password: document.getElementById("credential_password").value
     };
 	ipcRenderer.send("credential:add", credential);
+});
+
+document.getElementById("generate_password").addEventListener("click", function(e) {
+    document.getElementById("credential_password").value = passgen.generatePassword()
 });

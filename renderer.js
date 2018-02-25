@@ -1,5 +1,5 @@
 const electron = require("electron");
-const {ipcRenderer, clipboard, remote} = electron;
+const {ipcRenderer, clipboard, remote, Notification} = electron;
 const db = require("./storage");
 const crypt = require("./crypt");
 const userId = remote.getCurrentWindow().userId;
@@ -19,8 +19,14 @@ var addBookToBooklist = function(item) {
 	let li = document.createElement("li");
 	li.id = item._id;
 	li.className = "collection-item book-item";
+	let deleteIcon = document.createElement("span");
+	deleteIcon.innerHTML = "<i class='fas fa-trash-alt' style='float:right; margin-left:5px;'></i>";
+	let edit = document.createElement("span");
+	edit.innerHTML = "<i class='fas fa-pencil-alt' style='float:right;'></i>";
 	let text = document.createTextNode(crypt.decrypt(item.name, userId));
 	li.appendChild(text);
+	li.appendChild(deleteIcon);
+	li.appendChild(edit);
 	ul.appendChild(li);
 };
 
@@ -56,6 +62,11 @@ var addCredentialToTable = function(item) {
 	copyEl.innerHTML=" <i class='fas fa-copy'></i>";
 	copyEl.addEventListener("click",function(e) {
 		clipboard.writeText(item.password);
+
+		new Notification('Title', {
+			body: 'Lorem Ipsum Dolor Sit Amet'
+		}).show();
+
 	});
 
 	nameCell.appendChild(document.createTextNode(item.name));
