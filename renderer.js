@@ -3,9 +3,13 @@ const {ipcRenderer, clipboard, remote} = electron;
 const db = require("./storage");
 const crypt = require("./crypt");
 const userId = remote.getCurrentWindow().userId;
+const passUnicode = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
 const ul = document.querySelector("#book_list");
 const new_book = document.querySelector("#new_book");
+
 var table = document.querySelector("#credentials");
+
+
 var selectedBookItem;
 
 var isBookListEmpty = function() {
@@ -15,7 +19,7 @@ var addBookToBooklist = function(item) {
 	let li = document.createElement("li");
 	li.id = item._id;
 	li.className = "collection-item book-item";
-	let text = document.createTextNode(item.name);
+	let text = document.createTextNode(crypt.decrypt(item.name, userId));
 	li.appendChild(text);
 	ul.appendChild(li);
 };
@@ -30,16 +34,25 @@ var addCredentialToTable = function(item) {
 
 	var urlText = "<a href='" + item.url + "'>URL</a>";
 
-	var passwordText = document.createTextNode("\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
 
-	var showEl = document.createElement("a");
+	var passwordText = document.createTextNode(passUnicode);
+
+	var showEl = document.createElement("span");
 	showEl.innerHTML=" <i class='fas fa-eye'></i>";
 	showEl.addEventListener("click",function(e) {
-		console.log(passwordText);
-		passwordText.nodeValue = item.password;
+		console.log(showEl.classList);
+		if(showEl.classList.length == 0) {
+			showEl.classList.add("show");
+			showEl.innerHTML=" <i class='fas fa-eye-slash'></i>";
+			passwordText.nodeValue = crypt.decrypt(item.password, userId);
+		} else {
+			showEl.classList.remove("show");
+			showEl.innerHTML=" <i class='fas fa-eye'></i>";
+			passwordText.nodeValue = passUnicode;
+		}
 	});
 	
-	var copyEl = document.createElement("a");
+	var copyEl = document.createElement("span");
 	copyEl.innerHTML=" <i class='fas fa-copy'></i>";
 	copyEl.addEventListener("click",function(e) {
 		clipboard.writeText(item.password);
@@ -47,7 +60,7 @@ var addCredentialToTable = function(item) {
 
 	nameCell.appendChild(document.createTextNode(item.name));
 	urlCell.innerHTML = urlText;
-	userNameCell.appendChild(document.createTextNode(item.username));
+	userNameCell.appendChild(document.createTextNode(crypt.decrypt(item.username, userId)));
 	passwordCell.appendChild(passwordText);
 	passwordCell.appendChild(showEl);
 	passwordCell.appendChild(copyEl);
@@ -56,13 +69,15 @@ var addCredentialToTable = function(item) {
 db.getAllBook(userId, function(err, books) {
 	if(isBookListEmpty() && books.length > 0) {
 		ul.className += " collection";
+
+		for (var i = 0; i < books.length; i++) 
+		{
+			var item = books[i];
+			addBookToBooklist(item);
+		}
+		ul.children[0].click();
 	}
-	for (var i = 0; i < books.length; i++) 
-	{
-		var item = books[i];
-		addBookToBooklist(item);
-	}
-	ul.children[0].click();
+	
 });
 
 ipcRenderer.on("book:add", function(e, item) {
@@ -89,7 +104,6 @@ var setCredentialByBookId = function(bookId) {
 ul.addEventListener("click",function(e) {
 	//e.target.remove();
 	if(e.target && e.target.nodeName == "LI") {
-		console.log(e.target.id + " was clicked");
 		if(selectedBookItem) {
 			selectedBookItem.classList.toggle("book-item-clicked");
 		}

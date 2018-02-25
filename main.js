@@ -7,6 +7,7 @@ const ipcMain = electron.ipcMain;
 const path = require('path');
 const url = require('url');
 const db = require("./storage.js");
+var crypt = require("./crypt");
 
 let loggedInUser;
 
@@ -78,6 +79,7 @@ ipcMain.on("click:bookadd", function(e, item) {
 
 ipcMain.on("book:add", function (e, item) {
 	addBookWindow.close();
+	item.name = crypt.encrypt(item.name, loggedInUser._id);
 	db.addBook(item, function (err, newBook) {
 		mainWindow.webContents.send("book:add", newBook);
 	});
@@ -119,6 +121,8 @@ ipcMain.on("click:credentialadd", function(e, bookId) {
 });
 ipcMain.on("credential:add", function (e, item) {
 	addCredentialWindow.close();
+	item.password = crypt.encrypt(item.password, loggedInUser._id);
+	item.username = crypt.encrypt(item.username, loggedInUser._id);
 	db.addCredential(item, function (err, newCredential) {
 		mainWindow.webContents.send("credential:added", newCredential);
 	});
@@ -148,4 +152,4 @@ if(process.env.NODE_ENV !== 'production') {
 			role: 'reload'
 		}]
 	});
-}
+};
