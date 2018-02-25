@@ -16,9 +16,25 @@
 					<ul id="book_list"></ul>
 				</div>
 			</div>
-			<div class="col s8"></div>
+			<div class="col s8">
+				<button type="button" class="btn" id="new_credential" style="width:100%;">Add New Credential</button>
+				<table class="bordered highlight">
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>URL</th>
+							<th>Username</th>
+							<th>Password</th>
+						</tr>
+					</thead>
+				
+					<tbody id="credentials">
+					</tbody>
+				</table>
+			</div>
 		</div>
-		  
+	
+	<script src="./content/fontawesome-all.min.js"></script>
 	<script>
 	  require("./bower_components/jquery/dist/jquery.min.js");
 	  require('./renderer.js')

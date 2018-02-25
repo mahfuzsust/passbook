@@ -12,32 +12,7 @@ let mainWindow;
 let addBookWindow;
 let addLogin;
 let loginWindow;
-
-let mainMenuTemplate = [{
-	label: "Add",
-	submenu: [
-	{label: "Book", click: createAddBookWindow},
-	{label: "Login"}
-	]
-}];
-
-if(process.platform == 'darwin') {
-	mainMenuTemplate.unshift({});
-}
-if(process.env.NODE_ENV !== 'production') {
-	mainMenuTemplate.push({
-		label: "Developer Tools", 
-		submenu: [{
-			label: "Dev tools", 
-			accelerator: process.platform == "darwin" ? "Command+I" : "Ctrl+I",
-			click(item, focusedWindow) {
-				focusedWindow.toggleDevTools();
-			}
-		}, {
-			role: 'reload'
-		}]
-	});
-}
+let addCredentialWindow;
 
 function createWindow () {
 
@@ -119,6 +94,53 @@ ipcMain.on("login:check", function (e, login) {
     });	
 });
 
+function createAddCredentialWindow (bookId) {
+	addCredentialWindow = new BrowserWindow({width: 400, height: 600, title: "Add Credential"})
 
+	addCredentialWindow.loadURL(url.format({
+		pathname: path.join(__dirname, 'addCredential.html'),
+		protocol: 'file:',
+		slashes: true
+	}));
+	addCredentialWindow.bookId = bookId;
 
+	addCredentialWindow.on('close', function () {
+		addCredentialWindow = null
+	});
+}
 
+ipcMain.on("click:credentialadd", function(e, bookId) {
+	createAddCredentialWindow(bookId);
+});
+ipcMain.on("credential:add", function (e, item) {
+	addCredentialWindow.close();
+	db.addCredential(item, function (err, newCredential) {
+		mainWindow.webContents.send("credential:added", newCredential);
+	});
+});
+
+let mainMenuTemplate = [{
+	label: "Add",
+	submenu: [
+	{label: "Book", click: createAddBookWindow},
+	{label: "Login"}
+	]
+}];
+
+if(process.platform == 'darwin') {
+	mainMenuTemplate.unshift({});
+}
+if(process.env.NODE_ENV !== 'production') {
+	mainMenuTemplate.push({
+		label: "Developer Tools", 
+		submenu: [{
+			label: "Dev tools", 
+			accelerator: process.platform == "darwin" ? "Command+I" : "Ctrl+I",
+			click(item, focusedWindow) {
+				focusedWindow.toggleDevTools();
+			}
+		}, {
+			role: 'reload'
+		}]
+	});
+}
