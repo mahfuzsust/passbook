@@ -10,6 +10,7 @@ const new_book = document.querySelector("#new_book");
 var table = document.querySelector("#credentials");
 
 var selectedBookItem;
+var selectedCredential;
 
 var isBookListEmpty = function() {
 	return ul.children.length == 0;
@@ -105,8 +106,18 @@ var addCredentialToTable = function(item, rowEl) {
 
 	let deleteIcon = document.createElement("span");
 	deleteIcon.innerHTML = "<i class='fas fa-trash-alt' style='float:right; margin-left:5px;'></i>";
+	deleteIcon.addEventListener("click", function(e){
+		ipcRenderer.send("credential:delete", item);
+		selectedCredential = newRow;
+	});
+
 	let edit = document.createElement("span");
 	edit.innerHTML = "<i class='fas fa-pencil-alt' style='float:right;'></i>";
+	edit.addEventListener("click", function(e){
+		ipcRenderer.send("click:credential_edit", item);
+		selectedCredential = newRow;
+	});
+
 	actionCell.appendChild(deleteIcon);
 	actionCell.appendChild(edit);
 };
@@ -143,6 +154,13 @@ ipcRenderer.on("book:deleted", function(e) {
 	if(isBookListEmpty()) {
 		document.getElementById("empty_book").style.display = "block";
 		ul.style.display = "none";
+	}
+});
+ipcRenderer.on("credential:deleted", function(e) {
+	selectedCredential.remove();
+	if(document.getElementById("credentials").children.length == 0) {
+		document.getElementById("empty_credential").style.display = "block";
+		document.getElementById("credential_table").style.display = "none";
 	}
 });
 

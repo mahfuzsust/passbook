@@ -91,6 +91,9 @@ ipcMain.on("click:bookedit", function(e, item) {
 
 ipcMain.on("book:edit", editBook());
 ipcMain.on("book:delete", deleteBook());
+
+ipcMain.on("click:credential_edit", editBook());
+ipcMain.on("credential:delete", deleteCredential());
 ipcMain.on("login:check", login());
 
 ipcMain.on("register:click", function (e) {
@@ -151,6 +154,14 @@ function deleteBook() {
 	return function (e, item) {
 		db.deleteBook(item._id, function (err, numRemoved) {
 			mainWindow.webContents.send("book:deleted");
+		});
+	};
+}
+
+function deleteCredential() {
+	return function (e, item) {
+		db.deleteCredential(item._id, function (err, numRemoved) {
+			mainWindow.webContents.send("credential:deleted");
 		});
 	};
 }
