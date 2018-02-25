@@ -145,10 +145,20 @@ ipcMain.on("credential:add", function (e, item) {
 });
 
 let mainMenuTemplate = [{
-	label: "Add",
+	label: "Settings",
 	submenu: [
-	{label: "Book", click: createAddBookWindow},
-	{label: "Login"}
+		{
+			label: "Book", 
+			click: createAddBookWindow
+		},
+		{
+			label: "Sign out",
+			click() {
+				mainWindow = null;
+				loggedInUser = null;
+				createWindow();
+			}
+		}
 	]
 }];
 
