@@ -87,17 +87,31 @@ ipcRenderer.on("book:add", function(e, item) {
 	addBookToBooklist(item);
 });
 ipcRenderer.on("credential:added", function(e, item) {
+	if(document.getElementById("credentials").children.length == 0) {
+		document.getElementById("empty_credential").style.display = "none";
+		document.getElementById("credential_table").style.display = "block";
+	}
 	addCredentialToTable(item);
 });
 
 var setCredentialByBookId = function(bookId) {
 	db.getAllCredential(bookId, function(err, credentials) {
-		table.innerHTML = "";
-		for (var i = 0; i < credentials.length; i++) 
-		{
-			var item = credentials[i];
-			addCredentialToTable(item);
+		if(credentials.length > 0) {
+			document.getElementById("empty_credential").style.display = "none";
+			document.getElementById("credential_table").style.display = "block";
+
+			table.innerHTML = "";
+			for (var i = 0; i < credentials.length; i++) 
+			{
+				var item = credentials[i];
+				addCredentialToTable(item);
+			}
+		} else {
+			document.getElementById("empty_credential").style.display = "block";
+			document.getElementById("credential_table").style.display = "none";
+			document.getElementById("credentials").innerHTML = "";
 		}
+		
 	});
 };
 

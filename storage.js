@@ -40,7 +40,7 @@ var updatePassword = function(user, callback) {
 // credential
 var addCredential = function (credential, callback) {
   credential["created"] = new Date();
-  book["updated"] = null;
+  credential["updated"] = null;
 	credentials.insert(credential, callback);
 };
 var editCredential = function (credential, callback) {
