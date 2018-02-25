@@ -1,5 +1,5 @@
 const electron = require("electron");
-const {ipcRenderer, clipboard, remote, Notification} = electron;
+const {ipcRenderer, clipboard, remote, Notification, shell} = electron;
 const db = require("./storage");
 const crypt = require("./crypt");
 const userId = remote.getCurrentWindow().userId;
@@ -9,20 +9,31 @@ const new_book = document.querySelector("#new_book");
 
 var table = document.querySelector("#credentials");
 
-
 var selectedBookItem;
 
 var isBookListEmpty = function() {
 	return ul.children.length == 0;
 };
-var addBookToBooklist = function(item) {
-	let li = document.createElement("li");
+var addBookToBooklist = function(item, liEl) {
+	let li;
+	if(liEl) {
+		li = liEl;
+		li.innerHTML = "";
+	} else {
+		li = document.createElement("li");
+	}
+
 	li.id = item._id;
 	li.className = "collection-item book-item";
 	let deleteIcon = document.createElement("span");
 	deleteIcon.innerHTML = "<i class='fas fa-trash-alt' style='float:right; margin-left:5px;'></i>";
 	let edit = document.createElement("span");
 	edit.innerHTML = "<i class='fas fa-pencil-alt' style='float:right;'></i>";
+	edit.addEventListener("click", function(e){
+		ipcRenderer.send("click:bookedit", item);
+		selectedBookItem = li;
+	});
+
 	let text = document.createTextNode(crypt.decrypt(item.name, userId));
 	li.appendChild(text);
 	li.appendChild(deleteIcon);
@@ -30,8 +41,14 @@ var addBookToBooklist = function(item) {
 	ul.appendChild(li);
 };
 
-var addCredentialToTable = function(item) {
-	var newRow = table.insertRow(0);
+var addCredentialToTable = function(item, rowEl) {
+	var newRow;
+	if(rowEl) {
+		newRow = rowEl;
+	} else {
+		newRow = table.insertRow(0);
+	}
+
 	newRow.className = "credential-row";
 	var nameCell = newRow.insertCell(0);
 	var urlCell = newRow.insertCell(1);
@@ -39,8 +56,12 @@ var addCredentialToTable = function(item) {
 	var passwordCell = newRow.insertCell(3);
 	var actionCell = newRow.insertCell(4);
 
-	var urlText = "<a href='" + item.url + "'>URL</a>";
-
+	var urlText = document.createElement("a");
+	urlText.appendChild(document.createTextNode("URL"));
+	urlText.addEventListener("click", function(e) {
+		e.preventDefault();
+		shell.openExternal(item.url);
+	});
 
 	var passwordText = document.createTextNode(passUnicode);
 
@@ -71,7 +92,7 @@ var addCredentialToTable = function(item) {
 	});
 
 	nameCell.appendChild(document.createTextNode(item.name));
-	urlCell.innerHTML = urlText;
+	urlCell.appendChild(urlText);
 	userNameCell.appendChild(document.createTextNode(crypt.decrypt(item.username, userId)));
 	passwordCell.appendChild(passwordText);
 	passwordCell.appendChild(showEl);
@@ -108,6 +129,11 @@ ipcRenderer.on("book:add", function(e, item) {
 	}
 	addBookToBooklist(item);
 });
+
+ipcRenderer.on("book:edited", function(e, item) {
+	addBookToBooklist(item, selectedBookItem);
+});
+
 ipcRenderer.on("credential:added", function(e, item) {
 	if(document.getElementById("credentials").children.length == 0) {
 		document.getElementById("empty_credential").style.display = "none";

@@ -59,7 +59,7 @@ app.on('activate', function () {
 	}
 });
 
-function createAddBookWindow () {
+function createAddBookWindow (book) {
 	addBookWindow = new BrowserWindow({width: 400, height: 200, title: "Add book"})
 
 	addBookWindow.loadURL(url.format({
@@ -67,7 +67,12 @@ function createAddBookWindow () {
 		protocol: 'file:',
 		slashes: true
 	}));
-	addBookWindow.userId = loggedInUser._id;
+	
+	if(book) {
+		addBookWindow.book = book;
+	} else {
+		addBookWindow.userId = loggedInUser._id;
+	}
 
 	addBookWindow.on('close', function () {
 		addBookWindow = null
@@ -83,6 +88,18 @@ ipcMain.on("book:add", function (e, item) {
 	item.name = crypt.encrypt(item.name, loggedInUser._id);
 	db.addBook(item, function (err, newBook) {
 		mainWindow.webContents.send("book:add", newBook);
+	});
+});
+
+ipcMain.on("click:bookedit", function(e, item) {
+	createAddBookWindow(item);
+});
+
+ipcMain.on("book:edit", function (e, item) {
+	addBookWindow.close();
+	item.name = crypt.encrypt(item.name, loggedInUser._id);
+	db.editBook(item, function (err, numAffected, affectedDocuments, upsert) {
+		mainWindow.webContents.send("book:edited", affectedDocuments);
 	});
 });
 

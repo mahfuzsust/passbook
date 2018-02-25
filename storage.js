@@ -4,8 +4,6 @@ var Datastore = require('nedb')
   , books = new Datastore({ filename: './data/books.db', autoload: true })
   , credentials = new Datastore({ filename: './data/credentials.db', autoload: true });
 
-//users.insert({username:"mahfuz", password: bcrypt.hashSync('pass', 8)});
-
 // book
 var getAllBook = function (userId, callback) {
 	books.find({userId: userId}, callback);
@@ -18,7 +16,7 @@ var addBook = function (book, callback) {
 var editBook = function (book, callback) {
 	books.update({ _id: book._id }, { 
     $set: { name: book.name, updated: new Date()  } 
-  }, callback);
+  }, {returnUpdatedDocs: true}, callback);
 };
 var deleteBook = function (bookId, callback) {
 	books.remove({_id: bookId}, callback);
