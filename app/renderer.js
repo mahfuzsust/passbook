@@ -1,7 +1,7 @@
 const electron = require("electron");
 const {ipcRenderer, clipboard, remote, Notification, shell} = electron;
-const db = require("./storage");
-const crypt = require("./crypt");
+const db = require("../storage");
+const crypt = require("../crypt");
 const userId = remote.getCurrentWindow().userId;
 const passUnicode = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
 const ul = document.querySelector("#book_list");

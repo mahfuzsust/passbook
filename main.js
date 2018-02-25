@@ -31,7 +31,7 @@ function createWindow () {
 	});
 
 	mainWindow.loadURL(url.format({
-		pathname: path.join(__dirname, 'login.html'),
+		pathname: path.join(__dirname, "app", 'login.html'),
 		protocol: 'file:',
 		slashes: true
 	}));
@@ -63,7 +63,7 @@ function createAddBookWindow (book) {
 	addBookWindow = new BrowserWindow({width: 400, height: 200, title: "Add book"})
 
 	addBookWindow.loadURL(url.format({
-		pathname: path.join(__dirname, 'addBook.html'),
+		pathname: path.join(__dirname, "app", 'addBook.html'),
 		protocol: 'file:',
 		slashes: true
 	}));
@@ -102,7 +102,7 @@ function registerUser() {
 	return function (e, login) {
 		db.addUser(login, function (err, user) {
 			mainWindow.loadURL(url.format({
-				pathname: path.join(__dirname, 'login.html'),
+				pathname: path.join(__dirname, "app", 'login.html'),
 				protocol: 'file:',
 				slashes: true
 			}));
@@ -113,7 +113,7 @@ function registerUser() {
 function showRegistrationPage() {
 	return function (e) {
 		mainWindow.loadURL(url.format({
-			pathname: path.join(__dirname, 'register.html'),
+			pathname: path.join(__dirname, "app", 'register.html'),
 			protocol: 'file:',
 			slashes: true
 		}));
@@ -145,7 +145,7 @@ function login() {
 		db.getUser(login.username, function (err, user) {
 			if (user && bcrypt.compareSync(login.password, user.password)) {
 				mainWindow.loadURL(url.format({
-					pathname: path.join(__dirname, 'index.html'),
+					pathname: path.join(__dirname, "app", 'index.html'),
 					protocol: 'file:',
 					slashes: true
 				}));
@@ -179,7 +179,7 @@ function createAddCredentialWindow (bookId, credential) {
 	addCredentialWindow = new BrowserWindow({width: 400, height: 600, title: "Add Credential"})
 
 	addCredentialWindow.loadURL(url.format({
-		pathname: path.join(__dirname, 'addCredential.html'),
+		pathname: path.join(__dirname, "app", 'addCredential.html'),
 		protocol: 'file:',
 		slashes: true
 	}));

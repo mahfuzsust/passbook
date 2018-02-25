@@ -1,5 +1,5 @@
 const electron = require("electron");
-const crypt = require("./crypt");
+const crypt = require("../crypt");
 const {ipcRenderer, remote} = electron;
 var book = remote.getCurrentWindow().book;
 

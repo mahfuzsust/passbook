@@ -1,7 +1,7 @@
 const electron = require("electron");
 const {ipcRenderer, remote} = electron;
-const passgen = require("./passgen");
-const crypt = require("./crypt");
+const passgen = require("../passgen");
+const crypt = require("../crypt");
 var credential = remote.getCurrentWindow().credential;
 
 let form = document.querySelector("form");
