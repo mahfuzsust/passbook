@@ -8,6 +8,12 @@ form.addEventListener("submit", function(e) {
 	e.preventDefault();
 	e.stopPropagation();
 	let name = document.getElementById("book_name").value;
+	
+	if(!name) {
+		document.getElementById("errorMessage").innerHTML = "<span style='color: red'>Please enter name</span>";
+		return;
+	}
+
 	if(book) {
 		book.name = name;
 		ipcRenderer.send("book:edit", book);

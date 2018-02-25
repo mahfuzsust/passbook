@@ -219,11 +219,14 @@ function setCredentialPassword(item, passwordCell) {
 
 function setCredentialUrl(item, urlCell) {
 	var urlText = document.createElement("a");
-	urlText.appendChild(document.createTextNode("URL"));
-	urlText.addEventListener("click", function (e) {
-		e.preventDefault();
-		shell.openExternal(item.url);
-	});
+	if(item.url) {
+		urlText.appendChild(document.createTextNode("URL"));
+		urlText.addEventListener("click", function (e) {
+			e.preventDefault();
+			shell.openExternal(item.url);
+		});
+	}
+	
 	urlCell.appendChild(urlText);
 }
 

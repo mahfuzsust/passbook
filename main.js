@@ -143,7 +143,7 @@ function editBook() {
 function login() {
 	return function (e, login) {
 		db.getUser(login.username, function (err, user) {
-			if (bcrypt.compareSync(login.password, user.password)) {
+			if (user && bcrypt.compareSync(login.password, user.password)) {
 				mainWindow.loadURL(url.format({
 					pathname: path.join(__dirname, 'index.html'),
 					protocol: 'file:',
@@ -151,8 +151,10 @@ function login() {
 				}));
 				loggedInUser = user;
 				mainWindow.userId = loggedInUser._id;
+			} else {
+				mainWindow.webContents.send("login:failed");
 			}
-			;
+			
 		});
 	};
 }

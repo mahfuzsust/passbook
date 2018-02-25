@@ -16,6 +16,20 @@ form.addEventListener("submit", function(e) {
         username: document.getElementById("credential_username").value,
         password: document.getElementById("credential_password").value
     };
+
+    if(!newCredential.name) {
+		document.getElementById("errorMessage").innerHTML = "<span style='color: red'>Please enter name</span>";
+		return;
+	}
+    if(!newCredential.username) {
+		document.getElementById("errorMessage").innerHTML = "<span style='color: red'>Please enter username</span>";
+		return;
+	}
+    if(!newCredential.password) {
+		document.getElementById("errorMessage").innerHTML = "<span style='color: red'>Please enter password</span>";
+		return;
+	}
+
     if(credential) {
         newCredential["_id"] = credential._id;
         ipcRenderer.send("credential:edit", newCredential);
