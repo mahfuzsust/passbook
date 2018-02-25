@@ -45,8 +45,8 @@ var addCredential = function (credential, callback) {
 };
 var editCredential = function (credential, callback) {
 	credentials.update({ _id: credential._id }, { 
-    $set: { name: credential.name, password: credential.password, url: credential.url, updated: new Date()  } 
-  }, callback);
+    $set: { name: credential.name, username: credential.username, password: credential.password, url: credential.url, updated: new Date()  } 
+  }, {returnUpdatedDocs: true}, callback);
 };
 var deleteCredential = function (credentialId, callback) {
 	credentials.remove({_id: credentialId}, callback);

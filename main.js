@@ -92,26 +92,33 @@ ipcMain.on("click:bookedit", function(e, item) {
 ipcMain.on("book:edit", editBook());
 ipcMain.on("book:delete", deleteBook());
 
-ipcMain.on("click:credential_edit", editBook());
 ipcMain.on("credential:delete", deleteCredential());
 ipcMain.on("login:check", login());
 
-ipcMain.on("register:click", function (e) {
-	mainWindow.loadURL(url.format({
-		pathname: path.join(__dirname, 'register.html'),
-		protocol: 'file:',
-		slashes: true
-	}));
-});
-ipcMain.on("register", function (e, login) {
-	db.addUser(login, function(err, user) {
+ipcMain.on("register:click", showRegistrationPage());
+ipcMain.on("register", registerUser());
+
+function registerUser() {
+	return function (e, login) {
+		db.addUser(login, function (err, user) {
+			mainWindow.loadURL(url.format({
+				pathname: path.join(__dirname, 'login.html'),
+				protocol: 'file:',
+				slashes: true
+			}));
+		});
+	};
+}
+
+function showRegistrationPage() {
+	return function (e) {
 		mainWindow.loadURL(url.format({
-			pathname: path.join(__dirname, 'login.html'),
+			pathname: path.join(__dirname, 'register.html'),
 			protocol: 'file:',
 			slashes: true
 		}));
-    });	
-});
+	};
+}
 
 function addBook() {
 	return function (e, item) {
@@ -166,7 +173,7 @@ function deleteCredential() {
 	};
 }
 
-function createAddCredentialWindow (bookId) {
+function createAddCredentialWindow (bookId, credential) {
 	addCredentialWindow = new BrowserWindow({width: 400, height: 600, title: "Add Credential"})
 
 	addCredentialWindow.loadURL(url.format({
@@ -175,6 +182,9 @@ function createAddCredentialWindow (bookId) {
 		slashes: true
 	}));
 	addCredentialWindow.bookId = bookId;
+	if(credential) {
+		addCredentialWindow.credential = credential;
+	}
 
 	addCredentialWindow.on('close', function () {
 		addCredentialWindow = null
@@ -184,6 +194,26 @@ function createAddCredentialWindow (bookId) {
 ipcMain.on("click:credentialadd", function(e, bookId) {
 	createAddCredentialWindow(bookId);
 });
+
+ipcMain.on("click:credential_edit", function(e, item) {
+	item["userId"] = loggedInUser._id;
+	createAddCredentialWindow(item.bookId, item);
+});
+
+ipcMain.on("credential:edit", editCredential());
+
+function editCredential() {
+	return function (e, item) {
+		addCredentialWindow.close();
+		item.password = crypt.encrypt(item.password, loggedInUser._id);
+		item.username = crypt.encrypt(item.username, loggedInUser._id);
+		db.editCredential(item, function (err, numAffected, affectedDocuments, upsert) {
+			mainWindow.webContents.send("credential:edited", affectedDocuments);
+		});
+	};
+}
+
+
 ipcMain.on("credential:add", function (e, item) {
 	addCredentialWindow.close();
 	item.password = crypt.encrypt(item.password, loggedInUser._id);

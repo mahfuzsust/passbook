@@ -48,78 +48,27 @@ var addBookToBooklist = function(item, liEl) {
 };
 
 var addCredentialToTable = function(item, rowEl) {
-	var newRow;
+	var newRow = rowEl || table.insertRow(0);
+	var nameCell = rowEl ? rowEl.cells[0] : newRow.insertCell(0);
+	var urlCell = rowEl ? rowEl.cells[1] : newRow.insertCell(1);
+	var userNameCell = rowEl ? rowEl.cells[2] : newRow.insertCell(2);
+	var passwordCell = rowEl ? rowEl.cells[3] : newRow.insertCell(3);
+	var actionCell = rowEl ? rowEl.cells[4] : newRow.insertCell(4);
+
 	if(rowEl) {
-		newRow = rowEl;
+		nameCell.innerHTML = "";
+		urlCell.innerHTML = "";
+		userNameCell.innerHTML = "";
+		passwordCell.innerHTML = "";
 	} else {
-		newRow = table.insertRow(0);
-	}
-
-	newRow.className = "credential-row";
-	var nameCell = newRow.insertCell(0);
-	var urlCell = newRow.insertCell(1);
-	var userNameCell = newRow.insertCell(2);
-	var passwordCell = newRow.insertCell(3);
-	var actionCell = newRow.insertCell(4);
-
-	var urlText = document.createElement("a");
-	urlText.appendChild(document.createTextNode("URL"));
-	urlText.addEventListener("click", function(e) {
-		e.preventDefault();
-		shell.openExternal(item.url);
-	});
-
-	var passwordText = document.createTextNode(passUnicode);
-
-	var showEl = document.createElement("span");
-	showEl.innerHTML=" <i class='fas fa-eye'></i>";
-	showEl.addEventListener("click",function(e) {
-		console.log(showEl.classList);
-		if(showEl.classList.length == 0) {
-			showEl.classList.add("show");
-			showEl.innerHTML=" <i class='fas fa-eye-slash'></i>";
-			passwordText.nodeValue = crypt.decrypt(item.password, userId);
-		} else {
-			showEl.classList.remove("show");
-			showEl.innerHTML=" <i class='fas fa-eye'></i>";
-			passwordText.nodeValue = passUnicode;
-		}
-	});
-	
-	var copyEl = document.createElement("span");
-	copyEl.innerHTML=" <i class='fas fa-copy'></i>";
-	copyEl.addEventListener("click",function(e) {
-		clipboard.writeText(item.password);
-
-		new Notification('Title', {
-			body: 'Lorem Ipsum Dolor Sit Amet'
-		}).show();
-
-	});
+		newRow.className = "credential-row";
+		setCredentialAction(item, newRow, actionCell);
+	}	
+	setCredentialUrl(item, urlCell);
+	setCredentialPassword(item, passwordCell);
 
 	nameCell.appendChild(document.createTextNode(item.name));
-	urlCell.appendChild(urlText);
 	userNameCell.appendChild(document.createTextNode(crypt.decrypt(item.username, userId)));
-	passwordCell.appendChild(passwordText);
-	passwordCell.appendChild(showEl);
-	passwordCell.appendChild(copyEl);
-
-	let deleteIcon = document.createElement("span");
-	deleteIcon.innerHTML = "<i class='fas fa-trash-alt' style='float:right; margin-left:5px;'></i>";
-	deleteIcon.addEventListener("click", function(e){
-		ipcRenderer.send("credential:delete", item);
-		selectedCredential = newRow;
-	});
-
-	let edit = document.createElement("span");
-	edit.innerHTML = "<i class='fas fa-pencil-alt' style='float:right;'></i>";
-	edit.addEventListener("click", function(e){
-		ipcRenderer.send("click:credential_edit", item);
-		selectedCredential = newRow;
-	});
-
-	actionCell.appendChild(deleteIcon);
-	actionCell.appendChild(edit);
 };
 
 db.getAllBook(userId, function(err, books) {
@@ -149,6 +98,10 @@ ipcRenderer.on("book:add", function(e, item) {
 ipcRenderer.on("book:edited", function(e, item) {
 	addBookToBooklist(item, selectedBookItem);
 });
+ipcRenderer.on("credential:edited", function(e, item) {
+	addCredentialToTable(item, selectedCredential);
+});
+
 ipcRenderer.on("book:deleted", function(e) {
 	selectedBookItem.remove();
 	if(isBookListEmpty()) {
@@ -217,3 +170,60 @@ document.getElementById("new_book").addEventListener("click", function(e){
 
     ipcRenderer.send("click:bookadd", null);
 });
+function setCredentialAction(item, newRow, actionCell) {
+	let deleteIcon = document.createElement("span");
+	deleteIcon.innerHTML = "<i class='fas fa-trash-alt' style='float:right; margin-left:5px;'></i>";
+	deleteIcon.addEventListener("click", function (e) {
+		ipcRenderer.send("credential:delete", item);
+		selectedCredential = newRow;
+	});
+	let edit = document.createElement("span");
+	edit.innerHTML = "<i class='fas fa-pencil-alt' style='float:right;'></i>";
+	edit.addEventListener("click", function (e) {
+		ipcRenderer.send("click:credential_edit", item);
+		selectedCredential = newRow;
+	});
+	actionCell.appendChild(deleteIcon);
+	actionCell.appendChild(edit);
+}
+
+function setCredentialPassword(item, passwordCell) {
+	var passwordText = document.createTextNode(passUnicode);
+	var showEl = document.createElement("span");
+	showEl.innerHTML = " <i class='fas fa-eye'></i>";
+	showEl.addEventListener("click", function (e) {
+		console.log(showEl.classList);
+		if (showEl.classList.length == 0) {
+			showEl.classList.add("show");
+			showEl.innerHTML = " <i class='fas fa-eye-slash'></i>";
+			passwordText.nodeValue = crypt.decrypt(item.password, userId);
+		}
+		else {
+			showEl.classList.remove("show");
+			showEl.innerHTML = " <i class='fas fa-eye'></i>";
+			passwordText.nodeValue = passUnicode;
+		}
+	});
+	var copyEl = document.createElement("span");
+	copyEl.innerHTML = " <i class='fas fa-copy'></i>";
+	copyEl.addEventListener("click", function (e) {
+		clipboard.writeText(item.password);
+		new Notification('Title', {
+			body: 'Lorem Ipsum Dolor Sit Amet'
+		}).show();
+	});
+	passwordCell.appendChild(passwordText);
+	passwordCell.appendChild(showEl);
+	passwordCell.appendChild(copyEl);
+}
+
+function setCredentialUrl(item, urlCell) {
+	var urlText = document.createElement("a");
+	urlText.appendChild(document.createTextNode("URL"));
+	urlText.addEventListener("click", function (e) {
+		e.preventDefault();
+		shell.openExternal(item.url);
+	});
+	urlCell.appendChild(urlText);
+}
+
