@@ -11,3 +11,10 @@
 svg {
     cursor: pointer;
 }
+
+@media only screen and (min-width: 320px) {
+    tr > td {
+      width: 23.2%;
+      margin-left: 0;
+    }
+  }

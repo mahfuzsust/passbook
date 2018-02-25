@@ -37,6 +37,7 @@ var addCredentialToTable = function(item) {
 	var urlCell = newRow.insertCell(1);
 	var userNameCell = newRow.insertCell(2);
 	var passwordCell = newRow.insertCell(3);
+	var actionCell = newRow.insertCell(4);
 
 	var urlText = "<a href='" + item.url + "'>URL</a>";
 
@@ -75,6 +76,13 @@ var addCredentialToTable = function(item) {
 	passwordCell.appendChild(passwordText);
 	passwordCell.appendChild(showEl);
 	passwordCell.appendChild(copyEl);
+
+	let deleteIcon = document.createElement("span");
+	deleteIcon.innerHTML = "<i class='fas fa-trash-alt' style='float:right; margin-left:5px;'></i>";
+	let edit = document.createElement("span");
+	edit.innerHTML = "<i class='fas fa-pencil-alt' style='float:right;'></i>";
+	actionCell.appendChild(deleteIcon);
+	actionCell.appendChild(edit);
 };
 
 db.getAllBook(userId, function(err, books) {
