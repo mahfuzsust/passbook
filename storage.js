@@ -6,14 +6,12 @@ var Datastore = require('nedb')
 
 //users.insert({username:"mahfuz", password: bcrypt.hashSync('pass', 8)});
 
-var getAllBook = function (callback) {
-	books.find({}, callback);
+var getAllBook = function (userId, callback) {
+	books.find({userId: userId}, callback);
 };
 var addBook = function (book, callback) {
-	books.insert({name: book, created: new Date()}, callback);
-};
-var addBook = function (book, callback) {
-	books.insert({name: book, created: new Date()}, callback);
+  book["created"] = new Date();
+	books.insert(book, callback);
 };
 var getUser = function(username, callback) {
   users.findOne({ username: username }, callback);

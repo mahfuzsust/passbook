@@ -8,6 +8,8 @@ const path = require('path');
 const url = require('url');
 const db = require("./storage.js");
 
+let loggedInUser;
+
 let mainWindow;
 let addBookWindow;
 let addLogin;
@@ -63,6 +65,7 @@ function createAddBookWindow () {
 		protocol: 'file:',
 		slashes: true
 	}));
+	addBookWindow.userId = loggedInUser._id;
 
 	addBookWindow.on('close', function () {
 		addBookWindow = null
@@ -90,6 +93,8 @@ ipcMain.on("login:check", function (e, login) {
 				protocol: 'file:',
 				slashes: true
 			}));
+			loggedInUser = user;
+			mainWindow.userId = loggedInUser._id;
         };
     });	
 });

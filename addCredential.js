@@ -1,6 +1,5 @@
 const electron = require("electron");
 const {ipcRenderer, remote} = electron;
-console.log(remote.getCurrentWindow().bookId);
 
 let form = document.querySelector("form");
 form.addEventListener("submit", function(e) {

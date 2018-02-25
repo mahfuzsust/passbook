@@ -1,9 +1,8 @@
 const electron = require("electron");
-const {ipcRenderer, clipboard} = electron;
+const {ipcRenderer, clipboard, remote} = electron;
 const db = require("./storage");
 const crypt = require("./crypt");
-
-
+const userId = remote.getCurrentWindow().userId;
 const ul = document.querySelector("#book_list");
 const new_book = document.querySelector("#new_book");
 var table = document.querySelector("#credentials");
@@ -54,7 +53,7 @@ var addCredentialToTable = function(item) {
 	passwordCell.appendChild(copyEl);
 };
 
-db.getAllBook(function(err, books) {
+db.getAllBook(userId, function(err, books) {
 	if(isBookListEmpty() && books.length > 0) {
 		ul.className += " collection";
 	}
@@ -112,9 +111,3 @@ document.getElementById("new_book").addEventListener("click", function(e){
 
     ipcRenderer.send("click:bookadd", null);
 });
-
-function credentialClick(item) {
-	console.log("click");
-	console.log(item);
-};
-
