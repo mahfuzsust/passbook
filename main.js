@@ -19,10 +19,6 @@ let loginWindow;
 let addCredentialWindow;
 
 function createWindow () {
-
-	let menu = Menu.buildFromTemplate(mainMenuTemplate);
-	Menu.setApplicationMenu(menu);
-
 	mainWindow = new BrowserWindow({
 		width: 930, 
 		height: 700,
@@ -35,7 +31,7 @@ function createWindow () {
 		protocol: 'file:',
 		slashes: true
 	}));
-	//mainWindow.webContents.openDevTools()
+	mainWindow.setMenu(null);
 	
 	
 	mainWindow.on('closed', function () {
@@ -144,6 +140,9 @@ function login() {
 	return function (e, login) {
 		db.getUser(login.username, function (err, user) {
 			if (user && bcrypt.compareSync(login.password, user.password)) {
+				let menu = Menu.buildFromTemplate(mainMenuTemplate);
+				Menu.setApplicationMenu(menu);
+
 				mainWindow.loadURL(url.format({
 					pathname: path.join(__dirname, "app", 'index.html'),
 					protocol: 'file:',
@@ -229,12 +228,9 @@ let mainMenuTemplate = [{
 	label: "Settings",
 	submenu: [
 		{
-			label: "Book", 
-			click: createAddBookWindow
-		},
-		{
 			label: "Sign out",
 			click() {
+				mainWindow.setMenu(null);
 				mainWindow.loadURL(url.format({
 					pathname: path.join(__dirname, "app", 'login.html'),
 					protocol: 'file:',
