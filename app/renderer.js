@@ -207,7 +207,7 @@ function setCredentialPassword(item, passwordCell) {
 	var copyEl = document.createElement("span");
 	copyEl.innerHTML = " <i class='fas fa-copy'></i>";
 	copyEl.addEventListener("click", function (e) {
-		clipboard.writeText(item.password);
+		clipboard.writeText(crypt.decrypt(item.password, userId));
 		new Notification('Title', {
 			body: 'Lorem Ipsum Dolor Sit Amet'
 		}).show();

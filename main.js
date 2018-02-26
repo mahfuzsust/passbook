@@ -39,7 +39,7 @@ function createWindow () {
 	
 	
 	mainWindow.on('closed', function () {
-		app.quit(); // should remove
+		//app.quit(); // should remove
 		mainWindow = null
 	});
 }
@@ -60,7 +60,7 @@ app.on('activate', function () {
 });
 
 function createAddBookWindow (book) {
-	addBookWindow = new BrowserWindow({width: 400, height: 200, title: "Add book"})
+	addBookWindow = new BrowserWindow({width: 400, height: 300, title: "Add book"})
 
 	addBookWindow.loadURL(url.format({
 		pathname: path.join(__dirname, "app", 'addBook.html'),
@@ -235,9 +235,12 @@ let mainMenuTemplate = [{
 		{
 			label: "Sign out",
 			click() {
-				mainWindow = null;
+				mainWindow.loadURL(url.format({
+					pathname: path.join(__dirname, "app", 'login.html'),
+					protocol: 'file:',
+					slashes: true
+				}));
 				loggedInUser = null;
-				createWindow();
 			}
 		}
 	]
