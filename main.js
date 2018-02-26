@@ -24,7 +24,7 @@ function createWindow () {
 	Menu.setApplicationMenu(menu);
 
 	mainWindow = new BrowserWindow({
-		width: 900, 
+		width: 930, 
 		height: 700,
 		//resizable: false,
 		fullscreen: false,
@@ -245,6 +245,7 @@ let mainMenuTemplate = [{
 		}
 	]
 }];
+process.env.NODE_ENV = 'production';
 
 if(process.platform == 'darwin') {
 	mainMenuTemplate.unshift({});
