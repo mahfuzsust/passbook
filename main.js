@@ -10,6 +10,10 @@ const url = require('url');
 const db = require("./storage.js");
 var crypt = require("./crypt");
 
+function isDev() {
+	return process.mainModule.filename.indexOf('app.asar') === -1;
+}
+
 let loggedInUser;
 
 let mainWindow;
@@ -241,12 +245,11 @@ let mainMenuTemplate = [{
 		}
 	]
 }];
-process.env.NODE_ENV = 'production';
 
 if(process.platform == 'darwin') {
 	mainMenuTemplate.unshift({});
 }
-if(process.env.NODE_ENV !== 'production') {
+if(isDev()) {
 	mainMenuTemplate.push({
 		label: "Developer Tools", 
 		submenu: [{

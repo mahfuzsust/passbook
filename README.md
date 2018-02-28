@@ -18,6 +18,20 @@ npm install
 npm start
 ```
 
+## To package
+
+```bash
+npm install
+
+# For mac
+npm run package-mac
+# For Windows 32 bit
+npm run package-win
+# For linux
+npm run package-linux
+
+```
+
 
 ## License
 
