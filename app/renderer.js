@@ -147,13 +147,19 @@ var setCredentialByBookId = function(bookId) {
 };
 
 ul.addEventListener("click",function(e) {
-	//e.target.remove();
-	if(e.target && e.target.nodeName == "LI") {
+	if(e.target) {
+		let target;
+		if(e.target.nodeName == "SPAN") {
+			target = e.target.parentElement;
+		} else {
+			target = e.target;
+		}
+
 		if(selectedBookItem) {
 			selectedBookItem.classList.toggle("book-item-clicked");
 		}
-		selectedBookItem = e.target;
-		e.target.classList.toggle("book-item-clicked");
+		selectedBookItem = target;
+		target.classList.toggle("book-item-clicked");
 		setCredentialByBookId(selectedBookItem.id);
 	}
 });
