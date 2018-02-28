@@ -40,8 +40,11 @@ var addBookToBooklist = function(item, liEl) {
 		selectedBookItem = li;
 	});
 
-	let text = document.createTextNode(crypt.decrypt(item.name, userId));
-	li.appendChild(text);
+	let textSpan = document.createElement("span");
+	textSpan.className = "truncate";
+	textSpan.appendChild(document.createTextNode(crypt.decrypt(item.name, userId)));
+
+	li.appendChild(textSpan);
 	li.appendChild(deleteIcon);
 	li.appendChild(edit);
 	ul.appendChild(li);
