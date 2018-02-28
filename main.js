@@ -229,7 +229,7 @@ ipcMain.on("credential:add", function (e, item) {
 });
 
 let mainMenuTemplate = [{
-	label: "Settings",
+	label: "Profile",
 	submenu: [
 		{
 			label: "Sign out",
