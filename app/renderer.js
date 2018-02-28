@@ -26,27 +26,11 @@ var addBookToBooklist = function(item, liEl) {
 
 	li.id = item._id;
 	li.className = "collection-item book-item";
-	let deleteIcon = document.createElement("span");
-	deleteIcon.innerHTML = "<i class='fas fa-trash-alt' style='float:right; margin-left:5px;'></i>";
-	deleteIcon.addEventListener("click", function(e){
-		ipcRenderer.send("book:delete", item);
-		selectedBookItem = li;
-	});
 
-	let edit = document.createElement("span");
-	edit.innerHTML = "<i class='fas fa-pencil-alt' style='float:right;'></i>";
-	edit.addEventListener("click", function(e){
-		ipcRenderer.send("click:bookedit", item);
-		selectedBookItem = li;
-	});
+	setBookNameText(item, li);
+	setBookNameDeleteIcon(item, li);
+	setBookNameEditIcon(item, li);
 
-	let textSpan = document.createElement("span");
-	textSpan.className = "truncate";
-	textSpan.appendChild(document.createTextNode(crypt.decrypt(item.name, userId)));
-
-	li.appendChild(textSpan);
-	li.appendChild(deleteIcon);
-	li.appendChild(edit);
 	ul.appendChild(li);
 };
 
@@ -173,6 +157,33 @@ document.getElementById("new_book").addEventListener("click", function(e){
 
     ipcRenderer.send("click:bookadd", null);
 });
+function setBookNameEditIcon(item, li) {
+	let edit = document.createElement("span");
+	edit.innerHTML = "<i class='fas fa-pencil-alt' style='float:right;'></i>";
+	edit.addEventListener("click", function (e) {
+		ipcRenderer.send("click:bookedit", item);
+		selectedBookItem = li;
+	});
+	li.appendChild(edit);
+}
+
+function setBookNameDeleteIcon(item, li) {
+	let deleteIcon = document.createElement("span");
+	deleteIcon.innerHTML = "<i class='fas fa-trash-alt' style='float:right; margin-left:5px;'></i>";
+	deleteIcon.addEventListener("click", function (e) {
+		ipcRenderer.send("book:delete", item);
+		selectedBookItem = li;
+	});
+	li.appendChild(deleteIcon);
+}
+
+function setBookNameText(item, li) {
+	let textSpan = document.createElement("span");
+	textSpan.className = "truncate";
+	textSpan.appendChild(document.createTextNode(crypt.decrypt(item.name, userId)));
+	li.appendChild(textSpan);
+}
+
 function setCredentialAction(item, newRow, actionCell) {
 	let deleteIcon = document.createElement("span");
 	deleteIcon.innerHTML = "<i class='fas fa-trash-alt' style='float:right; margin-left:5px;'></i>";
