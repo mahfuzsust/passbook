@@ -67,6 +67,7 @@ var addCredentialToTable = function(item, rowEl) {
 db.getAllBook(userId, function(err, books) {
 	if(isBookListEmpty() && books.length > 0) {
 		document.getElementById("empty_book").style.display = "none";
+		document.getElementById("searchBook").style.display = "block";
 		ul.style.display = "block";
 		ul.className += " collection";
 
@@ -82,6 +83,7 @@ db.getAllBook(userId, function(err, books) {
 ipcRenderer.on("book:add", function(e, item) {
 	if(isBookListEmpty()) {
 		document.getElementById("empty_book").style.display = "none";
+		document.getElementById("searchBook").style.display = "block";
 		ul.style.display = "block";
 		ul.className += " collection";
 	}
@@ -99,6 +101,7 @@ ipcRenderer.on("book:deleted", function(e) {
 	selectedBookItem.remove();
 	if(isBookListEmpty()) {
 		document.getElementById("empty_book").style.display = "block";
+		document.getElementById("searchBook").style.display = "none";
 		ul.style.display = "none";
 	}
 });
@@ -106,6 +109,7 @@ ipcRenderer.on("credential:deleted", function(e) {
 	selectedCredential.remove();
 	if(document.getElementById("credentials").children.length == 0) {
 		document.getElementById("empty_credential").style.display = "block";
+		document.getElementById("searchCredential").style.display = "none";
 		document.getElementById("credential_table").style.display = "none";
 	}
 });
@@ -113,6 +117,7 @@ ipcRenderer.on("credential:deleted", function(e) {
 ipcRenderer.on("credential:added", function(e, item) {
 	if(document.getElementById("credentials").children.length == 0) {
 		document.getElementById("empty_credential").style.display = "none";
+		document.getElementById("searchCredential").style.display = "block";
 		document.getElementById("credential_table").style.display = "block";
 	}
 	addCredentialToTable(item);
@@ -122,6 +127,7 @@ var setCredentialByBookId = function(bookId) {
 	db.getAllCredential(bookId, function(err, credentials) {
 		if(credentials.length > 0) {
 			document.getElementById("empty_credential").style.display = "none";
+			document.getElementById("searchCredential").style.display = "block";
 			document.getElementById("credential_table").style.display = "block";
 
 			table.innerHTML = "";
@@ -132,6 +138,7 @@ var setCredentialByBookId = function(bookId) {
 			}
 		} else {
 			document.getElementById("empty_credential").style.display = "block";
+			document.getElementById("searchCredential").style.display = "none";
 			document.getElementById("credential_table").style.display = "none";
 			document.getElementById("credentials").innerHTML = "";
 		}
