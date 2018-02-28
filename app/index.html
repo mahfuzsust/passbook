@@ -12,6 +12,7 @@
 					PassBook
 				</div>
 				<button type="button" class="btn" id="new_book" style="margin-top:3px;background-color:rgb(69, 131, 69);width:100%;">Add New Book</button>
+				<input type="text" id="searchBook" onkeyup="searchBook()" placeholder="Search..." title="Search">
 				<div style="overflow:scroll;height:560px;border-right:1px lightgray solid;">
 					<div id="empty_book" style="font-size: 14pt; margin-top:30%; color: darkcyan; text-align: center;">Book shelf is empty</div>
 					<ul id="book_list" style="display: none;"></ul>
@@ -39,6 +40,24 @@
 	
 	<script src="../content/fontawesome-all.min.js"></script>
 	<script>
+
+	function searchBook() {
+		var input, filter, ul, li, a, i;
+		input = document.getElementById("searchBook");
+		filter = input.value.toUpperCase();
+		ul = document.getElementById("book_list");
+		li = ul.getElementsByTagName("li");
+		for (i = 0; i < li.length; i++) {
+			a = li[i].getElementsByTagName("span")[0];
+			let upper = a.innerHTML.toUpperCase();
+			if (upper.indexOf(filter) > -1) {
+				li[i].style.display = "";
+			} else {
+				li[i].style.display = "none";
+			}
+		}
+	}
+
 	  require('./renderer.js')
 	</script>
 	

@@ -42,6 +42,12 @@ var addCredentialToTable = function(item, rowEl) {
 	var passwordCell = rowEl ? rowEl.cells[3] : newRow.insertCell(3);
 	var actionCell = rowEl ? rowEl.cells[4] : newRow.insertCell(4);
 
+	urlCell.style.width = "5%";
+	actionCell.style.width = "8%";
+	nameCell.style.width = "30%";
+	userNameCell.style.width = "30%";
+	passwordCell.style.width = "27%";
+
 	if(rowEl) {
 		nameCell.innerHTML = "";
 		urlCell.innerHTML = "";
@@ -54,8 +60,8 @@ var addCredentialToTable = function(item, rowEl) {
 	setCredentialUrl(item, urlCell);
 	setCredentialPassword(item, passwordCell);
 
-	nameCell.appendChild(document.createTextNode(item.name));
-	userNameCell.appendChild(document.createTextNode(crypt.decrypt(item.username, userId)));
+	setCredentialName(nameCell, item);
+	setCredentialUsername(userNameCell, item);
 };
 
 db.getAllBook(userId, function(err, books) {
@@ -157,6 +163,20 @@ document.getElementById("new_book").addEventListener("click", function(e){
 
     ipcRenderer.send("click:bookadd", null);
 });
+function setCredentialUsername(userNameCell, item) {
+	let textSpan = document.createElement("span");
+	textSpan.className = "truncate-table";
+	textSpan.appendChild(document.createTextNode(crypt.decrypt(item.username, userId)));
+	userNameCell.appendChild(textSpan);
+}
+
+function setCredentialName(nameCell, item) {
+	let textSpan = document.createElement("span");
+	textSpan.className = "truncate-table";
+	textSpan.appendChild(document.createTextNode(item.name));
+	nameCell.appendChild(textSpan);
+}
+
 function setBookNameEditIcon(item, li) {
 	let edit = document.createElement("span");
 	edit.innerHTML = "<i class='fas fa-pencil-alt' style='float:right;'></i>";
@@ -202,20 +222,24 @@ function setCredentialAction(item, newRow, actionCell) {
 }
 
 function setCredentialPassword(item, passwordCell) {
+	let textSpan = document.createElement("span");
 	var passwordText = document.createTextNode(passUnicode);
+	textSpan.appendChild(passwordText);
+
 	var showEl = document.createElement("span");
 	showEl.innerHTML = " <i class='fas fa-eye'></i>";
 	showEl.addEventListener("click", function (e) {
-		console.log(showEl.classList);
 		if (showEl.classList.length == 0) {
 			showEl.classList.add("show");
 			showEl.innerHTML = " <i class='fas fa-eye-slash'></i>";
 			passwordText.nodeValue = crypt.decrypt(item.password, userId);
+			textSpan.classList.toggle("truncate-table");
 		}
 		else {
 			showEl.classList.remove("show");
 			showEl.innerHTML = " <i class='fas fa-eye'></i>";
 			passwordText.nodeValue = passUnicode;
+			textSpan.classList.toggle("truncate-table");
 		}
 	});
 	var copyEl = document.createElement("span");
@@ -226,7 +250,8 @@ function setCredentialPassword(item, passwordCell) {
 			body: 'Lorem Ipsum Dolor Sit Amet'
 		}).show();
 	});
-	passwordCell.appendChild(passwordText);
+
+	passwordCell.appendChild(textSpan);
 	passwordCell.appendChild(showEl);
 	passwordCell.appendChild(copyEl);
 }
