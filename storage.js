@@ -1,9 +1,10 @@
 var bcrypt = require("bcryptjs");
 const path = require('path');
+var appPath = path.join(require("os").homedir(), "Documents", ".PassBook");
 var Datastore = require('nedb')
-  , users = new Datastore({ filename: path.join(__dirname, "data", "users.db"), autoload: true })
-  , books = new Datastore({ filename: path.join(__dirname, "data", "books.db"), autoload: true })
-  , credentials = new Datastore({ filename: path.join(__dirname, "data", "credentials.db"), autoload: true });
+  , users = new Datastore({ filename: path.join(appPath, "users.db"), autoload: true })
+  , books = new Datastore({ filename: path.join(appPath, "books.db"), autoload: true })
+  , credentials = new Datastore({ filename: path.join(appPath, "credentials.db"), autoload: true });
 
 // book
 var getAllBook = function (userId, callback) {
