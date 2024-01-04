@@ -5,10 +5,13 @@ on:
       - created
 
 jobs:
+  release:
+    runs-on: ${{ matrix.os }}
 
-  publish_on_linux:
-    permissions: write-all
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+
     steps:
     - uses: actions/checkout@v2       
     - uses: actions/setup-node@master
@@ -20,32 +23,3 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npm run publish
-
-  publish_on_mac:
-    permissions: write-all
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-node@master
-      with:
-        node-version: 16
-    - name: install dependencies
-      run: npm install
-    - name: publish
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: npm run publish
-
-#   publish_on_win:
-#     runs-on: windows-latest
-#     steps:
-#     - uses: actions/checkout@v2       
-#     - uses: actions/setup-node@master
-#       with:
-#         node-version: 16
-#     - name: install dependencies
-#       run: npm install
-#     - name: publish
-#       env:
-#         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#       run: npm run publish
