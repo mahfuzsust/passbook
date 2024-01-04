@@ -24,8 +24,9 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npm run make
-      
+
   release:
+    needs: build
     permissions: write-all
     runs-on: ${{ matrix.os }}
 
