@@ -1,9 +1,9 @@
 name: Release Electron App
 
 on:
-  release:
-    types:
-      - created
+  push:
+    tags:
+      - '*'
 
 jobs:
   build:
@@ -46,26 +46,17 @@ jobs:
           name: electron-binaries
           path: out/
 
-      - name: Create Release
+      - name: Get the latest tag
+        id: tag
+        run: |
+          echo ::set-output name=TAG::$(git describe --abbrev=0 --tags)
+        shell: bash
+  
+      - name: Create release
         id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
-          permissions: write-all
-          tag_name: ${{ github.event.release.tag_name }}
-          release_name: Release ${{ github.event.release.tag_name }}
-          draft: false
-          prerelease: false
-
-      - name: Upload Release Asset
-        id: upload-release-asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          permissions: write-all
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: out/*
-          asset_name: electron-binaries.zip
-          asset_content_type: application/zip
+          files: |
+            out/*
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ steps.tag.outputs.TAG }}
