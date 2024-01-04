@@ -52,6 +52,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          permissions: write-all
           tag_name: ${{ github.event.release.tag_name }}
           release_name: Release ${{ github.event.release.tag_name }}
           draft: false
@@ -63,6 +64,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          permissions: write-all
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: out/*
           asset_name: electron-binaries.zip
