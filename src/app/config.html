@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html ng-app="passAppConfig">
+
+<head>
+	<script src="../content/angular.min.js"></script>
+	<script src="../content/angular-animate.min.js"></script>
+	<script src="../content/angular-aria.min.js"></script>
+	<script src="../content/angular-messages.min.js"></script>
+	<script src="../content/angular-material.min.js"></script>
+	<script src="../content/fontawesome-6.5.1/js/all.min.js"></script>
+
+	<link rel="stylesheet" type="text/css" href="../content/fontawesome-6.5.1/css/all.min.css">
+	<link rel="stylesheet" type="text/css" href="../content/style.css">
+	<link rel="stylesheet" href="../content/angular-material.min.css">
+	<title>Pass Book</title>
+</head>
+
+<body>
+	<div ng-controller="configController" ng-cloak layout-gt-sm="row">
+		<div flex>
+			<md-content>
+				<md-input-container class="md-block" flex-gt-sm>
+					<label>Public key file path</label>
+					<input ng-model="config.publicKeyFilePath" placeholder="/Users/<user>/public.asc">
+				</md-input-container>
+
+				<md-input-container class="md-block" flex-gt-sm>
+					<label>Private key file path</label>
+					<input ng-model="config.privateKeyFilePath" placeholder="/Users/<user>/private.asc">
+				</md-input-container>
+
+				<md-input-container class="md-block" flex-gt-sm>
+					<label>Passphrase for key</label>
+					<input ng-model="config.keyPassphrase">
+				</md-input-container>
+
+				<md-input-container class="md-block" flex-gt-sm>
+					<label>Password store path</label>
+					<input ng-model="config.passwordStoreDirectoryPath" placeholder="/Users/<user>/.password_store">
+				</md-input-container>
+
+				<md-input-container class="md-block" flex-gt-sm>
+					<label>git ssh url (Optional)</label>
+					<input ng-model="config.gitSshUrl" placeholder="git@github.com:<username>/<repo>.git">
+				</md-input-container>
+
+				<section layout="row" layout-sm="column" layout-align="center center" layout-wrap>
+					<md-button ng-click="addConfig()" class="md-raised md-primary">Update</md-button>
+				  </section>
+			</md-content>
+		</div>
+
+	</div>
+
+	<script src="./lib/toast.js"></script>
+	<script src="./lib/totp.js"></script>
+	<script src="./lib/content-parser.js"></script>
+	<script src="./lib/cryto.js"></script>
+	<script>
+		require('./config.js')
+	</script>
+</body>
+
+</html>

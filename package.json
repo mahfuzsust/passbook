@@ -1,0 +1,44 @@
+{
+  "name": "passbook",
+  "productName": "passbook",
+  "version": "1.0.0",
+  "description": "My Electron application description",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "publish": "electron-forge publish",
+    "lint": "echo \"No linting configured\""
+  },
+  "keywords": [],
+  "author": {
+    "name": "Mahfuzur Rahman",
+    "email": "mahfuz.sust001@gmail.com"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "angular": "^1.8.2",
+    "angular-material": "^1.2.5",
+    "copy-paste": "^1.5.3",
+    "electron-squirrel-startup": "^1.0.0",
+    "electron-store": "^8.1.0",
+    "fs-extra": "^11.2.0",
+    "fuzzysort": "^2.0.4",
+    "generate-password": "^1.7.1",
+    "js-yaml": "^4.1.0",
+    "openpgp": "^5.11.0",
+    "simple-git": "^3.22.0",
+    "speakeasy": "^2.0.0"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.2.0",
+    "@electron-forge/maker-deb": "^7.2.0",
+    "@electron-forge/maker-rpm": "^7.2.0",
+    "@electron-forge/maker-squirrel": "^7.2.0",
+    "@electron-forge/maker-zip": "^7.2.0",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.2.0",
+    "@electron-forge/publisher-github": "^7.2.0",
+    "electron": "28.1.0"
+  }
+}

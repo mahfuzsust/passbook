@@ -1,0 +1,63 @@
+.book-item-clicked {
+    background-color: darkcyan !important;
+    color: white;
+}
+
+.book-item {
+    background-color: darkgray;
+    color: black;
+}
+
+svg {
+    cursor: pointer;
+}
+
+.truncate {
+    display: inline-block;
+    width: 200px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.truncate-table {
+    display: inline-block;
+    width: 140px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@media only screen and (min-width: 320px) {
+    tr>td {
+        width: 23.2%;
+        margin-left: 0;
+    }
+}
+
+.floating-button {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #4CAF50;
+    /* Green color */
+    color: white;
+    border: none;
+    border-radius: 50%;
+    /* Make it a circle */
+    padding: 15px;
+    font-size: 16px;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.3s ease;
+}
+
+md-checkbox {
+    margin: 8px;
+    cursor: pointer;
+    padding-left: 18px;
+    padding-right: 0;
+    line-height: 26px;
+    min-width: 18px;
+    min-height: 18px;
+}
