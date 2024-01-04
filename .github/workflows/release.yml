@@ -5,6 +5,26 @@ on:
       - created
 
 jobs:
+  build:
+    permissions: write-all
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+
+    steps:
+    - uses: actions/checkout@v2       
+    - uses: actions/setup-node@master
+      with:
+        node-version: 16
+    - name: install dependencies
+      run: npm install
+    - name: make
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: npm run make
+      
   release:
     permissions: write-all
     runs-on: ${{ matrix.os }}
