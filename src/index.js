@@ -82,7 +82,6 @@ ipcMain.on("add:credential:done", function (e, item) {
 });
 
 ipcMain.on("add:config:done", function (e, item) {
-	store.set('config', item);
 	configlWindow.close();
 	createWindow();
 });
@@ -106,7 +105,18 @@ const template = [
 			{
 				label: 'Reload',
 				click: () => {
+					mainWindow = null;
+					configlWindow = null;
+					addCredentialWindow = null;
 					home();
+				}
+			},
+			{
+				label: 'Configuration',
+				click: () => {
+					configlWindow = null;
+					addCredentialWindow = null;
+					createWindowForConfiguration();
 				}
 			},
 			{

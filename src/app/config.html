@@ -20,18 +20,18 @@
 		<div flex>
 			<md-content>
 				<md-input-container class="md-block" flex-gt-sm>
-					<label>Public key file path</label>
+					<label>GPG Public key file path</label>
 					<input ng-model="config.publicKeyFilePath" placeholder="/Users/<user>/public.asc">
 				</md-input-container>
 
 				<md-input-container class="md-block" flex-gt-sm>
-					<label>Private key file path</label>
+					<label>GPG Private key file path</label>
 					<input ng-model="config.privateKeyFilePath" placeholder="/Users/<user>/private.asc">
 				</md-input-container>
 
 				<md-input-container class="md-block" flex-gt-sm>
 					<label>Passphrase for key</label>
-					<input ng-model="config.keyPassphrase">
+					<input ng-model="config.keyPassphrase" type="password">
 				</md-input-container>
 
 				<md-input-container class="md-block" flex-gt-sm>
@@ -40,8 +40,9 @@
 				</md-input-container>
 
 				<md-input-container class="md-block" flex-gt-sm>
-					<label>git ssh url (Optional)</label>
-					<input ng-model="config.gitSshUrl" placeholder="git@github.com:<username>/<repo>.git">
+					<md-switch class="md-primary" ng-model="config.offline" required>
+						Offline
+					  </md-switch>
 				</md-input-container>
 
 				<section layout="row" layout-sm="column" layout-align="center center" layout-wrap>
