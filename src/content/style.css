@@ -28,13 +28,6 @@ svg {
     text-overflow: ellipsis;
 }
 
-@media only screen and (min-width: 320px) {
-    tr>td {
-        width: 23.2%;
-        margin-left: 0;
-    }
-}
-
 .floating-button {
     position: fixed;
     bottom: 20px;
@@ -60,4 +53,22 @@ md-checkbox {
     line-height: 26px;
     min-width: 18px;
     min-height: 18px;
+}
+
+.action-icon {
+    padding-right: 10px;
+}
+
+pre {
+    /* max-width: 600px; */
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+table {
+    table-layout: fixed;
+    border-collapse: collapse;
+}
+tr {
+    border: 1px solid black;
 }

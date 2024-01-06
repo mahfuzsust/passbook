@@ -155,6 +155,9 @@ function MainController($scope, $interval, $mdToast) {
         $scope.menu = [];
         getAllCredentials(directoryPath, $scope.menu);
     }
+    $scope.showRaw = function (val) {
+        $scope.rawVisible = val;
+    }
 
 }
 

@@ -1,7 +1,6 @@
 const { app, BrowserWindow, ipcMain, Menu, shell } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
-
 const store = new Store();
 
 if (require('electron-squirrel-startup')) {
@@ -25,12 +24,13 @@ const createWindow = () => {
 		width: 960,
 		height: 600,
 		webPreferences: {
-			devTools: !app.isPackaged,
+			devTools: true,
 			preload: path.join(__dirname, 'preload.js'),
 			nodeIntegration: true,
 			contextIsolation: false
 		},
 	});
+	mainWindow.webContents.openDevTools();
 	mainWindow.loadFile(path.join(__dirname, "app", 'index.html'));
 };
 
@@ -105,10 +105,7 @@ const template = [
 			{
 				label: 'Reload',
 				click: () => {
-					mainWindow = null;
-					configlWindow = null;
-					addCredentialWindow = null;
-					home();
+					mainWindow.reload();
 				}
 			},
 			{

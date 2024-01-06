@@ -19,7 +19,7 @@
 
 	<div ng-controller="mainController" ng-cloak layout-gt-xs="row">
 		<div flex-gt-sm="30" flex>
-			<md-toolbar layout="row" class="md-hue-1">
+			<md-toolbar layout="row" class="md-primary">
 				<div class="md-toolbar-tools">
 					<span>PassBook</span>
 				</div>
@@ -40,7 +40,7 @@
 							<i class="fa fa-key" ng-if="item.file"></i>
 							<i class="fa fa-folder" ng-if="item.directory"></i>
 						</md-icon>
-						<div class="md-list-item-text" >
+						<div class="md-list-item-text">
 							<h3> {{ item.name }} </h3>
 						</div>
 
@@ -65,41 +65,53 @@
 
 						<table>
 							<tr ng-if="cred.username">
-								<td>Username</td>
-								<td>{{cred.username}}</td>
-								<td><span ng-click="copyToClipboard(cred.username)"> <i class="fa fa-copy"></i></span>
+								<td style='width: 110px;'>Username</td>
+								<td style='width: 600px;'>{{cred.username}}</td>
+								<td style='width: 100px;'><span class="action-icon"
+										ng-click="copyToClipboard(cred.username)"> <i class="fa fa-copy"></i></span>
 								</td>
 							</tr>
 							<tr ng-if="cred.password">
-								<td>password</td>
+								<td>Password</td>
 								<td>{{password}}</td>
 								<td>
-									<span ng-if="!cred.showPassword" ng-click="showPassword(cred)"><i class=" fa
-									fa-eye"></i></span>
-									<span ng-if="cred.showPassword" ng-click="hidePassword(cred)"><i
-											class="fa fa-eye-slash"></i></span>
 									<span ng-click="copyToClipboard(cred.password)"> <i class="fa fa-copy"></i></span>
+									<span class="action-icon" ng-if="!cred.showPassword"
+										ng-click="showPassword(cred)"><i class=" fa
+									fa-eye"></i></span>
+									<span class="action-icon" ng-if="cred.showPassword" ng-click="hidePassword(cred)"><i
+											class="fa fa-eye-slash"></i></span>
 								</td>
 							</tr>
 							<tr ng-if="cred.url">
 								<td>URL</td>
 								<td><a href="{{cred.url}}">{{cred.url}}</a></td>
+								<td>
+									<span ng-click="copyToClipboard(cred.url)"> <i class="fa fa-copy"></i></span>
+								</td>
 							</tr>
 							<tr ng-if="cred.otp">
 								<td>OTP</td>
 								<td>{{cred.otp}}
-									<span ng-style="{'color': remainingColor }"> (Expires in {{cred.remainingTime}}s)
+									<span ng-if="cred.remainingTime != null" ng-style="{'color': remainingColor }">
+										(Expires in {{cred.remainingTime}}s)
 									</span>
 								</td>
-								<td><span ng-click="copyToClipboard(cred.otp)"> <i class="fa fa-copy"></i></span>
+								<td><span class="action-icon" ng-click="copyToClipboard(cred.otp)"> <i
+											class="fa fa-copy"></i></span>
 							</tr>
 							<tr ng-if="cred.notes">
 								<td>Notes</td>
-								<td>{{cred.notes}}</td>
+								<td>
+									<pre>{{cred.notes}}</pre>
+								</td>
 							</tr>
-
-
 						</table>
+						<md-button class="md-raised md-primary" ng-if="!rawVisible" ng-click="showRaw(true)">Show raw</md-button>
+						<md-button class="md-raised md-primary" ng-if="rawVisible" ng-click="showRaw(false)">Hide raw</md-button>
+						<div ng-if="rawVisible">
+							<pre>{{cred.raw}}</pre>
+						</div>
 
 					</md-card-content>
 					<md-card-actions layout="row" layout-align="end center">
@@ -112,103 +124,6 @@
 		</div>
 
 	</div>
-
-
-
-
-
-	<!-- <md-content>
-		<div class="row">
-			<div class="col s4">
-				<div
-					style="background-color:darkcyan;width:100%;height:70px;line-height:70px;font-size:18pt;color:white;text-align:center;">
-					PassBook
-				</div>
-
-				<md-input-container class="md-block" flex-gt-xs>
-					<input ng-model="searchTerm" ng-keyup="search()" placeholder="Search ...">
-				</md-input-container>
-
-				<button type="button" class="btn" id="btn_back" ng-click="back()" ng-if="stack.length > 0"
-					style="margin-top:3px;background-color:rgb(69, 131, 69);width:100%;">Back</button>
-				<div style="overflow:scroll;height:560px;border-right:1px lightgray solid;">
-					<md-list flex>
-						<md-list-item class="md-1-line" ng-repeat="item in menu" ng-click="onClick(item)"
-							style="cursor: pointer;">
-							<div class="md-list-item-text" layout="column">
-								<i class="fa fa-folder" ng-if="item.directory"></i>
-								<i class="fa fa-key" ng-if="item.file"></i>
-								<span>{{ item.name }}</span>
-							</div>
-						</md-list-item>
-					</md-list>
-				</div>
-			</div>
-			<div class="col s8">
-				<div style="text-align: right; color: blue;">{{showCopied}}</div>
-				<div id="empty_credential" ng-if="!cred"
-					style="font-size: 14pt; margin-top:30%; color: darkcyan; text-align: center;">No
-					items to display</div>
-				<div ng-if="cred != null">
-					<md-card ng-if="cred != null">
-						<md-card-title>
-							<md-card-title-text>
-								<span class="md-headline">{{cred.name}}</span>
-							</md-card-title-text>
-						</md-card-title>
-						<md-card-content>
-
-							<table>
-								<tr ng-if="cred.username">
-									<td>Username</td>
-									<td>{{cred.username}}</td>
-									<td><span ng-click="copyToClipboard(cred.username)"> <i
-												class="fa fa-copy"></i></span></td>
-								</tr>
-								<tr ng-if="cred.password">
-									<td>password</td>
-									<td>{{password}}</td>
-									<td>
-										<span ng-if="!cred.showPassword" ng-click="showPassword(cred)"><i class=" fa
-											fa-eye"></i></span>
-										<span ng-if="cred.showPassword" ng-click="hidePassword(cred)"><i
-												class="fa fa-eye-slash"></i></span>
-										<span ng-click="copyToClipboard(cred.password)"> <i
-												class="fa fa-copy"></i></span>
-									</td>
-								</tr>
-								<tr ng-if="cred.url">
-									<td>URL</td>
-									<td>{{cred.url}}</td>
-								</tr>
-								<tr ng-if="cred.otp">
-									<td>OTP</td>
-									<td>{{cred.otp}}
-										<span ng-style="{'color': remainingColor }"> (Expires in {{cred.remainingTime}}s) </span>
-									</td>
-									<td><span ng-click="copyToClipboard(cred.otp)"> <i class="fa fa-copy"></i></span>
-								</tr>
-								<tr ng-if="cred.notes">
-									<td>Notes</td>
-									<td>{{cred.notes}}</td>
-								</tr>
-
-
-							</table>
-
-						</md-card-content>
-						<md-card-actions layout="row" layout-align="end center">
-							<md-button ng-click="editCredential(cred)"><i class="fa fa-pen-to-square"></i></md-button>
-							<md-button ng-click="deleteCredential(cred)"><i class="fa fa-trash-can"></i></md-button>
-						</md-card-actions>
-					</md-card>
-					{{content}}
-				</div>
-			</div>
-		</div>
-		<md-button ng-click="addCredential()" class="floating-button md-accent md-fab md-fab-top-right"><i
-				class="fa fa-plus"></i> </md-button>
-	</md-content> -->
 
 	<script src="./lib/toast.js"></script>
 	<script src="./lib/totp.js"></script>
