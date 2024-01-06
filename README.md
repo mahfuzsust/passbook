@@ -46,4 +46,4 @@ Any folder where passwords will be stored
 
 ## License
 
-[CC0 1.0 (Public Domain)](LICENSE.md)
+[License](LICENSE)
