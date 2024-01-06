@@ -49,7 +49,11 @@ function MainController($scope, $interval, $mdToast) {
     const pass = "********";
     $scope.menu = [];
     $scope.stack = [];
-    
+
+    ipcRenderer.on('passbook:sync', function (event, value) {
+        $scope.sync();
+    });
+
     getAllCredentials(directoryPath, $scope.menu);
 
     let intervalPromise;
@@ -100,17 +104,27 @@ function MainController($scope, $interval, $mdToast) {
     }
 
     $scope.sync = async function () {
+        showToast($mdToast, 'Syncing...');
         if (!offline) {
-            showToast($mdToast, 'Syncing...');
-            await git.pull();
-            await git.add('.');
-            await git.commit('Updated at ' + new Date().toLocaleString());
-            await git.push();
-            showToast($mdToast, 'Sync completed!');
+            const status = await git.status();
+            console.log(status);
+
+            if (status.isClean() == false) {
+                showToast($mdToast, 'Updating from remote...');
+                await git.add('.');
+                showToast($mdToast, 'Git commit...');
+                await git.commit('Updated at ' + new Date().toLocaleString());
+                showToast($mdToast, 'Git push...');
+                await git.push();
+            } else {
+                showToast($mdToast, 'Updating from remote...');
+                await git.pull();
+            }
         }
         $scope.menu = [];
         getAllCredentials(directoryPath, $scope.menu);
         $scope.$applyAsync();
+        showToast($mdToast, 'Sync completed!');
     }
 
     $scope.showPassword = function (cred) {

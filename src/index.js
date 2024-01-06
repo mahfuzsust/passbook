@@ -24,13 +24,16 @@ const createWindow = () => {
 		width: 960,
 		height: 600,
 		webPreferences: {
-			devTools: true,
 			preload: path.join(__dirname, 'preload.js'),
 			nodeIntegration: true,
 			contextIsolation: false
-		},
+		}
 	});
-	mainWindow.webContents.openDevTools();
+
+	if (!app.isPackaged) {
+		mainWindow.webContents.openDevTools();
+	}
+
 	mainWindow.loadFile(path.join(__dirname, "app", 'index.html'));
 };
 
@@ -40,12 +43,14 @@ function createAddCredentialWindow() {
 		width: 530,
 		height: 800,
 		webPreferences: {
-			devTools: !app.isPackaged,
 			nodeIntegration: true,
 			contextIsolation: false
-		},
+		}
 	});
-
+	
+	if (!app.isPackaged) {
+		addCredentialWindow.webContents.openDevTools();
+	}
 	addCredentialWindow.loadFile(path.join(__dirname, "app", 'addCredential.html'));
 
 	addCredentialWindow.on('close', function () {
@@ -58,11 +63,14 @@ function createWindowForConfiguration() {
 		width: 530,
 		height: 800,
 		webPreferences: {
-			devTools: !app.isPackaged,
 			nodeIntegration: true,
 			contextIsolation: false
-		},
+		}
 	});
+
+	if (!app.isPackaged) {
+		configlWindow.webContents.openDevTools();
+	}
 
 	configlWindow.loadFile(path.join(__dirname, "app", 'config.html'));
 
@@ -83,7 +91,7 @@ ipcMain.on("add:credential:done", function (e, item) {
 
 ipcMain.on("add:config:done", function (e, item) {
 	configlWindow.close();
-	createWindow();
+	mainWindow.reload();
 });
 
 ipcMain.on("edit:credential", function (e, item) {
@@ -104,26 +112,28 @@ const template = [
 		submenu: [
 			{
 				label: 'Reload',
+				accelerator: 'CmdOrCtrl+R',
 				click: () => {
 					mainWindow.reload();
 				}
 			},
 			{
 				label: 'Configuration',
+				accelerator: 'CmdOrCtrl+C',
 				click: () => {
-					configlWindow = null;
-					addCredentialWindow = null;
 					createWindowForConfiguration();
 				}
 			},
 			{
 				label: 'Sync',
+				accelerator: 'CmdOrCtrl+S',
 				click: () => {
-					
+					mainWindow.webContents.send("passbook:sync", true);
 				}
 			},
 			{
 				label: 'Exit',
+				accelerator: 'CmdOrCtrl+Q',
 				click: () => {
 					app.quit();
 				}
