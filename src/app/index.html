@@ -28,20 +28,18 @@
 				<input ng-model="searchTerm" ng-keyup="search()" placeholder="Search ...">
 			</md-input-container>
 
+			<md-button class="md-raised md-primary" ng-click="back()" ng-if="stack.length > 0"
+				style="width:100%;">Back</md-button>
+
 			<md-content>
 				<md-list flex style="overflow: auto; max-height: 600px;">
-					<md-subheader class="md-sticky">
-						<md-button class="md-raised" ng-click="back()" ng-if="stack.length > 0"
-							style="width:100%;">Back</md-button>
-					</md-subheader>
-					<md-list-item class="md-2-line" ng-repeat="item in menu" ng-click="onClick(item)"
-						style="cursor: pointer;">
-						<md-icon>
+					<md-list-item class="md-2-line" ng-repeat="item in menu" ng-click="onClick(item)">
+						<md-icon class="md-avatar">
 							<i class="fa fa-key" ng-if="item.file"></i>
 							<i class="fa fa-folder" ng-if="item.directory"></i>
 						</md-icon>
 						<div class="md-list-item-text">
-							<h3> {{ item.name }} </h3>
+							<h3>{{ item.name }}</h3>
 						</div>
 
 					</md-list-item>
