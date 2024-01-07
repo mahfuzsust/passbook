@@ -60,10 +60,10 @@ function MainController($scope, $interval, $mdToast) {
 
     const setRemainingColor = (remainingTime) => {
         if ($scope.cred.remainingTime >= 20) {
-            $scope.remainingColor = 'green';
+            $scope.remainingColor = 'blue';
         } else if ($scope.cred.remainingTime >= 10) {
-            $scope.remainingColor = 'orange';
-        } else $scope.remainingColor = 'red';
+            $scope.remainingColor = 'green';
+        } else $scope.remainingColor = 'orange';
     }
 
     $scope.onClick = async function (item) {
