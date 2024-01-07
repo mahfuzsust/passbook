@@ -58,57 +58,71 @@
 				<md-card ng-if="cred != null">
 					<md-card-title>
 						<md-card-title-text>
-							<span class="md-headline">{{cred.name}}</span>
+							<span class="md-headline md-primary">{{cred.name}}</span>
 						</md-card-title-text>
 					</md-card-title>
 					<md-card-content>
+						<md-list flex>
+							<md-list-item class="md-2-line" ng-if="cred.username" ng-mouseover="cred.showUsernameCopy = true" ng-mouseleave="cred.showUsernameCopy = false"
+								ng-click="copyToClipboard(cred.username)">
+								<md-icon class="md-avatar"><i class="fa fa-user-tie"></i></md-icon>
+								<div class="md-list-item-text">
+									<p> username </p>
+									<h3> {{cred.username}} </h3>
+								</div>
+								<md-button ng-if="cred.showUsernameCopy" class="md-secondary md-icon-button" ng-click="copyToClipboard(cred.password)"
+									aria-label="call">
+									<md-icon><i class="fa fa-copy"></i></md-icon>
+								</md-button>
+							</md-list-item>
+							<md-list-item class="md-2-line" ng-if="cred.password" ng-click="copyToClipboard(cred.password)" ng-mouseover="cred.showPasswordCopy = true" ng-mouseleave="cred.showPasswordCopy = false">
+								<md-icon class="md-avatar"><i class="fa fa-key"></i></md-icon>
+								<div class="md-list-item-text">
+									<p> password </p>
+									<h3> {{password}} </h3>
+								</div>
+								<md-button ng-if="cred.showPasswordCopy" class="md-secondary md-icon-button" ng-click="copyToClipboard(cred.password)"
+									aria-label="call">
+									<md-icon><i class="fa fa-copy"></i></md-icon>
+								</md-button>
 
-						<table>
-							<tr ng-if="cred.username">
-								<td style='width: 110px;'>Username</td>
-								<td style='width: 600px;'>{{cred.username}}</td>
-								<td style='width: 100px;'><span class="action-icon"
-										ng-click="copyToClipboard(cred.username)"> <i class="fa fa-copy"></i></span>
-								</td>
-							</tr>
-							<tr ng-if="cred.password">
-								<td>Password</td>
-								<td>{{password}}</td>
-								<td>
-									<span ng-click="copyToClipboard(cred.password)"> <i class="fa fa-copy"></i></span>
-									<span class="action-icon" ng-if="!cred.showPassword"
-										ng-click="showPassword(cred)"><i class=" fa
-									fa-eye"></i></span>
-									<span class="action-icon" ng-if="cred.showPassword" ng-click="hidePassword(cred)"><i
-											class="fa fa-eye-slash"></i></span>
-								</td>
-							</tr>
-							<tr ng-if="cred.url">
-								<td>URL</td>
-								<td><a href="{{cred.url}}">{{cred.url}}</a></td>
-								<td>
-									<span ng-click="copyToClipboard(cred.url)"> <i class="fa fa-copy"></i></span>
-								</td>
-							</tr>
-							<tr ng-if="cred.otp">
-								<td>OTP</td>
-								<td>{{cred.otp}}
-									<span ng-if="cred.remainingTime != null" ng-style="{'color': remainingColor }">
-										(Expires in {{cred.remainingTime}}s)
-									</span>
-								</td>
-								<td><span class="action-icon" ng-click="copyToClipboard(cred.otp)"> <i
-											class="fa fa-copy"></i></span>
-							</tr>
-							<tr ng-if="cred.notes">
-								<td>Notes</td>
-								<td>
+								<md-button class="md-secondary md-icon-button" ng-if="!cred.showPassword" ng-click="showPassword(cred)"
+									aria-label="call">
+									<md-icon><i class="fa fa-eye"></i></md-icon>
+								</md-button>
+								<md-button class="md-secondary md-icon-button" ng-if="cred.showPassword" ng-click="hidePassword(cred)"
+									aria-label="call">
+									<md-icon><i class="fa fa-eye-slash"></i></md-icon>
+								</md-button>
+							</md-list-item>
+							<md-list-item class="md-2-line" ng-if="cred.url" ng-click="copyToClipboard(cred.url)" ng-mouseover="cred.showUrlCopy = true" ng-mouseleave="cred.showUrlCopy = false">
+								<md-icon class="md-avatar"><i class="fa fa-link"></i></md-icon>
+								<div class="md-list-item-text">
+									<p> url </p>
+									<h3> {{cred.url}} </h3>
+								</div>
+								<md-button ng-if="cred.showUrlCopy" class="md-secondary md-icon-button" ng-click="copyToClipboard(cred.url)"
+									aria-label="call">
+									<md-icon><i class="fa fa-copy"></i></md-icon>
+								</md-button>
+							</md-list-item>
+							<md-list-item class="md-2-line" ng-if="cred.notes">
+								<md-icon class="md-avatar"><i class="fa fa-note-sticky"></i></md-icon>
+								<div class="md-list-item-text">
+									<p> notes </p>
 									<pre>{{cred.notes}}</pre>
-								</td>
-							</tr>
-						</table>
-						<md-button class="md-raised md-primary" ng-if="!cred.rawVisible" ng-click="cred.rawVisible = true">Show raw</md-button>
-						<md-button class="md-raised md-primary" ng-if="cred.rawVisible" ng-click="cred.rawVisible = false">Hide raw</md-button>
+								</div>
+								<md-button class="md-secondary md-icon-button" ng-click="copyToClipboard(cred.notes)"
+									aria-label="call">
+									<md-icon><i class="fa fa-copy"></i></md-icon>
+								</md-button>
+							</md-list-item>
+						</md-list>
+
+						<md-button class="md-raised md-primary" ng-if="!cred.rawVisible"
+							ng-click="cred.rawVisible = true">Show raw</md-button>
+						<md-button class="md-raised md-primary" ng-if="cred.rawVisible"
+							ng-click="cred.rawVisible = false">Hide raw</md-button>
 						<div ng-if="cred.rawVisible">
 							<pre>{{cred.raw}}</pre>
 						</div>
