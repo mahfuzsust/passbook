@@ -107,9 +107,9 @@
 								</td>
 							</tr>
 						</table>
-						<md-button class="md-raised md-primary" ng-if="!rawVisible" ng-click="showRaw(true)">Show raw</md-button>
-						<md-button class="md-raised md-primary" ng-if="rawVisible" ng-click="showRaw(false)">Hide raw</md-button>
-						<div ng-if="rawVisible">
+						<md-button class="md-raised md-primary" ng-if="!cred.rawVisible" ng-click="cred.rawVisible = true">Show raw</md-button>
+						<md-button class="md-raised md-primary" ng-if="cred.rawVisible" ng-click="cred.rawVisible = false">Hide raw</md-button>
+						<div ng-if="cred.rawVisible">
 							<pre>{{cred.raw}}</pre>
 						</div>
 
