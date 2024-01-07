@@ -1,7 +1,7 @@
 {
   "name": "passbook",
   "productName": "passbook",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "My Electron application description",
   "main": "src/index.js",
   "scripts": {
