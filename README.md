@@ -2,6 +2,8 @@
 
 GUI application to support [pass](https://www.passwordstore.org/) with totp integration. Application written in [Electron](https://www.electronjs.org/).
 
+## [Release](https://github.com/mahfuzsust/passbook/releases)
+Download from latest release and install.
 
 ## Setup 
 
