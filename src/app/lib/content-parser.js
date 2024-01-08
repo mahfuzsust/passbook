@@ -2,8 +2,13 @@ const yaml = require('js-yaml');
 
 function createContentString(content) {
     let contentString = '';
-    contentString += content.password + '\n';
-
+    
+    if (content['password']) {
+        contentString += content['password'] + '\n';
+    } else {
+        contentString += '\n';
+    }
+    
     if (content['username']) {
         contentString += `username: ${content['username']}\n`;
     }
@@ -18,7 +23,7 @@ function createContentString(content) {
     let excludes = ['name', 'username', 'url', 'otpToken', 'password']
 
     for (const [key, value] of Object.entries(content)) {
-        if (!excludes.includes(key)) {
+        if (!excludes.includes(key) && value) {
             contentString += `${key}: ${value}\n`;
         }
     }

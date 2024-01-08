@@ -119,7 +119,7 @@ const template = [
 			},
 			{
 				label: 'Configuration',
-				accelerator: 'CmdOrCtrl+C',
+				accelerator: 'CmdOrCtrl+P',
 				click: () => {
 					createWindowForConfiguration();
 				}

@@ -4,9 +4,21 @@ const Store = require('electron-store');
 const store = new Store();
 const publicKeyFilePath = store.get('config')['publicKeyFilePath'];
 const directoryPath = store.get('config')['passwordStoreDirectoryPath'];
-
 var generator = require('generate-password');
 
+const getFileName = function (path) {
+    path = path.replace(new RegExp('.gpg$'), '');
+
+    let splitPath = directoryPath;
+    if (directoryPath.endsWith('/') == false) {
+        splitPath += '/';
+    }
+
+    const sp = path.split(splitPath);
+    if (sp.length > 1) {
+        return sp[1];
+    }
+}
 
 
 function CredController($scope) {
@@ -14,7 +26,7 @@ function CredController($scope) {
     $scope.editMode = false;
     ipcRenderer.on('edit:credential:value', function (event, value) {
         $scope.cred = {
-            name: value.name,
+            name: getFileName(value.path),
             username: value.username,
             password: value.password,
             url: value.url,
@@ -23,6 +35,19 @@ function CredController($scope) {
         }
         $scope.editMode = true;
         $scope.$apply();
+    });
+
+    $scope.$watch('cred.name', function (newValue, oldValue) {
+        if(!newValue || newValue === oldValue) {
+            return;
+        }
+        const regex = /^[0-9a-zA-Z_\-./]+(?<![\/.])$/g;
+        const found = newValue.match(regex);
+        if (!found) {
+            $scope.credForm.name.$setValidity('pattern', false);
+        } else {
+            $scope.credForm.name.$setValidity('pattern', true);
+        }
     });
 
     $scope.pass = {

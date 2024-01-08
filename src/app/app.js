@@ -107,18 +107,19 @@ function MainController($scope, $interval, $mdToast) {
         showToast($mdToast, 'Syncing...');
         if (!offline) {
             const status = await git.status();
-            console.log(status);
 
-            if (status.isClean() == false) {
-                showToast($mdToast, 'Updating from remote...');
-                await git.add('.');
-                showToast($mdToast, 'Git commit...');
-                await git.commit('Updated at ' + new Date().toLocaleString());
-                showToast($mdToast, 'Git push...');
-                await git.push();
-            } else {
+            if (status.isClean()) {
                 showToast($mdToast, 'Updating from remote...');
                 await git.pull();
+            } else {
+                showToast($mdToast, 'Git commit...');
+                await git.commit('Updated at ' + new Date().toLocaleString());
+
+                showToast($mdToast, 'Updating from remote...');
+                await git.add('.');
+                
+                showToast($mdToast, 'Git push...');
+                await git.push();
             }
         }
         $scope.menu = [];
