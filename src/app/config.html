@@ -19,35 +19,59 @@
 	<div ng-controller="configController" ng-cloak layout-gt-sm="row">
 		<div flex>
 			<md-content>
-				<md-input-container class="md-block" flex-gt-sm>
-					<label>GPG Public key file path</label>
-					<input ng-model="config.publicKeyFilePath" placeholder="/Users/<user>/public.asc">
-				</md-input-container>
+				<form name="configForm">
+					<md-input-container class="md-block" flex-gt-sm>
+						<label>GPG Public key file path</label>
+						<input ng-model="config.publicKeyFilePath" placeholder="/Users/<user>/public.asc" required
+							name="publicKeyFilePath" md-maxlength="100">
+						<div ng-messages="configForm.publicKeyFilePath.$error" multiple
+							ng-if="configForm.publicKeyFilePath.$dirty">
+							<div ng-message="required">Public key file path is required</div>
+							<div ng-message="md-maxlength">File name has a maximum length of 100.</div>
+							<div ng-message="validity">Valid file name is required</div>
+						</div>
+					</md-input-container>
 
-				<md-input-container class="md-block" flex-gt-sm>
-					<label>GPG Private key file path</label>
-					<input ng-model="config.privateKeyFilePath" placeholder="/Users/<user>/private.asc">
-				</md-input-container>
+					<md-input-container class="md-block" flex-gt-sm>
+						<label>GPG Private key file path</label>
+						<input ng-model="config.privateKeyFilePath" placeholder="/Users/<user>/private.asc" required
+							name="privateKeyFilePath" md-maxlength="100">
+						<div ng-messages="configForm.privateKeyFilePath.$error" multiple
+							ng-if="configForm.privateKeyFilePath.$dirty">
+							<div ng-message="required">Private key file path is required</div>
+							<div ng-message="md-maxlength">File name has a maximum length of 100.</div>
+							<div ng-message="validity">Valid file name is required</div>
+						</div>
+					</md-input-container>
 
-				<md-input-container class="md-block" flex-gt-sm>
-					<label>Passphrase for key</label>
-					<input ng-model="config.keyPassphrase" type="password">
-				</md-input-container>
+					<md-input-container class="md-block" flex-gt-sm>
+						<label>Passphrase for key</label>
+						<input ng-model="config.keyPassphrase" type="password">
+					</md-input-container>
 
-				<md-input-container class="md-block" flex-gt-sm>
-					<label>Password store path</label>
-					<input ng-model="config.passwordStoreDirectoryPath" placeholder="/Users/<user>/.password_store">
-				</md-input-container>
+					<md-input-container class="md-block" flex-gt-sm>
+						<label>Password store path</label>
+						<input ng-model="config.passwordStoreDirectoryPath" placeholder="/Users/<user>/.password_store"
+							required name="passwordStoreDirectoryPath" md-maxlength="100">
+						<div ng-messages="configForm.passwordStoreDirectoryPath.$error" multiple
+							ng-if="configForm.passwordStoreDirectoryPath.$dirty">
+							<div ng-message="required">Password directory path is required</div>
+							<div ng-message="md-maxlength">Directory name has a maximum length of 100.</div>
+							<div ng-message="validity">Valid directory is required</div>
+						</div>
+					</md-input-container>
 
-				<md-input-container class="md-block" flex-gt-sm>
-					<md-switch class="md-primary" ng-model="config.offline" required>
-						Offline
-					  </md-switch>
-				</md-input-container>
+					<md-input-container class="md-block" flex-gt-sm>
+						<md-switch class="md-primary" ng-model="config.offline">
+							Offline
+						</md-switch>
+					</md-input-container>
 
-				<section layout="row" layout-sm="column" layout-align="center center" layout-wrap>
-					<md-button ng-click="addConfig()" class="md-raised md-primary">Update</md-button>
-				  </section>
+					<section layout="row" layout-sm="column" layout-align="center center" layout-wrap>
+						<md-button ng-disabled="!configForm.$dirty || configForm.$invalid" ng-click="addConfig()"
+							class="md-raised md-primary" style="width: 100%;">Update</md-button>
+					</section>
+				</form>
 			</md-content>
 		</div>
 

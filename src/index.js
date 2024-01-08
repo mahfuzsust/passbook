@@ -144,6 +144,9 @@ const template = [
 		label: 'Edit',
 		submenu: [
 			{
+				role: 'selectAll'
+			},
+			{
 				role: 'undo'
 			},
 			{
