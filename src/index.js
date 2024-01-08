@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain, Menu, shell } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const store = new Store();
+// const {updateElectronApp} = require('update-electron-app');
+// updateElectornApp();
 
 if (require('electron-squirrel-startup')) {
 	app.quit();
@@ -17,6 +19,29 @@ const home = () => {
 	} else {
 		createWindowForConfiguration();
 	}
+};
+
+const createInfo = () => {
+	let infoWindow = new BrowserWindow({
+		width: 200,
+		height: 200,
+		webPreferences: {
+			nodeIntegration: true,
+			contextIsolation: false,
+			additionalArguments: [
+				`--version=${app.getVersion()}`,
+			],
+		}
+	});
+
+	if (!app.isPackaged) {
+		infoWindow.webContents.openDevTools();
+	}
+
+	infoWindow.loadFile(path.join(__dirname, "app", 'info.html'));
+	infoWindow.on('close', function () {
+		infoWindow = null
+	});
 };
 
 const createWindow = () => {
@@ -35,6 +60,9 @@ const createWindow = () => {
 	}
 
 	mainWindow.loadFile(path.join(__dirname, "app", 'index.html'));
+	mainWindow.on('close', function () {
+		mainWindow = null
+	});
 };
 
 
@@ -47,7 +75,7 @@ function createAddCredentialWindow() {
 			contextIsolation: false
 		}
 	});
-	
+
 	if (!app.isPackaged) {
 		addCredentialWindow.webContents.openDevTools();
 	}
@@ -107,6 +135,17 @@ ipcMain.on("edit:credential:done", function (e, item) {
 });
 
 const template = [
+	{
+		label: 'View',
+		submenu: [
+			{
+				label: 'About PassBook',
+				click: () => {
+					createInfo();
+				}
+			}
+		],
+	},
 	{
 		label: 'File',
 		submenu: [
