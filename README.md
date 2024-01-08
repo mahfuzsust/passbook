@@ -14,17 +14,17 @@ Download from latest release and install.
 [Github tutorial](https://docs.github.com/en/authentication/managing-commit-signature-verification/generating-a-new-gpg-key)
 
 1. Download and install the [GPG command line tools](https://www.gnupg.org/download) for your operating system. 
-2. ```gpg --full-generate-key```
-3. ```gpg --list-secret-keys --keyid-format=long ```
-4. ``` gpg -o <PUBLIC_KEY_FILE_PATH.asc> --armor --export <KEY_ID>```
-5. ``` gpg -o <PRIVATE_KEY_FILE_PATH.asc> --armor --export-secret-key <KEY_ID>```
+2. `gpg --full-generate-key` (Add passphrase for better security)
+3. `gpg --list-secret-keys --keyid-format=long`
+4. `gpg -o <PUBLIC_KEY_FILE_PATH.asc> --armor --export <KEY_ID>`
+5. `gpg -o <PRIVATE_KEY_FILE_PATH.asc> --armor --export-secret-key <KEY_ID>`
 
 ### Pass setup (Recommended)
 Follow the tutorial for [pass](https://www.passwordstore.org/) to install
 
 After the installation is done
-1. ``` pass init <KEY_ID>```
-2. ``` pass git init ```
+1. `pass init <KEY_ID>`
+2. `pass git init`
 
 After everything is done the password storage path will be `/Users/<username>/.password-store`
 
