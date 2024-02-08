@@ -16,6 +16,18 @@ const git = simpleGit(directoryPath, { binary: 'git' });
 
 const flatNames = [];
 
+function fromHTML(html, trim = true) {
+    html = trim ? html.trim() : html;
+    if (!html) return null;
+
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    const result = template.content.children;
+
+    if (result.length === 1) return result[0];
+    return result;
+}
+
 const getAllCredentials = function (directoryPath, arr) {
     const items = fs.readdirSync(directoryPath);
     items.forEach(item => {
@@ -55,6 +67,34 @@ function MainController($scope, $interval, $mdToast) {
     });
 
     getAllCredentials(directoryPath, $scope.menu);
+
+    
+    const fragment = document.createDocumentFragment();
+
+    // Simulate adding 1000 list items to the DocumentFragment
+    for (let i = 0; i < $scope.menu.length; i++) {
+        const items__a = fromHTML(`
+            <md-list-item class="md-2-line" ng-repeat="item in menu" ng-click="onClick(${$scope.menu[i]})">
+                <md-icon class="md-avatar">
+                    <i class="fa fa-key" ng-if="item.file"></i>
+                    <i class="fa fa-folder" ng-if="item.directory"></i>
+                </md-icon>
+                <div class="md-list-item-text">
+                    <h3>${$scope.menu[i].name}</h3>
+                </div>
+            </md-list-item>
+        `);
+
+        var myModel2 = angular.element("#myModel2");
+        $compile(myModel2.attr("ng-model", "myModel2"))($scope);
+
+      fragment.appendChild(items__a);
+    }
+    
+    // Now, append the entire DocumentFragment to the live DOM
+    const myList = document.getElementById("all__passwords");
+    myList.appendChild(fragment);
+
 
     let intervalPromise;
 
@@ -117,7 +157,7 @@ function MainController($scope, $interval, $mdToast) {
 
                 showToast($mdToast, 'Updating from remote...');
                 await git.add('.');
-                
+
                 showToast($mdToast, 'Git push...');
                 await git.push();
             }

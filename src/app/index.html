@@ -32,8 +32,8 @@
 				style="width:100%;">Back</md-button>
 
 			<md-content>
-				<md-list flex style="overflow: auto; max-height: 600px;">
-					<md-list-item class="md-2-line" ng-repeat="item in menu" ng-click="onClick(item)">
+				<md-list id="all__passwords" flex style="overflow: auto; max-height: 600px;">
+					<!-- <md-list-item class="md-2-line" ng-repeat="item in menu" ng-click="onClick(item)">
 						<md-icon class="md-avatar">
 							<i class="fa fa-key" ng-if="item.file"></i>
 							<i class="fa fa-folder" ng-if="item.directory"></i>
@@ -41,8 +41,7 @@
 						<div class="md-list-item-text">
 							<h3>{{ item.name }}</h3>
 						</div>
-
-					</md-list-item>
+					</md-list-item> -->
 				</md-list>
 			</md-content>
 			<md-button ng-click="addCredential()" class="floating-button md-accent md-fab md-fab-bottom-right"><i
