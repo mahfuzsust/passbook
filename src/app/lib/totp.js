@@ -1,23 +1,11 @@
-const speakeasy = require('speakeasy');
-const url = require('url');
+const OTPAuth = require('otpauth');
 
-const generateOTP = function (secret) {
-    return speakeasy.totp({
-        secret: secret,
-        encoding: 'base32'
-    });
+const generateOTP = function (otpUrl) {
+    const totp = OTPAuth.URI.parse(otpUrl);
+    return totp.generate();
 }
 
-const getRemainingTime = (secret, otp) => {
-    const verifyDelta = speakeasy.totp.verifyDelta({
-        secret: secret,
-        encoding: 'base32',
-        token: otp,
-        window: 1, // You can adjust the window size based on your requirements
-    });
-
-    
-
+const getRemainingTime = () => {
     const now = Math.floor(Date.now() / 1000);
     const nextTOTPTimestamp = Math.ceil(now / 30) * 30;
     const remainingTime = nextTOTPTimestamp - now;
@@ -25,12 +13,11 @@ const getRemainingTime = (secret, otp) => {
 }
 
 const getOtpInfo = function (otpUrl) {
-    const secret = url.parse(otpUrl, { parseQueryString: true }).query.secret;
-    if (secret && secret.length > 0) {
-        const otp = generateOTP(secret);
-        const remainingTime = getRemainingTime(secret, otp);
+    if (otpUrl && otpUrl.length > 0) {
+        const otp = generateOTP(otpUrl);
+        const remainingTime = getRemainingTime();
         return {
-            otpToken: secret,
+            otpUrl: otpUrl,
             otp: otp,
             remainingTime: remainingTime,
         };

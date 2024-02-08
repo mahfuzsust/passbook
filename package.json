@@ -2,7 +2,7 @@
   "name": "passbook",
   "productName": "passbook",
   "version": "1.2.1",
-  "description": "My Electron application description",
+  "description": "pass electron integration",
   "main": "src/index.js",
   "scripts": {
     "start": "NODE_ENV=development electron-forge start",
@@ -28,8 +28,8 @@
     "generate-password": "^1.7.1",
     "js-yaml": "^4.1.0",
     "openpgp": "^5.11.0",
+    "otpauth": "^9.2.2",
     "simple-git": "^3.22.0",
-    "speakeasy": "^2.0.0",
     "update-electron-app": "^3.0.0"
   },
   "devDependencies": {

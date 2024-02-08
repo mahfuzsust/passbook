@@ -92,7 +92,7 @@ const getCredentialObject = function (content) {
     if (otpUrl && otpUrl.length > 0) {
         const otpInfo = getOtpInfo(otpUrl);
         if (otpInfo) {
-            keyValuePairs["otpToken"] = otpInfo.otpToken;
+            keyValuePairs["otpUrl"] = otpInfo.otpUrl;
             keyValuePairs["otp"] = otpInfo.otp;
             keyValuePairs["remainingTime"] = otpInfo.remainingTime;
         }

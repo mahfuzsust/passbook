@@ -89,7 +89,7 @@ function MainController($scope, $interval, $mdToast) {
                     setRemainingColor($scope.cred.remainingTime);
 
                     if ($scope.cred.remainingTime <= 0) {
-                        $scope.cred.otp = generateOTP($scope.cred.otpToken);
+                        $scope.cred.otp = generateOTP($scope.cred.otpUrl);
                         $scope.cred.remainingTime = 30;
                         setRemainingColor($scope.cred.remainingTime);
                     }
