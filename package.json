@@ -1,7 +1,7 @@
 {
   "name": "passbook",
   "productName": "passbook",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "pass electron integration",
   "main": "src/index.js",
   "scripts": {
