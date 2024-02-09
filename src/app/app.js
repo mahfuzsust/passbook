@@ -57,7 +57,7 @@ const getAllCredentials = function (directoryPath, arr) {
     });
 }
 
-function MainController($scope, $interval, $mdToast) {
+function MainController($scope, $interval, $mdToast, $compile) {
     const pass = "********";
     $scope.menu = [];
     $scope.stack = [];
@@ -66,35 +66,48 @@ function MainController($scope, $interval, $mdToast) {
         $scope.sync();
     });
 
-    getAllCredentials(directoryPath, $scope.menu);
+    const renderListView = (arr) => {
+        const fragment = document.createDocumentFragment();
 
-    
-    const fragment = document.createDocumentFragment();
+        for (let i = 0; i < arr.length; i++) {
+            const item = arr[i];
 
-    // Simulate adding 1000 list items to the DocumentFragment
-    for (let i = 0; i < $scope.menu.length; i++) {
-        const items__a = fromHTML(`
-            <md-list-item class="md-2-line" ng-repeat="item in menu" ng-click="onClick(${$scope.menu[i]})">
-                <md-icon class="md-avatar">
-                    <i class="fa fa-key" ng-if="item.file"></i>
-                    <i class="fa fa-folder" ng-if="item.directory"></i>
-                </md-icon>
-                <div class="md-list-item-text">
-                    <h3>${$scope.menu[i].name}</h3>
-                </div>
-            </md-list-item>
-        `);
+            let btnhtml = `
+            <md-list-item class="md-2-line" ng-click="onClick(${i})">
+                <md-icon class="md-avatar">`;
 
-        var myModel2 = angular.element("#myModel2");
-        $compile(myModel2.attr("ng-model", "myModel2"))($scope);
+            if (item.directory) {
+                btnhtml += `<i class="fa fa-folder"></i>`
+            } else if (item.file) {
+                btnhtml += `<i class="fa fa-key"></i>`
+            }
+            btnhtml += `</md-icon>
+            <div class="md-list-item-text">
+                <h3>${item.name}</h3>
+            </div>
+        </md-list-item>`;
 
-      fragment.appendChild(items__a);
-    }
-    
-    // Now, append the entire DocumentFragment to the live DOM
-    const myList = document.getElementById("all__passwords");
-    myList.appendChild(fragment);
+            let temp = $compile(btnhtml)($scope);
+            angular.element(fragment).append(temp);
+        }
 
+        $scope.menu = arr;
+
+        let ee = document.getElementById("all__passwords");
+        ee.innerHTML = '';
+        angular.element(ee).append(fragment);
+    };
+
+    // document.getElementById("all__passwords").addEventListener("scrollend", (event) => {
+    //     console.log(event);
+    // });
+
+
+
+    let arr = [];
+    getAllCredentials(directoryPath, arr);
+
+    renderListView(arr);
 
     let intervalPromise;
 
@@ -106,7 +119,9 @@ function MainController($scope, $interval, $mdToast) {
         } else $scope.remainingColor = 'orange';
     }
 
-    $scope.onClick = async function (item) {
+    $scope.onClick = async function (kk) {
+        const idx = Number(kk);
+        const item = $scope.menu[idx];
         $scope.password = pass;
         $scope.cred = null;
         if (intervalPromise) {
@@ -115,7 +130,7 @@ function MainController($scope, $interval, $mdToast) {
 
         if (item.directory) {
             $scope.stack.push($scope.menu);
-            $scope.menu = item.child;
+            renderListView(item.child);
         } else if (item.file) {
             const content = await decryptGPGFile(item.path, privateKeyFilePath, publicKeyFilePath, passphrase);
             $scope.cred = getCredentialObject(content, item.path, item.name);
@@ -140,7 +155,7 @@ function MainController($scope, $interval, $mdToast) {
         }
     }
     $scope.back = function (msg) {
-        $scope.menu = $scope.stack.pop();
+        renderListView($scope.stack.pop());
     }
 
     $scope.sync = async function () {
@@ -162,9 +177,10 @@ function MainController($scope, $interval, $mdToast) {
                 await git.push();
             }
         }
-        $scope.menu = [];
-        getAllCredentials(directoryPath, $scope.menu);
-        $scope.$applyAsync();
+
+        let arr = [];
+        getAllCredentials(directoryPath, arr);
+        renderListView(arr);
         showToast($mdToast, 'Sync completed!');
     }
 
@@ -181,16 +197,17 @@ function MainController($scope, $interval, $mdToast) {
             if ($scope.stack.length === 0) {
                 return;
             }
-            $scope.menu = $scope.stack.pop();
+            renderListView($scope.stack.pop());
             return;
         }
         if ($scope.searchTerm.length < 3) {
             return;
         }
         const searchTerm = $scope.searchTerm;
-        const searchResults = fuzzysort.go(searchTerm, flatNames, { key: 'name' })
-        $scope.stack.push($scope.menu);
-        $scope.menu = searchResults.map(x => x.obj);
+        const searchResults = fuzzysort.go(searchTerm, flatNames, { key: 'name' });
+        if ($scope.stack.length == 0)
+            $scope.stack.push($scope.menu);
+        renderListView(searchResults.map(x => x.obj));
     }
     $scope.copyToClipboard = function (text) {
         showToast($mdToast, 'Copied to clipboard!');
@@ -207,8 +224,9 @@ function MainController($scope, $interval, $mdToast) {
     $scope.deleteCredential = function (item) {
         fs.unlinkSync(item.path);
         $scope.cred = null;
-        $scope.menu = [];
-        getAllCredentials(directoryPath, $scope.menu);
+        let arr = [];
+        getAllCredentials(directoryPath, arr);
+        renderListView(arr);
     }
     $scope.showRaw = function (val) {
         $scope.rawVisible = val;
