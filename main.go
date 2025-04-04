@@ -19,10 +19,8 @@ var passwordHash = "$2a$14$zWwEnTtOPXXo4/3KryB.s.2ggEJeeulAm5hVXMq3kZKD7p6RieBfW
 var storeDir = filepath.Join(os.Getenv("HOME"), ".my_store")
 var listItems []string
 
-// Global variables for form entries
 var nameEntry, urlEntry, passwordEntry, notesEntry, usernameEntry *widget.Entry
 
-// FileDetails Struct to hold the details of a file
 type FileDetails struct {
 	Name     string `json:"name"`
 	URL      string `json:"url"`
@@ -75,14 +73,11 @@ func showMainWindow(a fyne.App) {
 	w := a.NewWindow("Main App")
 	w.Resize(fyne.NewSize(800, 600))
 
-	// Left Side (List + Search)
 	searchEntry := widget.NewEntry()
 	searchEntry.SetPlaceHolder("Search...")
 
-	// Load the list of files from the store directory
 	updateList()
 
-	// List view
 	list := widget.NewList(
 		func() int { return len(listItems) },
 		func() fyne.CanvasObject { return widget.NewLabel("Item") },
@@ -91,26 +86,22 @@ func showMainWindow(a fyne.App) {
 		},
 	)
 
-	// Click a file to load it into the right panel
 	list.OnSelected = func(id widget.ListItemID) {
 		loadFile(listItems[id], w)
 	}
 
-	// Add Button
 	addButton := widget.NewButton("Add", func() {
 		clearFields()
 	})
 
 	leftContent := container.NewBorder(searchEntry, addButton, nil, nil, list)
 
-	// Right Side (Detail View) - Create entry widgets globally
 	nameEntry = widget.NewEntry()
 	urlEntry = widget.NewEntry()
 	passwordEntry = widget.NewPasswordEntry()
 	notesEntry = widget.NewMultiLineEntry()
 	usernameEntry = widget.NewEntry()
 
-	// Clipboard copy buttons
 	copyUsernameBtn := widget.NewButton("Copy", func() {
 		fyne.CurrentApp().Driver().AllWindows()[0].Clipboard().SetContent(usernameEntry.Text)
 	})
@@ -118,7 +109,6 @@ func showMainWindow(a fyne.App) {
 		fyne.CurrentApp().Driver().AllWindows()[0].Clipboard().SetContent(passwordEntry.Text)
 	})
 
-	// Save Button
 	saveButton := widget.NewButton("Save", func() {
 		fileName := nameEntry.Text + ".json"
 		saveFile(fileName, w, list)
@@ -133,7 +123,6 @@ func showMainWindow(a fyne.App) {
 		saveButton,
 	)
 
-	// Split Layout (30%-70%)
 	split := container.NewHSplit(leftContent, rightContent)
 	split.SetOffset(0.3) // 30% left, 70% right
 
@@ -143,14 +132,12 @@ func showMainWindow(a fyne.App) {
 }
 
 func updateList() {
-	// Read files from the store directory
 	files, err := os.ReadDir(storeDir)
 	if err != nil {
 		fmt.Println("Error reading directory:", err)
 		return
 	}
 
-	// Filter out non-JSON files and create the list
 	listItems = []string{}
 	for _, file := range files {
 		if strings.HasSuffix(file.Name(), ".json") {
@@ -170,7 +157,6 @@ func clearFields() {
 func loadFile(fileName string, w fyne.Window) {
 	filePath := filepath.Join(storeDir, fileName)
 
-	// Read the JSON file
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("failed to load file: %v", err), w)
@@ -181,14 +167,12 @@ func loadFile(fileName string, w fyne.Window) {
 		dialog.ShowError(fmt.Errorf("decryption failed: %v", err), w)
 		return
 	}
-	// Parse the JSON
 	var details FileDetails
 	if err := json.Unmarshal(decryptedData, &details); err != nil {
 		dialog.ShowError(fmt.Errorf("failed to parse JSON: %v", err), w)
 		return
 	}
 
-	// Populate the fields
 	nameEntry.SetText(details.Name)
 	urlEntry.SetText(details.URL)
 	passwordEntry.SetText(details.Password)
@@ -197,7 +181,6 @@ func loadFile(fileName string, w fyne.Window) {
 }
 
 func saveFile(fileName string, w fyne.Window, list *widget.List) {
-	// Collect the data from the fields
 	fileDetails := FileDetails{
 		Name:     nameEntry.Text,
 		URL:      urlEntry.Text,
@@ -206,7 +189,6 @@ func saveFile(fileName string, w fyne.Window, list *widget.List) {
 		Username: usernameEntry.Text,
 	}
 
-	// Create JSON data
 	data, err := json.MarshalIndent(fileDetails, "", "  ")
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("failed to create JSON: %v", err), w)
@@ -219,7 +201,6 @@ func saveFile(fileName string, w fyne.Window, list *widget.List) {
 		return
 	}
 
-	// Save to file
 	filePath := filepath.Join(storeDir, fileName)
 	err = os.WriteFile(filePath, encryptedData, 0644)
 	if err != nil {

@@ -4,18 +4,17 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="cb7e26ad-0d59-4341-b60c-3c5aa0678646" name="Changes" comment="" />
+    <list default="true" id="a3402c34-9399-4b38-81c4-be3cf46b1ec9" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/aws.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/passbook.iml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
-  </component>
-  <component name="FileTemplateManagerImpl">
-    <option name="RECENT_TEMPLATES">
-      <list>
-        <option value="Go File" />
-      </list>
-    </option>
   </component>
   <component name="GOROOT" url="file:///opt/homebrew/opt/go/libexec" />
   <component name="Git.Settings">
@@ -24,25 +23,24 @@
   <component name="ProjectCodeStyleSettingsMigration">
     <option name="version" value="2" />
   </component>
-  <component name="ProjectColorInfo">{
-  &quot;associatedIndex&quot;: 4
-}</component>
-  <component name="ProjectId" id="2vDxtAm3iKkXM6SDgN86F24Ye7H" />
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 6
+}]]></component>
+  <component name="ProjectId" id="2vG2Enydqjzo3DNXLI7XaVBOImt" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
-    "DefaultGoTemplateProperty": "Go File",
     "Go Build.go build passbook.executor": "Run",
-    "Node.js.main.ts.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.go.formatter.settings.were.checked": "true",
     "RunOnceActivity.go.migrated.go.modules.settings": "true",
     "git-widget-placeholder": "main",
     "go.import.settings.migrated": "true",
+    "go.sdk.automatically.set": "true",
     "kotlin-language-version-configured": "true",
     "last_opened_file_path": "/Users/mahfuz/personal/projects/passbook",
     "node.js.detected.package.eslint": "true",
@@ -50,21 +48,10 @@
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
-    "npm.start.executor": "Debug",
-    "prettierjs.PrettierConfiguration.Package": "/Users/mahfuz/personal/projects/passbook/node_modules/prettier",
-    "ts.external.directory.path": "/Users/mahfuz/personal/projects/passbook/node_modules/typescript/lib",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
   <component name="RunManager">
-    <configuration default="true" type="GoApplicationRunConfiguration" factoryName="Go Application">
-      <module name="passbook" />
-      <working_directory value="$PROJECT_DIR$" />
-      <kind value="FILE" />
-      <directory value="$PROJECT_DIR$" />
-      <filePath value="$PROJECT_DIR$" />
-      <method v="2" />
-    </configuration>
     <configuration name="go build passbook" type="GoApplicationRunConfiguration" factoryName="Go Application" temporary="true" nameIsGenerated="true">
       <module name="passbook" />
       <working_directory value="$PROJECT_DIR$" />
@@ -72,15 +59,6 @@
       <package value="passbook" />
       <directory value="$PROJECT_DIR$" />
       <filePath value="$PROJECT_DIR$/main.go" />
-      <method v="2" />
-    </configuration>
-    <configuration default="true" type="GoTestRunConfiguration" factoryName="Go Test">
-      <module name="passbook" />
-      <working_directory value="$PROJECT_DIR$" />
-      <kind value="DIRECTORY" />
-      <directory value="$PROJECT_DIR$" />
-      <filePath value="$PROJECT_DIR$" />
-      <framework value="gotest" />
       <method v="2" />
     </configuration>
     <recent_temporary>
@@ -100,13 +78,12 @@
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
-      <changelist id="cb7e26ad-0d59-4341-b60c-3c5aa0678646" name="Changes" comment="" />
-      <created>1743693658246</created>
+      <changelist id="a3402c34-9399-4b38-81c4-be3cf46b1ec9" name="Changes" comment="" />
+      <created>1743756980307</created>
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
-      <updated>1743693658246</updated>
-      <workItem from="1743693659363" duration="12582000" />
-      <workItem from="1743756705640" duration="46000" />
+      <updated>1743756980307</updated>
+      <workItem from="1743756981502" duration="381000" />
     </task>
     <servers />
   </component>
