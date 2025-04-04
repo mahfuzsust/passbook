@@ -90,6 +90,10 @@ func showMainWindow(a fyne.App) {
 		loadFile(listItems[id], w)
 	}
 
+	searchEntry.OnChanged = func(s string) {
+		searchList(s, list)
+	}
+
 	addButton := widget.NewButton("Add", func() {
 		clearFields()
 	})
@@ -128,6 +132,22 @@ func showMainWindow(a fyne.App) {
 
 	w.SetContent(split)
 	w.Show()
+	list.Refresh()
+}
+
+func searchList(s string, list *widget.List) {
+	if len(s) > 2 {
+		var filtered []string
+		for _, item := range listItems {
+			if strings.Contains(strings.ToLower(item), s) {
+				filtered = append(filtered, item)
+			}
+		}
+		listItems = filtered
+	}
+	if len(s) == 0 {
+		updateList() // Reset list when query length is ≤ 3
+	}
 	list.Refresh()
 }
 
