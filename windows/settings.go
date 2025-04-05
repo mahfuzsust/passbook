@@ -20,7 +20,7 @@ func ShowSettingsWindow(app fyne.App, showLogin bool) {
 
 	directoryEntry := widget.NewEntry()
 	directoryEntry.SetPlaceHolder("Enter Directory")
-	directoryEntry.SetText(".passbook")
+	directoryEntry.SetText(utils.GetDefaultDirectory())
 
 	saveButton := widget.NewButton("Save", func() {
 		passwordHash, err := crypto.HashPassword(passwordEntry.Text)

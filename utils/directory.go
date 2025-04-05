@@ -126,3 +126,8 @@ func LoadSettings() (models.Settings, error) {
 	}
 	return settings, nil
 }
+
+func GetDefaultDirectory() string {
+	passBookDir := filepath.Join(os.Getenv("HOME"), ".passbook")
+	return passBookDir
+}

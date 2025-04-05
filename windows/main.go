@@ -2,7 +2,7 @@ package windows
 
 import (
 	"fmt"
-	"os"
+	"passbook/lib"
 	"passbook/models"
 	"passbook/utils"
 	"path/filepath"
@@ -11,23 +11,24 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
 var nameEntry, urlEntry, passwordEntry, notesEntry, usernameEntry, totpEntry *widget.Entry
 var totpLabel *widget.Label
-var progressBar *widget.ProgressBar
+var totpRow *fyne.Container
 var editMode bool = false
 var stopTOTP chan struct{}
 var runningTOTPUpdater bool
 var listItems []string
-var storeDir = filepath.Join(os.Getenv("HOME"), ".my_store")
+var progress *lib.CircularProgressBar
 
 func ShowMainWindow(app fyne.App) {
-	w := app.NewWindow("Main App")
+	w := app.NewWindow("Passbook")
 	w.Resize(fyne.NewSize(800, 600))
 
-	listItems = utils.UpdateList(storeDir)
+	listItems = utils.UpdateList(settings.StorageDirectory)
 
 	list := widget.NewList(
 		func() int { return len(listItems) },
@@ -50,6 +51,11 @@ func ShowMainWindow(app fyne.App) {
 	addButton := widget.NewButton("Add", func() {
 		clearFields()
 		editMode = false
+		totpRow.Hide()
+		if runningTOTPUpdater {
+			close(stopTOTP)
+			runningTOTPUpdater = false
+		}
 	})
 
 	leftContent := container.NewBorder(searchEntry, addButton, nil, nil, list)
@@ -60,12 +66,17 @@ func ShowMainWindow(app fyne.App) {
 	notesEntry = widget.NewMultiLineEntry()
 	usernameEntry = widget.NewEntry()
 
-	copyUsernameBtn := widget.NewButton("Copy", func() {
-		fyne.CurrentApp().Driver().AllWindows()[0].Clipboard().SetContent(usernameEntry.Text)
-	})
-	copyPasswordBtn := widget.NewButton("Copy", func() {
-		fyne.CurrentApp().Driver().AllWindows()[0].Clipboard().SetContent(passwordEntry.Text)
-	})
+	copyUsernameBtn := newDynamicCopyButton(usernameEntry)
+	copyPasswordBtn := newDynamicCopyButton(passwordEntry)
+
+	userNameRow := container.NewBorder(
+		nil, nil, nil, copyUsernameBtn,
+		container.NewStack(usernameEntry),
+	)
+	passwordRow := container.NewBorder(
+		nil, nil, nil, copyPasswordBtn,
+		container.NewStack(passwordEntry),
+	)
 
 	saveButton := widget.NewButton("Save", func() {
 		fileName := nameEntry.Text
@@ -76,24 +87,21 @@ func ShowMainWindow(app fyne.App) {
 	totpEntry.SetPlaceHolder("Enter TOTP Secret Key")
 
 	totpLabel = widget.NewLabel("")
-	progressBar = widget.NewProgressBar()
-	copyTOTPButton := widget.NewButton("Copy", func() {
-		fyne.CurrentApp().Driver().AllWindows()[0].Clipboard().SetContent(totpLabel.Text)
-	})
+	copyTOTPButton := newLabelCopyButton(totpLabel)
+	progress = lib.NewCircularProgressBar()
 
-	totpLabel.Show()
-	progressBar.Show()
-	copyTOTPButton.Show()
+	totpRow = container.NewBorder(
+		nil, nil, nil, copyTOTPButton, progress,
+		container.NewStack(totpLabel),
+	)
+	totpRow.Hide()
 
 	rightContent := container.NewVBox(
 		widget.NewLabel("Name"), nameEntry,
-		widget.NewLabel("Username"), usernameEntry, copyUsernameBtn,
-		widget.NewLabel("Password"), passwordEntry, copyPasswordBtn,
-		widget.NewLabel("TOTP Secret"), totpEntry,
+		widget.NewLabel("Username"), userNameRow,
+		widget.NewLabel("Password"), passwordRow,
 		widget.NewLabel("TOTP Secret Key"), totpEntry,
-		widget.NewLabel("Generated TOTP"), container.NewHBox(totpLabel, copyTOTPButton),
-		progressBar,
-		copyTOTPButton,
+		widget.NewLabel("Generated TOTP"), totpRow,
 		widget.NewLabel("URL"), urlEntry,
 		widget.NewLabel("Notes"), notesEntry,
 		saveButton,
@@ -116,9 +124,22 @@ func ShowMainWindow(app fyne.App) {
 
 }
 
+func newDynamicCopyButton(entry *widget.Entry) *widget.Button {
+	return widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
+		text := entry.Text
+		fyne.CurrentApp().Driver().AllWindows()[0].Clipboard().SetContent(text)
+	})
+}
+func newLabelCopyButton(entry *widget.Label) *widget.Button {
+	return widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
+		text := entry.Text
+		fyne.CurrentApp().Driver().AllWindows()[0].Clipboard().SetContent(text)
+	})
+}
+
 func searchList(s string, list *widget.List) {
 	if len(s) == 0 {
-		listItems = utils.UpdateList(storeDir)
+		listItems = utils.UpdateList(settings.StorageDirectory)
 	} else {
 		listItems = utils.GetFilteredList(s, listItems)
 	}
@@ -131,11 +152,12 @@ func clearFields() {
 	passwordEntry.SetText("")
 	notesEntry.SetText("")
 	usernameEntry.SetText("")
+	totpEntry.SetText("")
 }
 
 func loadFile(fileName string, w fyne.Window) {
 	editMode = true
-	filePath := filepath.Join(storeDir, fileName)
+	filePath := filepath.Join(settings.StorageDirectory, fileName)
 
 	details, err := utils.LoadFileContent(filePath, settings.PasswordHash)
 	if err != nil {
@@ -151,18 +173,14 @@ func loadFile(fileName string, w fyne.Window) {
 	totpEntry.SetText(details.TotpSecret)
 
 	if len(details.TotpSecret) > 0 {
-		progressBar.Show()
-		totpLabel.Show()
-		startTOTPUpdater(totpEntry, totpLabel, progressBar)
+		totpRow.Show()
+		startTOTPUpdater(totpEntry, totpLabel)
 	} else {
 		if runningTOTPUpdater {
 			close(stopTOTP) // Stop only if running
 			runningTOTPUpdater = false
 		}
-		totpLabel.SetText("")
-		progressBar.SetValue(0)
-		progressBar.Hide()
-		totpLabel.Hide()
+		totpRow.Hide()
 	}
 }
 
@@ -176,7 +194,7 @@ func saveFile(fileName string, w fyne.Window, list *widget.List) {
 		TotpSecret: totpEntry.Text,
 	}
 
-	filePath := filepath.Join(storeDir, fileName)
+	filePath := filepath.Join(settings.StorageDirectory, fileName)
 	_, err := utils.SaveFileContent(filePath, settings.PasswordHash, fileDetails)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("failed to save file: %v", err), w)
@@ -189,7 +207,7 @@ func saveFile(fileName string, w fyne.Window, list *widget.List) {
 	}
 }
 
-func startTOTPUpdater(totpEntry *widget.Entry, totpLabel *widget.Label, progressBar *widget.ProgressBar) {
+func startTOTPUpdater(totpEntry *widget.Entry, totpLabel *widget.Label) {
 	if runningTOTPUpdater {
 		close(stopTOTP)
 		runningTOTPUpdater = false
@@ -207,13 +225,12 @@ func startTOTPUpdater(totpEntry *widget.Entry, totpLabel *widget.Label, progress
 				secret := totpEntry.Text
 				if secret == "" {
 					totpLabel.SetText("No TOTP Secret")
-					progressBar.SetValue(0)
 					return
 				}
 
 				timeLeft := 30 - (time.Now().Unix() % 30)
-				progressBar.SetValue(float64(timeLeft) / 30.0)
 				totpLabel.SetText(utils.GenerateTOTP(secret))
+				progress.SetProgress(float64(timeLeft) / 30.0)
 
 				time.Sleep(1 * time.Second)
 			}

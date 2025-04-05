@@ -1,6 +1,7 @@
 package windows
 
 import (
+	"fmt"
 	"passbook/crypto"
 	"passbook/models"
 
@@ -44,6 +45,6 @@ func handleLogin(passwordInput string, w fyne.Window, app fyne.App) {
 		w.Close()
 		ShowMainWindow(app)
 	} else {
-		dialog.ShowError(nil, w)
+		dialog.ShowError(fmt.Errorf("password is not correct"), w)
 	}
 }
