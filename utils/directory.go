@@ -6,6 +6,7 @@ import (
 	"os"
 	"passbook/crypto"
 	"passbook/models"
+	"path/filepath"
 	"strings"
 )
 
@@ -89,4 +90,39 @@ func SaveFileContent(filePath string, passwordHash string, detail models.FileDet
 		return false, err
 	}
 	return true, nil
+}
+
+func SaveSettings(detail models.Settings) (bool, error) {
+	configFilePath := filepath.Join(os.Getenv("HOME"), ".passbook", ".settings.json")
+	MissingDirectory(filepath.Join(os.Getenv("HOME"), ".passbook"))
+
+	data, err := json.MarshalIndent(detail, "", "  ")
+	if err != nil {
+		return false, err
+	}
+
+	err = os.WriteFile(configFilePath, data, 0644)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func LoadSettings() (models.Settings, error) {
+	passBookDir := filepath.Join(os.Getenv("HOME"), ".passbook")
+	MissingDirectory(passBookDir)
+
+	configFilePath := filepath.Join(passBookDir, ".settings.json")
+
+	data, err := os.ReadFile(configFilePath)
+	if err != nil {
+		return models.Settings{}, err
+	}
+
+	var settings models.Settings
+	err = json.Unmarshal(data, &settings)
+	if err != nil {
+		return models.Settings{}, err
+	}
+	return settings, nil
 }

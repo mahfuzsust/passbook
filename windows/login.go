@@ -2,6 +2,7 @@ package windows
 
 import (
 	"passbook/crypto"
+	"passbook/models"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -9,9 +10,10 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-var passwordHash = "$2a$14$zWwEnTtOPXXo4/3KryB.s.2ggEJeeulAm5hVXMq3kZKD7p6RieBfW"
+var settings models.Settings
 
-func CrateLoginWindow(app fyne.App) {
+func CrateLoginWindow(app fyne.App, s models.Settings, showRun bool) {
+	settings = s
 	w := app.NewWindow("Login")
 	w.Resize(fyne.NewSize(400, 300))
 
@@ -30,13 +32,17 @@ func CrateLoginWindow(app fyne.App) {
 		passwordEntry,
 		loginButton,
 	))
-	w.ShowAndRun()
+	if showRun {
+		w.ShowAndRun()
+	} else {
+		w.Show()
+	}
 }
 
 func handleLogin(passwordInput string, w fyne.Window, app fyne.App) {
-	if crypto.VerifyPassword(passwordInput, passwordHash) {
+	if crypto.VerifyPassword(passwordInput, settings.PasswordHash) {
 		w.Close()
-		showMainWindow(app)
+		ShowMainWindow(app)
 	} else {
 		dialog.ShowError(nil, w)
 	}

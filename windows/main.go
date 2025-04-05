@@ -23,7 +23,7 @@ var runningTOTPUpdater bool
 var listItems []string
 var storeDir = filepath.Join(os.Getenv("HOME"), ".my_store")
 
-func showMainWindow(app fyne.App) {
+func ShowMainWindow(app fyne.App) {
 	w := app.NewWindow("Main App")
 	w.Resize(fyne.NewSize(800, 600))
 
@@ -106,7 +106,7 @@ func showMainWindow(app fyne.App) {
 	w.Show()
 
 	settingsMenuItem := fyne.NewMenuItem("Settings", func() {
-		showSettingsWindow(app)
+		ShowSettingsWindow(app, false)
 	})
 
 	menu := fyne.NewMainMenu(fyne.NewMenu("Options", settingsMenuItem))
@@ -137,7 +137,7 @@ func loadFile(fileName string, w fyne.Window) {
 	editMode = true
 	filePath := filepath.Join(storeDir, fileName)
 
-	details, err := utils.LoadFileContent(filePath, passwordHash)
+	details, err := utils.LoadFileContent(filePath, settings.PasswordHash)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("failed to load file: %v", err), w)
 		return
@@ -177,7 +177,7 @@ func saveFile(fileName string, w fyne.Window, list *widget.List) {
 	}
 
 	filePath := filepath.Join(storeDir, fileName)
-	_, err := utils.SaveFileContent(filePath, passwordHash, fileDetails)
+	_, err := utils.SaveFileContent(filePath, settings.PasswordHash, fileDetails)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("failed to save file: %v", err), w)
 		return

@@ -1,39 +1,58 @@
 package windows
 
 import (
+	"passbook/crypto"
+	"passbook/models"
+	"passbook/utils"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
-func showSettingsWindow(app fyne.App) {
-	settingsWindow := app.NewWindow("Settings")
-	settingsWindow.Resize(fyne.NewSize(400, 300))
+func ShowSettingsWindow(app fyne.App, showLogin bool) {
+	w := app.NewWindow("Settings")
+	w.Resize(fyne.NewSize(400, 300))
 
 	passwordEntry := widget.NewPasswordEntry()
-	passwordEntry.SetPlaceHolder("Enter new password")
+	passwordEntry.SetPlaceHolder("Enter Password")
 
-	dirEntry := widget.NewEntry()
-	dirEntry.SetPlaceHolder("Set storage directory")
+	directoryEntry := widget.NewEntry()
+	directoryEntry.SetPlaceHolder("Enter Directory")
+	directoryEntry.SetText(".passbook")
 
 	saveButton := widget.NewButton("Save", func() {
-		// Save settings logic (write to config file)
-		saveSettings(passwordEntry.Text, dirEntry.Text)
-		settingsWindow.Close()
+		passwordHash, err := crypto.HashPassword(passwordEntry.Text)
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+
+		settings := models.Settings{
+			PasswordHash:     passwordHash,
+			StorageDirectory: directoryEntry.Text,
+			BackupEnabled:    false,
+			BackupInterval:   0,
+		}
+		_, err = utils.SaveSettings(settings)
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		dialog.ShowInformation("Settings Saved", "Settings have been saved successfully.", w)
+		if showLogin {
+			w.Close()
+			CrateLoginWindow(app, settings, false)
+		}
 	})
 
-	settingsContent := container.NewVBox(
-		widget.NewLabel("Create Password"),
+	w.SetContent(container.NewVBox(
+		widget.NewLabel("Password"),
 		passwordEntry,
-		widget.NewLabel("Set Directory"),
-		dirEntry,
+		widget.NewLabel("Storage Directory"),
+		directoryEntry,
 		saveButton,
-	)
-
-	settingsWindow.SetContent(settingsContent)
-	settingsWindow.Show()
-}
-
-func saveSettings(s1, s2 string) {
-	panic("unimplemented")
+	))
+	w.ShowAndRun()
 }
