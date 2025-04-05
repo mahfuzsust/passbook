@@ -31,7 +31,7 @@ func ShowMainWindow(app fyne.App) {
 
 	listItems = utils.UpdateList(settings.StorageDirectory)
 
-	leftContent := getLeftContainer(w, listItems)
+	leftContent := getLeftContainer(w)
 	rightContent := getRightContainer(w)
 
 	split := container.NewHSplit(leftContent, rightContent)
@@ -57,7 +57,7 @@ func getRightContainer(w fyne.Window) *fyne.Container {
 
 	copyUsernameBtn := newDynamicCopyButton(usernameEntry)
 	copyPasswordBtn := newDynamicCopyButton(passwordEntry)
-	generatePasswordBtn := widget.NewButtonWithIcon("", theme.ContentUndoIcon(), func() {
+	generatePasswordBtn := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
 		password := utils.GeneratePassword(settings.PasswordLength, settings.UseUpper, settings.UseNumbers, settings.UseSpecial)
 		passwordEntry.SetText(password)
 	})
@@ -102,17 +102,17 @@ func getRightContainer(w fyne.Window) *fyne.Container {
 	return rightContent
 }
 
-func getLeftContainer(w fyne.Window, lists []string) *fyne.Container {
+func getLeftContainer(w fyne.Window) *fyne.Container {
 	list = widget.NewList(
-		func() int { return len(lists) },
+		func() int { return len(listItems) },
 		func() fyne.CanvasObject { return widget.NewLabel("Item") },
 		func(i widget.ListItemID, obj fyne.CanvasObject) {
-			obj.(*widget.Label).SetText(lists[i])
+			obj.(*widget.Label).SetText(listItems[i])
 		},
 	)
 
 	list.OnSelected = func(id widget.ListItemID) {
-		loadFile(lists[id], w)
+		loadFile(listItems[id], w)
 	}
 
 	searchEntry := widget.NewEntry()
@@ -120,6 +120,17 @@ func getLeftContainer(w fyne.Window, lists []string) *fyne.Container {
 	searchEntry.OnChanged = func(s string) {
 		searchList(s, list)
 	}
+
+	refreshBtn := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
+		searchEntry.SetText("")
+		listItems = utils.UpdateList(settings.StorageDirectory)
+		list.Refresh()
+	})
+
+	searchRow := container.NewBorder(
+		nil, nil, nil, refreshBtn,
+		container.NewStack(searchEntry),
+	)
 
 	addButton := widget.NewButton("Add", func() {
 		clearFields()
@@ -129,10 +140,11 @@ func getLeftContainer(w fyne.Window, lists []string) *fyne.Container {
 			close(stopTOTP)
 			runningTOTPUpdater = false
 		}
+		list.UnselectAll()
 	})
 	list.Refresh()
 
-	leftContent := container.NewBorder(searchEntry, addButton, nil, nil, list)
+	leftContent := container.NewBorder(searchRow, addButton, nil, nil, list)
 	return leftContent
 }
 
@@ -216,6 +228,7 @@ func saveFile(fileName string, w fyne.Window, list *widget.List) {
 	if !editMode {
 		listItems = append(listItems, fileName)
 		list.Refresh()
+		list.Select(len(listItems) - 1)
 	}
 }
 

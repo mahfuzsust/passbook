@@ -10,9 +10,6 @@ import (
 	"strings"
 )
 
-var listItems []string
-var listItemsPulled bool
-
 func MissingDirectory(dir string) bool {
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		err := os.MkdirAll(dir, os.ModePerm)
@@ -25,10 +22,6 @@ func MissingDirectory(dir string) bool {
 }
 
 func UpdateList(dir string) []string {
-	if listItemsPulled {
-		return listItems
-	}
-	listItemsPulled = true
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		fmt.Println("Error reading directory:", err)
@@ -47,13 +40,15 @@ func UpdateList(dir string) []string {
 }
 
 func GetFilteredList(s string, listItems []string) []string {
-	var filtered []string = listItems
+	var filtered []string = []string{}
 	if len(s) > 2 {
 		for _, item := range listItems {
 			if strings.Contains(strings.ToLower(item), s) {
 				filtered = append(filtered, item)
 			}
 		}
+	} else {
+		filtered = listItems
 	}
 	return filtered
 }
