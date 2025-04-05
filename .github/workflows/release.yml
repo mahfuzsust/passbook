@@ -28,7 +28,8 @@ jobs:
             libxcursor-dev \
             libxinerama-dev \
             libxi-dev \
-            libgl1-mesa-dev
+            libgl1-mesa-dev \
+            libxxf86vm-dev
 
       - name: Build binaries
         run: |
