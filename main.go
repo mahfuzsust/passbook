@@ -12,7 +12,7 @@ func main() {
 	settings, err := utils.LoadSettings()
 
 	if err != nil {
-		windows.ShowSettingsWindow(app, true)
+		windows.ShowSettingsWindow(app, true, true)
 	} else {
 		windows.CrateLoginWindow(app, settings, true)
 	}

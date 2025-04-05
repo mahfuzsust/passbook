@@ -23,6 +23,7 @@ var stopTOTP chan struct{}
 var runningTOTPUpdater bool
 var listItems []string
 var progress *lib.CircularProgressBar
+var list *widget.List
 
 func ShowMainWindow(app fyne.App) {
 	w := app.NewWindow("Passbook")
@@ -30,36 +31,24 @@ func ShowMainWindow(app fyne.App) {
 
 	listItems = utils.UpdateList(settings.StorageDirectory)
 
-	list := widget.NewList(
-		func() int { return len(listItems) },
-		func() fyne.CanvasObject { return widget.NewLabel("Item") },
-		func(i widget.ListItemID, obj fyne.CanvasObject) {
-			obj.(*widget.Label).SetText(listItems[i])
-		},
-	)
+	leftContent := getLeftContainer(w, listItems)
+	rightContent := getRightContainer(w)
 
-	list.OnSelected = func(id widget.ListItemID) {
-		loadFile(listItems[id], w)
-	}
+	split := container.NewHSplit(leftContent, rightContent)
+	split.SetOffset(0.3)
 
-	searchEntry := widget.NewEntry()
-	searchEntry.SetPlaceHolder("Search...")
-	searchEntry.OnChanged = func(s string) {
-		searchList(s, list)
-	}
+	w.SetContent(split)
+	w.Show()
 
-	addButton := widget.NewButton("Add", func() {
-		clearFields()
-		editMode = false
-		totpRow.Hide()
-		if runningTOTPUpdater {
-			close(stopTOTP)
-			runningTOTPUpdater = false
-		}
+	settingsMenuItem := fyne.NewMenuItem("Settings", func() {
+		ShowSettingsWindow(app, false, false)
 	})
 
-	leftContent := container.NewBorder(searchEntry, addButton, nil, nil, list)
+	menu := fyne.NewMainMenu(fyne.NewMenu("Options", settingsMenuItem))
+	w.SetMainMenu(menu)
+}
 
+func getRightContainer(w fyne.Window) *fyne.Container {
 	nameEntry = widget.NewEntry()
 	urlEntry = widget.NewEntry()
 	passwordEntry = widget.NewPasswordEntry()
@@ -68,13 +57,17 @@ func ShowMainWindow(app fyne.App) {
 
 	copyUsernameBtn := newDynamicCopyButton(usernameEntry)
 	copyPasswordBtn := newDynamicCopyButton(passwordEntry)
+	generatePasswordBtn := widget.NewButtonWithIcon("", theme.ContentUndoIcon(), func() {
+		password := utils.GeneratePassword(settings.PasswordLength, settings.UseUpper, settings.UseNumbers, settings.UseSpecial)
+		passwordEntry.SetText(password)
+	})
 
 	userNameRow := container.NewBorder(
 		nil, nil, nil, copyUsernameBtn,
 		container.NewStack(usernameEntry),
 	)
 	passwordRow := container.NewBorder(
-		nil, nil, nil, copyPasswordBtn,
+		nil, nil, generatePasswordBtn, copyPasswordBtn,
 		container.NewStack(passwordEntry),
 	)
 
@@ -106,22 +99,41 @@ func ShowMainWindow(app fyne.App) {
 		widget.NewLabel("Notes"), notesEntry,
 		saveButton,
 	)
+	return rightContent
+}
 
-	split := container.NewHSplit(leftContent, rightContent)
-	split.SetOffset(0.3)
+func getLeftContainer(w fyne.Window, lists []string) *fyne.Container {
+	list = widget.NewList(
+		func() int { return len(lists) },
+		func() fyne.CanvasObject { return widget.NewLabel("Item") },
+		func(i widget.ListItemID, obj fyne.CanvasObject) {
+			obj.(*widget.Label).SetText(lists[i])
+		},
+	)
 
-	w.SetContent(split)
-	w.Show()
+	list.OnSelected = func(id widget.ListItemID) {
+		loadFile(lists[id], w)
+	}
 
-	settingsMenuItem := fyne.NewMenuItem("Settings", func() {
-		ShowSettingsWindow(app, false)
+	searchEntry := widget.NewEntry()
+	searchEntry.SetPlaceHolder("Search...")
+	searchEntry.OnChanged = func(s string) {
+		searchList(s, list)
+	}
+
+	addButton := widget.NewButton("Add", func() {
+		clearFields()
+		editMode = false
+		totpRow.Hide()
+		if runningTOTPUpdater {
+			close(stopTOTP)
+			runningTOTPUpdater = false
+		}
 	})
-
-	menu := fyne.NewMainMenu(fyne.NewMenu("Options", settingsMenuItem))
-	w.SetMainMenu(menu)
-
 	list.Refresh()
 
+	leftContent := container.NewBorder(searchEntry, addButton, nil, nil, list)
+	return leftContent
 }
 
 func newDynamicCopyButton(entry *widget.Entry) *widget.Button {
