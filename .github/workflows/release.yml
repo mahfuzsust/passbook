@@ -19,8 +19,16 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Install X11 dependencies
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxcursor-dev libxinerama-dev libxi-dev
+      - name: Install GUI dependencies (X11 + OpenGL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev \
+            libxrandr-dev \
+            libxcursor-dev \
+            libxinerama-dev \
+            libxi-dev \
+            libgl1-mesa-dev
 
       - name: Build binaries
         run: |
