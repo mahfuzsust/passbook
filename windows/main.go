@@ -1,13 +1,11 @@
 package windows
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
-	"passbook/crypto"
+	"passbook/models"
 	"passbook/utils"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -25,23 +23,11 @@ var runningTOTPUpdater bool
 var listItems []string
 var storeDir = filepath.Join(os.Getenv("HOME"), ".my_store")
 
-type FileDetails struct {
-	Name       string `json:"name"`
-	URL        string `json:"url"`
-	Password   string `json:"password"`
-	Notes      string `json:"notes"`
-	Username   string `json:"username"`
-	TotpSecret string `json:"totp_secret"`
-}
-
 func showMainWindow(app fyne.App) {
 	w := app.NewWindow("Main App")
 	w.Resize(fyne.NewSize(800, 600))
 
-	searchEntry := widget.NewEntry()
-	searchEntry.SetPlaceHolder("Search...")
-
-	updateList()
+	listItems = utils.UpdateList(storeDir)
 
 	list := widget.NewList(
 		func() int { return len(listItems) },
@@ -55,6 +41,8 @@ func showMainWindow(app fyne.App) {
 		loadFile(listItems[id], w)
 	}
 
+	searchEntry := widget.NewEntry()
+	searchEntry.SetPlaceHolder("Search...")
 	searchEntry.OnChanged = func(s string) {
 		searchList(s, list)
 	}
@@ -129,36 +117,12 @@ func showMainWindow(app fyne.App) {
 }
 
 func searchList(s string, list *widget.List) {
-	if len(s) > 2 {
-		var filtered []string
-		for _, item := range listItems {
-			if strings.Contains(strings.ToLower(item), s) {
-				filtered = append(filtered, item)
-			}
-		}
-		listItems = filtered
-	}
 	if len(s) == 0 {
-		updateList()
+		listItems = utils.UpdateList(storeDir)
+	} else {
+		listItems = utils.GetFilteredList(s, listItems)
 	}
 	list.Refresh()
-}
-
-func updateList() {
-	files, err := os.ReadDir(storeDir)
-	if err != nil {
-		fmt.Println("Error reading directory:", err)
-		return
-	}
-
-	listItems = []string{}
-	for _, file := range files {
-		if strings.HasPrefix(file.Name(), ".") {
-			continue
-
-		}
-		listItems = append(listItems, file.Name())
-	}
 }
 
 func clearFields() {
@@ -173,19 +137,9 @@ func loadFile(fileName string, w fyne.Window) {
 	editMode = true
 	filePath := filepath.Join(storeDir, fileName)
 
-	data, err := os.ReadFile(filePath)
+	details, err := utils.LoadFileContent(filePath, passwordHash)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("failed to load file: %v", err), w)
-		return
-	}
-	decryptedData, err := crypto.Decrypt(data, passwordHash)
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("decryption failed: %v", err), w)
-		return
-	}
-	var details FileDetails
-	if err := json.Unmarshal(decryptedData, &details); err != nil {
-		dialog.ShowError(fmt.Errorf("failed to parse JSON: %v", err), w)
 		return
 	}
 
@@ -213,7 +167,7 @@ func loadFile(fileName string, w fyne.Window) {
 }
 
 func saveFile(fileName string, w fyne.Window, list *widget.List) {
-	fileDetails := FileDetails{
+	fileDetails := models.FileDetails{
 		Name:       nameEntry.Text,
 		URL:        urlEntry.Text,
 		Password:   passwordEntry.Text,
@@ -222,24 +176,13 @@ func saveFile(fileName string, w fyne.Window, list *widget.List) {
 		TotpSecret: totpEntry.Text,
 	}
 
-	data, err := json.MarshalIndent(fileDetails, "", "  ")
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("failed to create JSON: %v", err), w)
-		return
-	}
-
-	encryptedData, err := crypto.Encrypt(data, passwordHash)
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("encryption failed: %v", err), w)
-		return
-	}
-
 	filePath := filepath.Join(storeDir, fileName)
-	err = os.WriteFile(filePath, encryptedData, 0644)
+	_, err := utils.SaveFileContent(filePath, passwordHash, fileDetails)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("failed to save file: %v", err), w)
 		return
 	}
+
 	if !editMode {
 		listItems = append(listItems, fileName)
 		list.Refresh()
