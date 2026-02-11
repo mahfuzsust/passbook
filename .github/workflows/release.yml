@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'  # e.g. v1.0.0
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build and Release
@@ -12,44 +15,57 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: true
 
-      - name: Install GUI dependencies (X11 + OpenGL)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libx11-dev \
-            libxrandr-dev \
-            libxcursor-dev \
-            libxinerama-dev \
-            libxi-dev \
-            libgl1-mesa-dev \
-            libxxf86vm-dev
+      - name: Download dependencies
+        run: go mod download
 
       - name: Build binaries
         run: |
           mkdir -p dist
+          VERSION=${GITHUB_REF_NAME}
+
+          # Disable CGO for portable static binaries
+          export CGO_ENABLED=0
 
           # Linux
-          GOOS=linux GOARCH=amd64 go build -o dist/passbook-linux
+          GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-s -w -X main.version=${VERSION}" \
+            -o dist/passbook-linux
 
           # macOS
-          GOOS=darwin GOARCH=amd64 go build -o dist/passbook-macos
+          GOOS=darwin GOARCH=amd64 go build \
+            -ldflags="-s -w -X main.version=${VERSION}" \
+            -o dist/passbook-macos
 
           # Windows
-          GOOS=windows GOARCH=amd64 go build -o dist/passbook-windows.exe
+          GOOS=windows GOARCH=amd64 go build \
+            -ldflags="-s -w -X main.version=${VERSION}" \
+            -o dist/passbook-windows.exe
+
+      - name: Compress binaries
+        run: |
+          cd dist
+          tar -czf passbook-linux.tar.gz passbook-linux
+          tar -czf passbook-macos.tar.gz passbook-macos
+          zip passbook-windows.zip passbook-windows.exe
+          cd ..
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
           files: |
-            dist/passbook-linux
-            dist/passbook-macos
-            dist/passbook-windows.exe
+            dist/passbook-linux.tar.gz
+            dist/passbook-macos.tar.gz
+            dist/passbook-windows.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
