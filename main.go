@@ -23,41 +23,59 @@ import (
 
 // --- Data Models ---
 
+type PasswordHistory struct {
+	Password string `json:"password"`
+	Date     string `json:"date"`
+}
+
 type Entry struct {
-	Title      string `json:"title"`
-	Username   string `json:"username"`
-	Password   string `json:"password"`
-	Link       string `json:"link"`
-	TOTPSecret string `json:"totp_secret"`
-	CustomText string `json:"custom_text"`
+	Title      string            `json:"title"`
+	Username   string            `json:"username"`
+	Password   string            `json:"password"`
+	Link       string            `json:"link"`
+	TOTPSecret string            `json:"totp_secret"`
+	CustomText string            `json:"custom_text"`
+	History    []PasswordHistory `json:"history,omitempty"`
 }
 
 type AppConfig struct {
 	DataDir string `json:"data_dir"`
 }
 
-// --- Globals ---
+// --- Globals & Palette ---
 
-const configFile = "config.json"
+const (
+	colorUnfocusedBg = tcell.Color236
+	colorFocusedBg   = tcell.Color24
+)
 
 var (
 	app               = tview.NewApplication()
 	pages             = tview.NewPages()
 	masterKey         []byte
-	dataDir           = "./data"
+	dataDir           = "~/.passbook/data" // New default path
 	currentFile       string
+	editingFilename   string
 	currentEnt        Entry
+	editingEnt        Entry
 	lastActivity      time.Time
 	lastGeneratedPass string
 
+	// State for the collision modal
+	pendingSaveData []byte
+	pendingFilename string
+
 	// UI Components
-	loginForm    *tview.Form
-	searchField  *tview.InputField
-	fileList     *tview.List
-	rightPages   *tview.Pages
-	viewFlex     *tview.Flex
-	settingsForm *tview.Form
-	deleteModal  *tview.Modal
+	loginForm      *tview.Form
+	searchField    *tview.InputField
+	fileList       *tview.List
+	rightPages     *tview.Pages
+	viewFlex       *tview.Flex
+	settingsForm   *tview.Form
+	deleteModal    *tview.Modal
+	collisionModal *tview.Modal
+	errorModal     *tview.Modal
+	historyList    *tview.List
 
 	// View Mode Components
 	viewTitle    *tview.TextView
@@ -89,10 +107,68 @@ var (
 	passGenForm    *tview.Form
 )
 
+// --- Styling Helpers ---
+
+func styleInput(field *tview.InputField) *tview.InputField {
+	field.SetFieldBackgroundColor(colorUnfocusedBg)
+	field.SetFocusFunc(func() { field.SetFieldBackgroundColor(colorFocusedBg) })
+	field.SetBlurFunc(func() { field.SetFieldBackgroundColor(colorUnfocusedBg) })
+	return field
+}
+
+func styleButton(b *tview.Button) *tview.Button {
+	b.SetBackgroundColor(colorUnfocusedBg)
+	b.SetLabelColor(tcell.ColorWhite)
+	b.SetFocusFunc(func() {
+		b.SetLabelColor(colorFocusedBg)
+		b.SetBackgroundColor(tcell.ColorWhite)
+	})
+	b.SetBlurFunc(func() {
+		b.SetBackgroundColor(colorUnfocusedBg)
+		b.SetLabelColor(tcell.ColorWhite)
+	})
+	return b
+}
+
+func styleFormInputs(f *tview.Form) {
+	for i := 0; i < f.GetFormItemCount(); i++ {
+		if input, ok := f.GetFormItem(i).(*tview.InputField); ok {
+			styleInput(input)
+		}
+	}
+}
+
+func styleFormButtons(f *tview.Form) {
+	for i := 0; i < f.GetButtonCount(); i++ {
+		styleButton(f.GetButton(i))
+	}
+}
+
+// --- Path Expansion Helper ---
+
+func expandPath(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	}
+	return path
+}
+
 // --- Config Management ---
 
+func getConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "config.json" // Fallback if home directory cannot be determined
+	}
+	return filepath.Join(home, ".passbook", "config.json")
+}
+
 func loadConfig() {
-	data, err := os.ReadFile(configFile)
+	configPath := getConfigPath()
+	data, err := os.ReadFile(configPath)
 	if err == nil {
 		var cfg AppConfig
 		if err := json.Unmarshal(data, &cfg); err == nil && cfg.DataDir != "" {
@@ -100,13 +176,19 @@ func loadConfig() {
 			return
 		}
 	}
+	// If it doesn't exist or is corrupted, create the default setup
 	saveConfig()
 }
 
 func saveConfig() {
+	configPath := getConfigPath()
+	// Ensure the ~/.passbook directory exists
+	os.MkdirAll(filepath.Dir(configPath), 0700)
+
 	cfg := AppConfig{DataDir: dataDir}
 	data, _ := json.MarshalIndent(cfg, "", "  ")
-	os.WriteFile(configFile, data, 0644)
+	// Save the config file (0600 secures it to only your user account)
+	os.WriteFile(configPath, data, 0600)
 }
 
 // --- Crypto Functions ---
@@ -178,12 +260,11 @@ func generatePassword(length int, useUpper, useLower, useSpecial bool) string {
 
 func main() {
 	loadConfig()
-	os.MkdirAll(dataDir, 0700)
+	os.MkdirAll(expandPath(dataDir), 0700)
 	lastActivity = time.Now()
 
 	setupUI()
 
-	// Global Input Catchers for Auto-Lock Activity Tracking
 	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		lastActivity = time.Now()
 		return event
@@ -197,7 +278,6 @@ func main() {
 		ticker := time.NewTicker(1 * time.Second)
 		for range ticker.C {
 			app.QueueUpdateDraw(func() {
-				// 5-Minute Auto-Lock Check
 				if len(masterKey) > 0 && time.Since(lastActivity) > 5*time.Minute {
 					lockApp()
 				} else {
@@ -213,16 +293,16 @@ func main() {
 }
 
 func lockApp() {
-	// Wipe memory and return to login
 	masterKey = nil
 	currentFile = ""
+	editingFilename = ""
 	currentEnt = Entry{}
 	fileList.Clear()
 	clearViewPane()
 	loginForm.GetFormItemByLabel("Master Password").(*tview.InputField).SetText("")
 	pages.SwitchToPage("login")
 	app.SetFocus(loginForm)
-	lastActivity = time.Now() // Reset so it doesn't loop
+	lastActivity = time.Now()
 }
 
 func drawTOTP() {
@@ -295,7 +375,7 @@ func makeRow(label string, content *tview.TextView, buttons ...*tview.Button) *t
 	f.AddItem(content, 0, 1, false)
 	for _, b := range buttons {
 		f.AddItem(tview.NewTextView().SetText(" "), 1, 0, false)
-		f.AddItem(b, 8, 0, false)
+		f.AddItem(b, 9, 0, false)
 	}
 	return f
 }
@@ -308,6 +388,9 @@ func makeEditRow(label string, input tview.Primitive) *tview.Flex {
 }
 
 func setupUI() {
+	tview.Styles.ContrastBackgroundColor = colorUnfocusedBg
+	tview.Styles.TitleColor = tcell.ColorLightSkyBlue
+
 	// 1. Login Page
 	loginForm = tview.NewForm()
 	loginForm.AddPasswordField("Master Password", "", 0, '*', nil).
@@ -322,6 +405,8 @@ func setupUI() {
 		}).
 		AddButton("Quit", func() { app.Stop() })
 	loginForm.SetBorder(true).SetTitle(" Login ").SetTitleAlign(tview.AlignCenter)
+	styleFormInputs(loginForm)
+	styleFormButtons(loginForm)
 
 	loginFlex := tview.NewFlex().
 		AddItem(nil, 0, 1, false).
@@ -329,7 +414,7 @@ func setupUI() {
 		AddItem(nil, 0, 1, false)
 
 	// 2. Main Layout - Left Side
-	searchField = tview.NewInputField().SetLabel("Search: ")
+	searchField = styleInput(tview.NewInputField().SetLabel("Search: "))
 	searchField.SetChangedFunc(func(text string) { loadFiles(text) })
 
 	fileList = tview.NewList().ShowSecondaryText(false)
@@ -361,28 +446,31 @@ func setupUI() {
 	viewCustom = tview.NewTextView().SetDynamicColors(true)
 	viewStatus = tview.NewTextView().SetDynamicColors(true)
 
-	btnCopyUser := tview.NewButton("Copy").SetSelectedFunc(func() {
+	btnCopyUser := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() {
 		clipboard.WriteAll(currentEnt.Username)
 		notifyCopied("Username")
-	})
-	btnCopyPass := tview.NewButton("Copy").SetSelectedFunc(func() {
+	}))
+	btnCopyPass := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() {
 		copySensitive(currentEnt.Password, "Password")
-	})
-	btnViewPass := tview.NewButton("View").SetSelectedFunc(func() {
+	}))
+	btnViewPass := styleButton(tview.NewButton("View").SetSelectedFunc(func() {
 		showPassword = !showPassword
 		updateViewPane()
-	})
-	btnCopyTOTP := tview.NewButton("Copy").SetSelectedFunc(func() {
+	}))
+	btnHistory := styleButton(tview.NewButton("History").SetSelectedFunc(func() {
+		showHistory()
+	}))
+	btnCopyTOTP := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() {
 		if currentEnt.TOTPSecret != "" {
 			code, _ := totp.GenerateCode(strings.ReplaceAll(currentEnt.TOTPSecret, " ", ""), time.Now())
 			copySensitive(code, "TOTP")
 		}
-	})
+	}))
 
 	viewFlex.AddItem(makeRow("Title:", viewTitle), 1, 0, false)
 	viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
 	viewFlex.AddItem(makeRow("Username:", viewUsername, btnCopyUser), 1, 0, false)
-	viewFlex.AddItem(makeRow("Password:", viewPassword, btnViewPass, btnCopyPass), 1, 0, false)
+	viewFlex.AddItem(makeRow("Password:", viewPassword, btnViewPass, btnCopyPass, btnHistory), 1, 0, false)
 	viewFlex.AddItem(makeRow("Link:", viewLink), 1, 0, false)
 	viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
 	viewFlex.AddItem(makeRow("TOTP:", viewTOTP, btnCopyTOTP), 1, 0, false)
@@ -401,12 +489,12 @@ func setupUI() {
 
 	mainFlex.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyCtrlA {
-			openEditor(Entry{})
+			openEditor(Entry{}, "")
 			return nil
 		}
 		if event.Key() == tcell.KeyCtrlE {
 			if currentFile != "" {
-				openEditor(currentEnt)
+				openEditor(currentEnt, currentFile)
 			}
 			return nil
 		}
@@ -436,17 +524,23 @@ func setupUI() {
 	})
 
 	// 4. Custom Editor Layout
-	editTitle = tview.NewInputField()
-	editUser = tview.NewInputField()
-	editPass = tview.NewInputField()
-	editLink = tview.NewInputField()
-	editTOTP = tview.NewInputField()
-	editCustom = tview.NewTextArea()
+	editTitle = styleInput(tview.NewInputField())
+	editUser = styleInput(tview.NewInputField())
+	editPass = styleInput(tview.NewInputField())
+	editLink = styleInput(tview.NewInputField())
+	editTOTP = styleInput(tview.NewInputField())
 
-	btnGenPass = tview.NewButton("Gen Pass").SetSelectedFunc(func() { openPassGen() })
-	btnSave = tview.NewButton("Save").SetSelectedFunc(func() { saveEntry(); pages.SwitchToPage("main"); loadFiles(searchField.GetText()) })
-	btnDelete = tview.NewButton("Delete").SetSelectedFunc(func() { showDeleteModal() })
-	btnCancel = tview.NewButton("Cancel").SetSelectedFunc(func() { pages.SwitchToPage("main") })
+	editCustom = tview.NewTextArea()
+	unfocusedText := tcell.StyleDefault.Background(colorUnfocusedBg).Foreground(tview.Styles.PrimaryTextColor)
+	focusedText := tcell.StyleDefault.Background(colorFocusedBg).Foreground(tview.Styles.PrimaryTextColor)
+	editCustom.SetTextStyle(unfocusedText)
+	editCustom.SetFocusFunc(func() { editCustom.SetTextStyle(focusedText) })
+	editCustom.SetBlurFunc(func() { editCustom.SetTextStyle(unfocusedText) })
+
+	btnGenPass = styleButton(tview.NewButton("Gen Pass").SetSelectedFunc(func() { openPassGen() }))
+	btnSave = styleButton(tview.NewButton("Save").SetSelectedFunc(func() { saveEntry() }))
+	btnDelete = styleButton(tview.NewButton("Delete").SetSelectedFunc(func() { showDeleteModal() }))
+	btnCancel = styleButton(tview.NewButton("Cancel").SetSelectedFunc(func() { pages.SwitchToPage("main") }))
 
 	passEditRow := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(tview.NewTextView().SetText("Password:").SetTextColor(tcell.ColorYellow), 15, 0, false).
@@ -502,7 +596,7 @@ func setupUI() {
 		return event
 	})
 
-	// 5. Upgraded Password Generator
+	// 5. PassGen Modal
 	passGenPreview = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 
 	passGenForm = tview.NewForm().
@@ -510,35 +604,36 @@ func setupUI() {
 		AddCheckbox("A-Z", true, nil).
 		AddCheckbox("a-z", true, nil).
 		AddCheckbox("Special Chars", true, nil).
-		AddButton("Refresh", func() {
-			updatePassPreview()
-		}).
+		AddButton("Refresh", func() { updatePassPreview() }).
 		AddButton("Use", func() {
 			editPass.SetText(lastGeneratedPass)
 			pages.SwitchToPage("editor")
-			app.SetFocus(editLink) // Focus next editable field
+			app.SetFocus(editLink)
 		}).
 		AddButton("Cancel", func() {
 			pages.SwitchToPage("editor")
-			app.SetFocus(editLink) // Focus next editable field
+			app.SetFocus(editLink)
 		})
+	styleFormInputs(passGenForm)
+	styleFormButtons(passGenForm)
 
 	passGenLayout = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tview.NewTextView().SetText("Generated Password:").SetTextColor(tcell.ColorYellow), 1, 0, false).
 		AddItem(passGenPreview, 1, 0, false).
-		AddItem(tview.NewTextView().SetText(""), 1, 0, false). // spacer
+		AddItem(tview.NewTextView().SetText(""), 1, 0, false).
 		AddItem(passGenForm, 0, 1, true)
 	passGenLayout.SetBorder(true).SetTitle(" Generate Password ")
 
-	// 6. Settings & Delete Modals
+	// 6. Settings Modal
 	settingsForm = tview.NewForm()
 	settingsForm.SetBorder(true).SetTitle(" Settings ")
 
+	// 7. Modals
 	deleteModal = tview.NewModal().
 		AddButtons([]string{"Delete", "Cancel"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			if buttonLabel == "Delete" && currentFile != "" {
-				os.Remove(filepath.Join(dataDir, currentFile))
+				os.Remove(filepath.Join(expandPath(dataDir), currentFile))
 				currentFile = ""
 				loadFiles(searchField.GetText())
 			}
@@ -546,13 +641,58 @@ func setupUI() {
 			app.SetFocus(fileList)
 		})
 
+	collisionModal = tview.NewModal().
+		AddButtons([]string{"Replace", "Add Suffix", "Cancel"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			if buttonLabel == "Cancel" {
+				pages.SwitchToPage("editor")
+				app.SetFocus(editTitle)
+			} else if buttonLabel == "Replace" {
+				commitSave(pendingFilename, pendingSaveData)
+			} else if buttonLabel == "Add Suffix" {
+				base := strings.TrimSuffix(pendingFilename, ".md")
+				counter := 1
+				var newFilename string
+				for {
+					newFilename = fmt.Sprintf("%s_%d.md", base, counter)
+					if _, err := os.Stat(filepath.Join(expandPath(dataDir), newFilename)); os.IsNotExist(err) {
+						break
+					}
+					counter++
+				}
+				commitSave(newFilename, pendingSaveData)
+			}
+		})
+
+	errorModal = tview.NewModal().
+		AddButtons([]string{"OK"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			pages.SwitchToPage("editor")
+			app.SetFocus(editTitle)
+		})
+
+	// 8. History Modal
+	historyList = tview.NewList().ShowSecondaryText(true)
+	historyList.SetBorder(true).SetTitle(" Password History (Esc to Close) ")
+	historyList.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEsc || event.Key() == tcell.KeyEnter {
+			pages.SwitchToPage("main")
+			app.SetFocus(rightPages)
+			return nil
+		}
+		return event
+	})
+
 	// Assemble Pages
 	pages.AddPage("login", loginFlex, true, true)
 	pages.AddPage("main", mainFlex, true, false)
 	pages.AddPage("editor", centeredModal(editorLayout, 70, 24), true, false)
-	pages.AddPage("passgen", centeredModal(passGenLayout, 45, 17), true, false) // Using new Layout!
+	pages.AddPage("passgen", centeredModal(passGenLayout, 45, 17), true, false)
 	pages.AddPage("settings", centeredModal(settingsForm, 50, 11), true, false)
 	pages.AddPage("delete", deleteModal, true, false)
+	pages.AddPage("collision", collisionModal, true, false)
+	pages.AddPage("error", errorModal, true, false)
+	pages.AddPage("history", centeredModal(historyList, 50, 15), true, false)
 }
 
 func centeredModal(p tview.Primitive, width, height int) tview.Primitive {
@@ -569,7 +709,7 @@ func centeredModal(p tview.Primitive, width, height int) tview.Primitive {
 
 func loadFiles(filter string) {
 	fileList.Clear()
-	entries, _ := os.ReadDir(dataDir)
+	entries, _ := os.ReadDir(expandPath(dataDir))
 	for _, e := range entries {
 		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
 			if filter == "" || strings.Contains(strings.ToLower(e.Name()), strings.ToLower(filter)) {
@@ -589,7 +729,7 @@ func loadFiles(filter string) {
 }
 
 func showContent(filename string) {
-	path := filepath.Join(dataDir, filename)
+	path := filepath.Join(expandPath(dataDir), filename)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		clearViewPane()
@@ -649,7 +789,29 @@ func showDeleteModal() {
 	pages.SwitchToPage("delete")
 }
 
-func openEditor(entry Entry) {
+func showHistory() {
+	historyList.Clear()
+	if len(currentEnt.History) == 0 {
+		historyList.AddItem("No previous passwords found.", "", 0, nil)
+	} else {
+		for i := len(currentEnt.History) - 1; i >= 0; i-- {
+			h := currentEnt.History[i]
+			historyList.AddItem(h.Password, "Changed: "+h.Date, 0, nil)
+		}
+	}
+	historyList.AddItem("[ Close ]", "Return to vault", 'c', func() {
+		pages.SwitchToPage("main")
+		app.SetFocus(rightPages)
+	})
+
+	pages.SwitchToPage("history")
+	app.SetFocus(historyList)
+}
+
+func openEditor(entry Entry, filename string) {
+	editingFilename = filename
+	editingEnt = entry
+
 	editTitle.SetText(entry.Title)
 	editUser.SetText(entry.Username)
 	editPass.SetText(entry.Password)
@@ -676,7 +838,7 @@ func updatePassPreview() {
 }
 
 func openPassGen() {
-	updatePassPreview() // Seed the initial generation instantly
+	updatePassPreview()
 	pages.SwitchToPage("passgen")
 	app.SetFocus(passGenForm)
 }
@@ -684,12 +846,12 @@ func openPassGen() {
 func openSettings() {
 	settingsForm.Clear(true)
 	settingsForm.
-		AddInputField("Data Directory", dataDir, 40, nil, nil).
+		AddInputField("Data Directory", dataDir, 50, nil, nil).
 		AddButton("Save", func() {
 			newDir := settingsForm.GetFormItemByLabel("Data Directory").(*tview.InputField).GetText()
 			if newDir != "" {
 				dataDir = newDir
-				os.MkdirAll(dataDir, 0700)
+				os.MkdirAll(expandPath(dataDir), 0700)
 				saveConfig()
 				loadFiles(searchField.GetText())
 			}
@@ -700,6 +862,8 @@ func openSettings() {
 			pages.SwitchToPage("main")
 			app.SetFocus(fileList)
 		})
+	styleFormInputs(settingsForm)
+	styleFormButtons(settingsForm)
 	pages.SwitchToPage("settings")
 }
 
@@ -708,14 +872,24 @@ func saveEntry() {
 	if title == "" {
 		title = "Untitled"
 	}
+	newPass := editPass.GetText()
+
+	history := editingEnt.History
+	if editingEnt.Password != "" && editingEnt.Password != newPass {
+		history = append(history, PasswordHistory{
+			Password: editingEnt.Password,
+			Date:     time.Now().Format("2006-01-02 15:04:05"),
+		})
+	}
 
 	entry := Entry{
 		Title:      title,
 		Username:   editUser.GetText(),
-		Password:   editPass.GetText(),
+		Password:   newPass,
 		Link:       editLink.GetText(),
 		TOTPSecret: editTOTP.GetText(),
 		CustomText: editCustom.GetText(),
+		History:    history,
 	}
 
 	data, _ := json.Marshal(entry)
@@ -729,9 +903,35 @@ func saveEntry() {
 		filename += ".md"
 	}
 
-	if currentFile != "" && currentFile != filename {
-		os.Remove(filepath.Join(dataDir, currentFile))
+	targetPath := filepath.Join(expandPath(dataDir), filename)
+	_, err = os.Stat(targetPath)
+	fileExists := !os.IsNotExist(err)
+
+	if fileExists && editingFilename != filename {
+		if editingFilename == "" {
+			pendingSaveData = encrypted
+			pendingFilename = filename
+			collisionModal.SetText(fmt.Sprintf("A file named '%s' already exists.\nWhat would you like to do?", filename))
+			pages.SwitchToPage("collision")
+			app.SetFocus(collisionModal)
+		} else {
+			errorModal.SetText(fmt.Sprintf("Cannot rename to '%s': A file with this name already exists.\nPlease choose a different title.", title))
+			pages.SwitchToPage("error")
+			app.SetFocus(errorModal)
+		}
+		return
 	}
 
-	os.WriteFile(filepath.Join(dataDir, filename), encrypted, 0600)
+	commitSave(filename, encrypted)
+}
+
+func commitSave(filename string, encryptedData []byte) {
+	if editingFilename != "" && editingFilename != filename {
+		os.Remove(filepath.Join(expandPath(dataDir), editingFilename))
+	}
+
+	os.WriteFile(filepath.Join(expandPath(dataDir), filename), encryptedData, 0600)
+
+	pages.SwitchToPage("main")
+	loadFiles(searchField.GetText())
 }
