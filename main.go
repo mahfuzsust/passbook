@@ -183,12 +183,18 @@ func loadConfig() {
 func saveConfig() {
 	configPath := getConfigPath()
 	// Ensure the ~/.passbook directory exists
-	os.MkdirAll(filepath.Dir(configPath), 0700)
+	err := os.MkdirAll(filepath.Dir(configPath), 0700)
+	if err != nil {
+		return
+	}
 
 	cfg := AppConfig{DataDir: dataDir}
 	data, _ := json.MarshalIndent(cfg, "", "  ")
 	// Save the config file (0600 secures it to only your user account)
-	os.WriteFile(configPath, data, 0600)
+	err = os.WriteFile(configPath, data, 0600)
+	if err != nil {
+		return
+	}
 }
 
 // --- Crypto Functions ---
@@ -260,7 +266,10 @@ func generatePassword(length int, useUpper, useLower, useSpecial bool) string {
 
 func main() {
 	loadConfig()
-	os.MkdirAll(expandPath(dataDir), 0700)
+	err := os.MkdirAll(expandPath(dataDir), 0700)
+	if err != nil {
+		return
+	}
 	lastActivity = time.Now()
 
 	setupUI()
@@ -347,7 +356,10 @@ func notifyCopied(item string) {
 }
 
 func copySensitive(text, itemLabel string) {
-	clipboard.WriteAll(text)
+	err := clipboard.WriteAll(text)
+	if err != nil {
+		return
+	}
 	viewStatus.SetText(fmt.Sprintf("[green]✓ %s copied to clipboard (will clear in 30s)[-]", itemLabel))
 
 	go func() {
@@ -357,7 +369,10 @@ func copySensitive(text, itemLabel string) {
 
 		currentClip, err := clipboard.ReadAll()
 		if err == nil && currentClip == text {
-			clipboard.WriteAll("")
+			err := clipboard.WriteAll("")
+			if err != nil {
+				return
+			}
 			app.QueueUpdateDraw(func() {
 				viewStatus.SetText(fmt.Sprintf("[yellow]✗ %s wiped from clipboard for security[-]", itemLabel))
 				go func() {
@@ -447,7 +462,10 @@ func setupUI() {
 	viewStatus = tview.NewTextView().SetDynamicColors(true)
 
 	btnCopyUser := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() {
-		clipboard.WriteAll(currentEnt.Username)
+		err := clipboard.WriteAll(currentEnt.Username)
+		if err != nil {
+			return
+		}
 		notifyCopied("Username")
 	}))
 	btnCopyPass := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() {
@@ -633,7 +651,10 @@ func setupUI() {
 		AddButtons([]string{"Delete", "Cancel"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			if buttonLabel == "Delete" && currentFile != "" {
-				os.Remove(filepath.Join(expandPath(dataDir), currentFile))
+				err := os.Remove(filepath.Join(expandPath(dataDir), currentFile))
+				if err != nil {
+					return
+				}
 				currentFile = ""
 				loadFiles(searchField.GetText())
 			}
@@ -851,7 +872,10 @@ func openSettings() {
 			newDir := settingsForm.GetFormItemByLabel("Data Directory").(*tview.InputField).GetText()
 			if newDir != "" {
 				dataDir = newDir
-				os.MkdirAll(expandPath(dataDir), 0700)
+				err := os.MkdirAll(expandPath(dataDir), 0700)
+				if err != nil {
+					return
+				}
 				saveConfig()
 				loadFiles(searchField.GetText())
 			}
@@ -927,10 +951,16 @@ func saveEntry() {
 
 func commitSave(filename string, encryptedData []byte) {
 	if editingFilename != "" && editingFilename != filename {
-		os.Remove(filepath.Join(expandPath(dataDir), editingFilename))
+		err := os.Remove(filepath.Join(expandPath(dataDir), editingFilename))
+		if err != nil {
+			return
+		}
 	}
 
-	os.WriteFile(filepath.Join(expandPath(dataDir), filename), encryptedData, 0600)
+	err := os.WriteFile(filepath.Join(expandPath(dataDir), filename), encryptedData, 0600)
+	if err != nil {
+		return
+	}
 
 	pages.SwitchToPage("main")
 	loadFiles(searchField.GetText())
