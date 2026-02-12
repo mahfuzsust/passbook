@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -14,30 +15,6 @@ import (
 	"github.com/rivo/tview"
 )
 
-// UI Globals
-var (
-	loginForm      *tview.Form
-	searchField    *tview.InputField
-	treeView       *tview.TreeView
-	rightPages     *tview.Pages
-	viewFlex       *tview.Flex
-	viewTitle      *tview.TextView
-	viewSubtitle   *tview.TextView
-	viewPassword   *tview.TextView
-	viewDetails    *tview.TextView
-	viewTOTP       *tview.TextView
-	viewTOTPBar    *tview.TextView
-	viewCustom     *tview.TextView
-	viewStatus     *tview.TextView
-	attachmentList *tview.List
-	showSensitive  bool
-
-	// Modals
-	settingsForm *tview.Form
-	deleteModal  *tview.Modal
-	historyList  *tview.List
-)
-
 func setupUI() {
 	tview.Styles.ContrastBackgroundColor = colorUnfocusedBg
 	tview.Styles.TitleColor = tcell.ColorLightSkyBlue
@@ -45,8 +22,10 @@ func setupUI() {
 	setupLogin()
 	setupMainLayout()
 	setupModals()
-	setupEditor() // Defined in editor.go
+	setupEditor() // In editor.go
 }
+
+// --- Setup Functions ---
 
 func setupLogin() {
 	loginForm = tview.NewForm()
@@ -113,26 +92,34 @@ func setupMainLayout() {
 
 	mainFlex := tview.NewFlex().AddItem(leftFlex, 35, 1, true).AddItem(rightPages, 0, 2, false)
 
+	// Keybindings
 	mainFlex.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
 		case tcell.KeyCtrlA:
 			showCreateMenu()
+			return nil
 		case tcell.KeyCtrlE:
 			if currentPath != "" {
 				openEditor(currentEnt)
 			}
+			return nil
 		case tcell.KeyCtrlD:
 			if currentPath != "" {
 				showDeleteModal()
 			}
+			return nil
 		case tcell.KeyCtrlF:
 			app.SetFocus(searchField)
+			return nil
 		case tcell.KeyCtrlO:
 			openSettings()
+			return nil
 		case tcell.KeyCtrlQ:
 			app.Stop()
+			return nil
 		case tcell.KeyEsc:
 			app.SetFocus(treeView)
+			return nil
 		}
 		return event
 	})
@@ -167,6 +154,8 @@ func setupModals() {
 	})
 	pages.AddPage("history", centeredModal(historyList, 50, 15), true, false)
 }
+
+// --- Logic ---
 
 func refreshTree(filter string) {
 	root := treeView.GetRoot()
@@ -224,7 +213,7 @@ func loadEntry(path string) {
 
 func updateViewPane() {
 	viewFlex.Clear()
-	attachmentList.Clear() // FIX: Explicitly clear previous attachments
+	attachmentList.Clear() // FIX: Clear attachment data to prevent persistence
 
 	viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
 
@@ -290,7 +279,7 @@ func updateViewPane() {
 	viewFlex.AddItem(viewCustom, 0, 1, false)
 	viewFlex.AddItem(viewStatus, 1, 0, false)
 
-	// Attachments Render
+	// Attachments (Conditional Render)
 	if len(currentEnt.Attachments) > 0 {
 		viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
 		viewFlex.AddItem(tview.NewTextView().SetText("[yellow]Attachments:[-]").SetDynamicColors(true), 1, 0, false)
@@ -300,6 +289,7 @@ func updateViewPane() {
 			label := fmt.Sprintf("[blue::u]➤ %s[-:-:-] [dim](%s)[-]", a.FileName, formatBytes(a.Size))
 			attachmentList.AddItem(label, "", 0, func() { downloadAttachment(a) })
 		}
+		// Calculate height dynamically
 		viewFlex.AddItem(attachmentList, len(currentEnt.Attachments)*2, 1, false)
 	}
 }
@@ -315,7 +305,112 @@ func deleteEntry() {
 	}
 }
 
-// Styling & Helpers
+// --- Interaction Helpers ---
+
+func notifyCopied(item string) {
+	viewStatus.SetText(fmt.Sprintf("[green]✓ %s copied![-]", item))
+	go func() { time.Sleep(2 * time.Second); app.QueueUpdateDraw(func() { viewStatus.SetText("") }) }()
+}
+
+func copySensitive(text, item string) {
+	clipboard.WriteAll(text)
+	viewStatus.SetText(fmt.Sprintf("[green]✓ %s copied (clears in 30s)[-]", item))
+	go func() {
+		time.Sleep(30 * time.Second)
+		curr, _ := clipboard.ReadAll()
+		if curr == text {
+			clipboard.WriteAll("")
+			app.QueueUpdateDraw(func() { viewStatus.SetText("[yellow]Clipboard cleared[-]") })
+		}
+	}()
+}
+
+func downloadAttachment(att Attachment) {
+	data, err := os.ReadFile(filepath.Join(getAttachmentDir(), att.ID))
+	if err != nil {
+		return
+	}
+	dec, err := decrypt(data)
+	if err != nil {
+		return
+	}
+
+	var downDir string
+	if runtime.GOOS == "windows" {
+		downDir = filepath.Join(os.Getenv("USERPROFILE"), "Downloads")
+	} else {
+		home, _ := os.UserHomeDir()
+		downDir = filepath.Join(home, "Downloads")
+	}
+
+	os.WriteFile(filepath.Join(downDir, att.FileName), dec, 0644)
+	notifyCopied(att.FileName + " downloaded")
+}
+
+// --- Utils ---
+
+func lockApp() {
+	masterKey = nil
+	currentPath = ""
+	currentEnt = Entry{}
+	refreshTree("")
+	loginForm.GetFormItem(0).(*tview.InputField).SetText("")
+	pages.SwitchToPage("login")
+	app.SetFocus(loginForm)
+}
+
+func drawTOTP() {
+	if currentEnt.TOTPSecret != "" && currentEnt.Type == TypeLogin {
+		code, err := totp.GenerateCode(strings.ReplaceAll(currentEnt.TOTPSecret, " ", ""), time.Now())
+		if err == nil {
+			viewTOTP.SetText(code)
+			sec := time.Now().Unix() % 30
+			remain := 30 - sec
+			bars := int((float64(remain) / 30.0) * 20.0)
+			barStr := strings.Repeat("█", bars) + strings.Repeat("▒", 20-bars)
+			color := "green"
+			if remain <= 5 {
+				color = "red"
+			} else if remain <= 10 {
+				color = "yellow"
+			}
+			viewTOTPBar.SetText(fmt.Sprintf("[%s]%02ds [%s][-]", color, remain, barStr))
+		}
+	} else {
+		viewTOTP.SetText("None")
+		viewTOTPBar.SetText("")
+	}
+}
+
+func showHistory() {
+	historyList.Clear()
+	for i := len(currentEnt.History) - 1; i >= 0; i-- {
+		historyList.AddItem(currentEnt.History[i].Password, currentEnt.History[i].Date, 0, nil)
+	}
+	pages.SwitchToPage("history")
+}
+
+func openSettings() {
+	settingsForm.Clear(true)
+	settingsForm.AddInputField("Data Directory", dataDir, 40, nil, nil)
+	settingsForm.AddButton("Save", func() {
+		dataDir = settingsForm.GetFormItem(0).(*tview.InputField).GetText()
+		saveConfig()
+		refreshTree(searchField.GetText())
+		pages.SwitchToPage("main")
+	})
+	settingsForm.AddButton("Cancel", func() { pages.SwitchToPage("main") })
+	styleForm(settingsForm)
+	pages.SwitchToPage("settings")
+}
+
+func showDeleteModal() {
+	deleteModal.SetText("Delete " + currentEnt.Title + "?")
+	pages.SwitchToPage("delete")
+}
+
+// --- Styling Helpers ---
+
 func styleButton(b *tview.Button) *tview.Button {
 	b.SetBackgroundColor(colorUnfocusedBg)
 	b.SetLabelColor(tcell.ColorWhite)
@@ -376,64 +471,4 @@ func formatBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
-}
-
-// Stubs needed by ui.go but defined in main/editor
-func lockApp() {
-	masterKey = nil
-	currentPath = ""
-	currentEnt = Entry{}
-	refreshTree("")
-	loginForm.GetFormItem(0).(*tview.InputField).SetText("")
-	pages.SwitchToPage("login")
-	app.SetFocus(loginForm)
-}
-
-func drawTOTP() {
-	if currentEnt.TOTPSecret != "" && currentEnt.Type == TypeLogin {
-		code, err := totp.GenerateCode(strings.ReplaceAll(currentEnt.TOTPSecret, " ", ""), time.Now())
-		if err == nil {
-			viewTOTP.SetText(code)
-			sec := time.Now().Unix() % 30
-			remain := 30 - sec
-			bars := int((float64(remain) / 30.0) * 20.0)
-			color := "green"
-			if remain <= 5 {
-				color = "red"
-			} else if remain <= 10 {
-				color = "yellow"
-			}
-			viewTOTPBar.SetText(fmt.Sprintf("[%s]%02ds [%s][-]", color, remain, strings.Repeat("█", bars)+strings.Repeat("▒", 20-bars)))
-		}
-	} else {
-		viewTOTP.SetText("None")
-		viewTOTPBar.SetText("")
-	}
-}
-
-func showHistory() {
-	historyList.Clear()
-	for i := len(currentEnt.History) - 1; i >= 0; i-- {
-		historyList.AddItem(currentEnt.History[i].Password, currentEnt.History[i].Date, 0, nil)
-	}
-	pages.SwitchToPage("history")
-}
-
-func openSettings() {
-	settingsForm.Clear(true)
-	settingsForm.AddInputField("Data Directory", dataDir, 40, nil, nil)
-	settingsForm.AddButton("Save", func() {
-		dataDir = settingsForm.GetFormItem(0).(*tview.InputField).GetText()
-		saveConfig()
-		refreshTree(searchField.GetText())
-		pages.SwitchToPage("main")
-	})
-	settingsForm.AddButton("Cancel", func() { pages.SwitchToPage("main") })
-	styleForm(settingsForm)
-	pages.SwitchToPage("settings")
-}
-
-func showDeleteModal() {
-	deleteModal.SetText("Delete " + currentEnt.Title + "?")
-	pages.SwitchToPage("delete")
 }

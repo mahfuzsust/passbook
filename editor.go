@@ -13,22 +13,6 @@ import (
 	"github.com/rivo/tview"
 )
 
-var (
-	editorForm       *tview.Form
-	editorLayout     *tview.Flex
-	attachList       *tview.List
-	createList       *tview.List
-	fileBrowser      *tview.TreeView
-	fileBrowserModal *tview.Flex
-	attachFlex       *tview.Flex
-
-	collisionModal *tview.Modal
-	errorModal     *tview.Modal
-	passGenForm    *tview.Form
-	passGenLayout  *tview.Flex
-	passGenPreview *tview.TextView
-)
-
 func setupEditor() {
 	// 1. Create Menu (Vertical List)
 	createList = tview.NewList().ShowSecondaryText(false)
@@ -49,7 +33,7 @@ func setupEditor() {
 
 	editorLayout = tview.NewFlex().SetDirection(tview.FlexRow)
 	editorLayout.AddItem(editorForm, 0, 1, true)
-	editorLayout.AddItem(attachFlex, 0, 0, false) // Default hidden
+	editorLayout.AddItem(attachFlex, 0, 0, false) // Hidden by default
 	editorLayout.SetBorder(true).SetTitle(" Edit Entry ")
 	pages.AddPage("editor", centeredModal(editorLayout, 70, 30), true, false)
 
@@ -169,7 +153,6 @@ func openEditor(ent Entry) {
 		editorForm.AddInputField("Expiry (MM/YY)", ent.Expiry, 10, nil, nil)
 		editorForm.AddInputField("CVV", ent.CVV, 5, nil, nil)
 	case TypeFile:
-		// Only TypeFile gets the button!
 		editorForm.AddButton("Add Attachment", func() {
 			home, _ := os.UserHomeDir()
 			openFileBrowser(home)
@@ -189,7 +172,6 @@ func refreshAttachmentList(t EntryType) {
 	attachList.Clear()
 	size := 0
 
-	// Only show attachment list if it is a File Type OR has existing attachments
 	if t == TypeFile || len(pendingAttachments) > 0 {
 		if len(pendingAttachments) > 0 {
 			size = 6

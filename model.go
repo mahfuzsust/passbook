@@ -1,8 +1,6 @@
 package main
 
 import (
-	"time"
-
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -30,8 +28,8 @@ type PasswordHistory struct {
 }
 
 type Attachment struct {
-	ID       string `json:"id"`
-	FileName string `json:"file_name"`
+	ID       string `json:"id"`        // Random ID for storage
+	FileName string `json:"file_name"` // Original filename
 	Size     int64  `json:"size"`
 }
 
@@ -48,26 +46,8 @@ type Entry struct {
 	CustomText  string            `json:"custom_text,omitempty"`
 	Attachments []Attachment      `json:"attachments,omitempty"`
 	History     []PasswordHistory `json:"history,omitempty"`
+
+	// Legacy fields (optional backward compatibility)
+	FileName string `json:"file_name,omitempty"`
+	FileData []byte `json:"file_data,omitempty"`
 }
-
-type AppConfig struct {
-	DataDir string `json:"data_dir"`
-}
-
-// --- Global State ---
-
-var (
-	masterKey         []byte
-	dataDir           = "~/.passbook/data"
-	currentPath       string
-	currentEnt        Entry
-	editingEnt        Entry
-	lastActivity      time.Time
-	lastGeneratedPass string
-
-	// State for Attachments & Collisions
-	pendingAttachments []Attachment
-	pendingFilePaths   map[string]string
-	pendingSaveData    []byte
-	pendingPath        string
-)
