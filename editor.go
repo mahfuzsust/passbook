@@ -33,7 +33,6 @@ func setupEditor() {
 
 	editorLayout = tview.NewFlex().SetDirection(tview.FlexRow)
 	editorLayout.AddItem(editorForm, 0, 1, true)
-	editorLayout.AddItem(attachFlex, 0, 0, false) // Hidden by default
 	editorLayout.SetBorder(true).SetTitle(" Edit Entry ")
 	pages.AddPage("editor", centeredModal(editorLayout, 70, 30), true, false)
 
@@ -72,6 +71,12 @@ func setupPassGen() {
 			item.(*tview.InputField).SetText(lastGeneratedPass)
 		}
 		pages.SwitchToPage("editor")
+	})
+	passGenForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEsc {
+			pages.SwitchToPage("editor")
+		}
+		return event
 	})
 	passGenForm.AddButton("Cancel", func() { pages.SwitchToPage("editor") })
 	styleForm(passGenForm)
@@ -141,30 +146,39 @@ func openEditor(ent Entry) {
 	editorForm.Clear(true)
 	editorForm.AddInputField("Title", ent.Title, 40, nil, nil)
 
+	editorLayout.RemoveItem(attachFlex)
 	switch ent.Type {
 	case TypeLogin:
+		ent.Attachments = nil // Clear attachments for login entries
 		editorForm.AddInputField("Username", ent.Username, 40, nil, nil)
 		editorForm.AddInputField("Password", ent.Password, 40, nil, nil)
 		editorForm.AddButton("Generate Password", func() { updatePassPreview(); pages.SwitchToPage("passgen") })
 		editorForm.AddInputField("Link", ent.Link, 40, nil, nil)
 		editorForm.AddInputField("TOTP Secret", ent.TOTPSecret, 40, nil, nil)
 	case TypeCard:
+		ent.Attachments = nil
 		editorForm.AddInputField("Card Number", ent.CardNumber, 40, nil, nil)
 		editorForm.AddInputField("Expiry (MM/YY)", ent.Expiry, 10, nil, nil)
 		editorForm.AddInputField("CVV", ent.CVV, 5, nil, nil)
 	case TypeFile:
+		editorLayout.AddItem(attachFlex, 0, 0, false) // Hidden by default
 		editorForm.AddButton("Add Attachment", func() {
 			home, _ := os.UserHomeDir()
 			openFileBrowser(home)
 		})
+		refreshAttachmentList(ent.Type) // Pass type to handle visibility
 	}
 
 	editorForm.AddTextArea("Notes", ent.CustomText, 50, 5, 0, nil)
 	editorForm.AddButton("Save", func() { saveEntry(ent.Type) })
 	editorForm.AddButton("Cancel", func() { pages.SwitchToPage("main"); app.SetFocus(treeView) })
 	styleForm(editorForm)
-
-	refreshAttachmentList(ent.Type) // Pass type to handle visibility
+	editorForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEsc {
+			pages.SwitchToPage("main")
+		}
+		return event
+	})
 	pages.SwitchToPage("editor")
 }
 

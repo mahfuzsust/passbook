@@ -27,17 +27,30 @@ func setupUI() {
 
 // --- Setup Functions ---
 
+func goToMain(pwd string) {
+	if pwd == "" {
+		return
+	}
+	masterKey = deriveKey(pwd)
+	refreshTree("")
+	pages.SwitchToPage("main")
+	app.SetFocus(treeView)
+}
+
 func setupLogin() {
 	loginForm = tview.NewForm()
 	loginForm.AddPasswordField("Master Password", "", 0, '*', nil)
 	loginForm.AddButton("Login", func() {
 		pwd := loginForm.GetFormItem(0).(*tview.InputField).GetText()
-		if pwd != "" {
-			masterKey = deriveKey(pwd)
-			refreshTree("")
-			pages.SwitchToPage("main")
-			app.SetFocus(treeView)
+		goToMain(pwd)
+	})
+
+	loginForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEnter {
+			pwd := loginForm.GetFormItem(0).(*tview.InputField).GetText()
+			goToMain(pwd)
 		}
+		return event
 	})
 	loginForm.AddButton("Quit", func() { app.Stop() })
 	loginForm.SetBorder(true).SetTitle(" PassBook Login ").SetTitleAlign(tview.AlignCenter)
