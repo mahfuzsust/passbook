@@ -82,7 +82,7 @@ func setupPassGen() {
 		AddItem(tview.NewTextView().SetText(""), 1, 0, false).
 		AddItem(passGenForm, 0, 1, true)
 	passGenLayout.SetBorder(true).SetTitle(" Generator ")
-	pages.AddPage("passgen", centeredModal(passGenLayout, 45, 15), true, false)
+	pages.AddPage("passgen", centeredModal(passGenLayout, 45, 20), true, false)
 }
 
 func setupCollisionModals() {

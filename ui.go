@@ -51,7 +51,7 @@ func setupLogin() {
 }
 
 func setupMainLayout() {
-	searchField = styleInput(tview.NewInputField().SetLabel("Search: "))
+	searchField = styleInput(tview.NewInputField().SetLabel("Search: ")).SetPlaceholder("Ctrl+F")
 	searchField.SetChangedFunc(func(text string) { refreshTree(text) })
 
 	root := tview.NewTreeNode("Vault").SetSelectable(false)
@@ -203,6 +203,7 @@ func loadEntry(path string) {
 		return
 	}
 
+	currentEnt = Entry{}
 	if json.Unmarshal(decrypted, &currentEnt) == nil {
 		currentPath = path
 		showSensitive = false
@@ -251,6 +252,7 @@ func updateViewPane() {
 		viewFlex.AddItem(makeRow("TOTP:", viewTOTP, btnTotp), 1, 0, false)
 		viewFlex.AddItem(makeRow("", viewTOTPBar), 1, 0, false)
 		drawTOTP()
+		//currentEnt.Attachments = nil // Logins don't have attachments, ensure it's empty
 
 	case TypeCard:
 		num := currentEnt.CardNumber
@@ -271,6 +273,10 @@ func updateViewPane() {
 		}
 		viewPassword.SetText(cvv)
 		viewFlex.AddItem(makeRow("CVV:", viewPassword), 1, 0, false)
+		//currentEnt.Attachments = nil // Cards don't have attachments, ensure it's empty
+
+	case TypeNote:
+		currentEnt.Attachments = nil
 	}
 
 	viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
