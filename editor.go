@@ -162,11 +162,57 @@ func openEditor(ent Entry) {
 		editorForm.AddInputField("CVV", ent.CVV, 5, nil, nil)
 	case TypeFile:
 		editorLayout.AddItem(attachFlex, 0, 0, false) // Hidden by default
-		editorForm.AddButton("Add Attachment", func() {
+
+		editorForm.AddButton("Browse Filesystem", func() {
 			home, _ := os.UserHomeDir()
 			openFileBrowser(home)
 		})
-		refreshAttachmentList(ent.Type) // Pass type to handle visibility
+
+		dropZone := tview.NewTextArea().
+			SetLabel("Drag File Here").
+			SetPlaceholder("Click here, then drop file...").
+			SetSize(5, 40) // 5 rows high, 40 cols wide
+
+		// IMPORTANT: styling to show focus state
+		dropZone.SetBorder(true)
+		dropZone.SetTitleColor(tcell.ColorYellow)
+		dropZone.SetBackgroundColor(tcell.ColorBlack)
+
+		// 3. Attach Button with Robust Path Cleaning
+
+		dropZone.SetMovedFunc(func() {
+			rawPath := dropZone.GetText()
+			cleanPath := strings.Trim(rawPath, "\"' \n\r\t")
+			if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
+				cleanPath = strings.ReplaceAll(cleanPath, "\\ ", " ")
+			}
+
+			if cleanPath == "" {
+				return
+			}
+
+			fi, err := os.Stat(cleanPath)
+			if err == nil && !fi.IsDir() {
+				// Add Attachment
+				id := fmt.Sprintf("%d", time.Now().UnixNano())
+				att := Attachment{
+					ID:       id,
+					FileName: filepath.Base(cleanPath),
+					Size:     fi.Size(),
+				}
+				pendingAttachments = append(pendingAttachments, att)
+				pendingFilePaths[id] = cleanPath
+
+				// Success! Clear input and refresh list
+				dropZone.SetText("", true).SetPlaceholder("Click here, then drop file...")
+				dropZone.SetTitleColor(tcell.ColorYellow)
+				dropZone.SetBackgroundColor(tcell.ColorBlack)
+				refreshAttachmentList(TypeFile)
+			}
+		})
+		editorForm.AddFormItem(dropZone)
+		//refreshAttachmentList(ent.Type) // Pass type to handle visibility
+
 	}
 
 	editorForm.AddTextArea("Notes", ent.CustomText, 50, 5, 0, nil)
