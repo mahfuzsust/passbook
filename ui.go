@@ -268,7 +268,7 @@ func updateViewPane() {
 	case TypeLogin:
 		if currentEnt.Username != "" {
 			viewSubtitle.SetText(currentEnt.Username)
-			btnCopy := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() {
+			btnCopy := styleButton(tview.NewButton("cp").SetSelectedFunc(func() {
 				err := clipboard.WriteAll(currentEnt.Username)
 				if err != nil {
 					return
@@ -284,23 +284,32 @@ func updateViewPane() {
 				pass = currentEnt.Password
 			}
 			viewPassword.SetText(pass)
-			btnPass := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() { copySensitive(currentEnt.Password, "Password") }))
-			btnShow := styleButton(tview.NewButton("View").SetSelectedFunc(func() { showSensitive = !showSensitive; updateViewPane() }))
-			btnHist := styleButton(tview.NewButton("History").SetSelectedFunc(func() { showHistory() }))
+			btnPass := styleButton(tview.NewButton("cp").SetSelectedFunc(func() { copySensitive(currentEnt.Password, "Password") }))
+			btnShow := styleButton(tview.NewButton("vw").SetSelectedFunc(func() { showSensitive = !showSensitive; updateViewPane() }))
+			btnHist := styleButton(tview.NewButton("his").SetSelectedFunc(func() { showHistory() }))
 			viewFlex.AddItem(makeRow("Password:", viewPassword, btnShow, btnPass, btnHist), 1, 0, false)
 		} else {
 			showSensitive = false
 		}
 
-		viewDetails.SetText(currentEnt.Link)
 		if strings.TrimSpace(currentEnt.Link) != "" {
-			viewFlex.AddItem(makeRow("Link:", viewDetails), 1, 0, false)
+			linkText := tview.NewTextView().SetDynamicColors(true)
+			linkText.SetText("[blue::u]" + currentEnt.Link + "[-:-:-]")
+			btnOpen := styleButton(tview.NewButton("open").SetSelectedFunc(func() { _ = openURL(currentEnt.Link) }))
+			btnCopy := styleButton(tview.NewButton("cp").SetSelectedFunc(func() {
+				err := clipboard.WriteAll(currentEnt.Link)
+				if err != nil {
+					return
+				}
+				notifyCopied("Link")
+			}))
+			viewFlex.AddItem(makeRow("Link:", linkText, btnOpen, btnCopy), 1, 0, false)
 		}
 
 		cleanSecret := strings.ReplaceAll(currentEnt.TOTPSecret, " ", "")
 		if cleanSecret != "" {
 			viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
-			btnTotp := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() {
+			btnTotp := styleButton(tview.NewButton("cp").SetSelectedFunc(func() {
 				code, err := totp.GenerateCode(cleanSecret, time.Now())
 				if err == nil {
 					copySensitive(code, "TOTP")
@@ -320,8 +329,8 @@ func updateViewPane() {
 			num = "**** **** **** " + num[len(num)-4:]
 		}
 		viewSubtitle.SetText(num)
-		btnCopy := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() { copySensitive(currentEnt.CardNumber, "Card") }))
-		btnShow := styleButton(tview.NewButton("View").SetSelectedFunc(func() { showSensitive = !showSensitive; updateViewPane() }))
+		btnCopy := styleButton(tview.NewButton("cp").SetSelectedFunc(func() { copySensitive(currentEnt.CardNumber, "Card") }))
+		btnShow := styleButton(tview.NewButton("vw").SetSelectedFunc(func() { showSensitive = !showSensitive; updateViewPane() }))
 		viewFlex.AddItem(makeRow("Number:", viewSubtitle, btnShow, btnCopy), 1, 0, false)
 
 		viewDetails.SetText(currentEnt.Expiry)
@@ -338,16 +347,6 @@ func updateViewPane() {
 		currentEnt.Attachments = nil
 	}
 
-	viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
-	if strings.TrimSpace(currentEnt.CustomText) != "" {
-		viewFlex.AddItem(tview.NewTextView().SetText("[yellow]Notes:[-]").SetDynamicColors(true), 1, 0, false)
-		viewCustom.SetText(currentEnt.CustomText)
-		viewFlex.AddItem(viewCustom, 0, 1, false)
-	} else {
-		viewCustom.SetText("")
-	}
-	viewFlex.AddItem(viewStatus, 1, 0, false)
-
 	if len(currentEnt.Attachments) > 0 {
 		viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
 		viewFlex.AddItem(tview.NewTextView().SetText("[yellow]Attachments:[-]").SetDynamicColors(true), 1, 0, false)
@@ -357,8 +356,37 @@ func updateViewPane() {
 			label := fmt.Sprintf("[blue::u]➤ %s[-:-:-] [dim](%s)[-]", a.FileName, formatBytes(a.Size))
 			attachmentList.AddItem(label, "", 0, func() { downloadAttachment(a) })
 		}
-		viewFlex.AddItem(attachmentList, len(currentEnt.Attachments)*2, 1, false)
+
+		h := len(currentEnt.Attachments) * 2
+		if h < 3 {
+			h = 3
+		}
+		if h > 10 {
+			h = 10
+		}
+		viewFlex.AddItem(attachmentList, h, 0, false)
 	}
+
+	viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
+	if strings.TrimSpace(currentEnt.CustomText) != "" {
+		header := tview.NewTextView().SetText("[yellow]Notes:[-]").SetDynamicColors(true)
+		btnNotesCopy := styleButton(tview.NewButton("cp").SetSelectedFunc(func() {
+			err := clipboard.WriteAll(currentEnt.CustomText)
+			if err != nil {
+				return
+			}
+			notifyCopied("Notes")
+		}))
+		viewFlex.AddItem(tview.NewFlex().SetDirection(tview.FlexColumn).
+			AddItem(header, 0, 1, false).
+			AddItem(tview.NewTextView().SetText(" "), 1, 0, false).
+			AddItem(btnNotesCopy, 5, 0, false), 1, 0, false)
+		viewCustom.SetText(currentEnt.CustomText)
+		viewFlex.AddItem(viewCustom, 0, 1, false)
+	} else {
+		viewCustom.SetText("")
+	}
+	viewFlex.AddItem(viewStatus, 1, 0, false)
 }
 
 func deleteEntry() {
@@ -545,7 +573,7 @@ func makeRow(label string, content *tview.TextView, buttons ...*tview.Button) *t
 	f.AddItem(content, 0, 1, false)
 	for _, b := range buttons {
 		f.AddItem(tview.NewTextView().SetText(" "), 1, 0, false)
-		f.AddItem(b, 9, 0, false)
+		f.AddItem(b, 5, 0, false)
 	}
 	return f
 }
