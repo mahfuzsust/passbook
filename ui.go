@@ -103,7 +103,8 @@ func setupMainLayout() {
 	rightPages.AddPage("empty", emptyView, true, true)
 	rightPages.AddPage("content", viewFlex, true, false)
 
-	mainFlex := tview.NewFlex().AddItem(leftFlex, 35, 1, true).AddItem(rightPages, 0, 2, false)
+	// Replace fixed sizing with a responsive 30/70 split.
+	mainFlex := newResponsiveSplit(leftFlex, rightPages, 0.30, 24, 40)
 
 	// Keybindings
 	mainFlex.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -238,34 +239,50 @@ func updateViewPane() {
 
 	switch currentEnt.Type {
 	case TypeLogin:
-		viewSubtitle.SetText(currentEnt.Username)
-		btnCopy := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() { clipboard.WriteAll(currentEnt.Username); notifyCopied("Username") }))
-		viewFlex.AddItem(makeRow("Username:", viewSubtitle, btnCopy), 1, 0, false)
-
-		pass := strings.Repeat("*", len(currentEnt.Password))
-		if showSensitive {
-			pass = currentEnt.Password
+		// Username (only render if present)
+		if currentEnt.Username != "" {
+			viewSubtitle.SetText(currentEnt.Username)
+			btnCopy := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() { clipboard.WriteAll(currentEnt.Username); notifyCopied("Username") }))
+			viewFlex.AddItem(makeRow("Username:", viewSubtitle, btnCopy), 1, 0, false)
 		}
-		viewPassword.SetText(pass)
-		btnPass := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() { copySensitive(currentEnt.Password, "Password") }))
-		btnShow := styleButton(tview.NewButton("View").SetSelectedFunc(func() { showSensitive = !showSensitive; updateViewPane() }))
-		btnHist := styleButton(tview.NewButton("History").SetSelectedFunc(func() { showHistory() }))
-		viewFlex.AddItem(makeRow("Password:", viewPassword, btnShow, btnPass, btnHist), 1, 0, false)
+
+		// Password (only render if present)
+		if currentEnt.Password != "" {
+			pass := strings.Repeat("*", len(currentEnt.Password))
+			if showSensitive {
+				pass = currentEnt.Password
+			}
+			viewPassword.SetText(pass)
+			btnPass := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() { copySensitive(currentEnt.Password, "Password") }))
+			btnShow := styleButton(tview.NewButton("View").SetSelectedFunc(func() { showSensitive = !showSensitive; updateViewPane() }))
+			btnHist := styleButton(tview.NewButton("History").SetSelectedFunc(func() { showHistory() }))
+			viewFlex.AddItem(makeRow("Password:", viewPassword, btnShow, btnPass, btnHist), 1, 0, false)
+		} else {
+			// Ensure sensitive state doesn't linger visually when there's no password row.
+			showSensitive = false
+		}
 
 		viewDetails.SetText(currentEnt.Link)
 		viewFlex.AddItem(makeRow("Link:", viewDetails), 1, 0, false)
 
-		viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
-		btnTotp := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() {
-			if currentEnt.TOTPSecret != "" {
-				code, _ := totp.GenerateCode(strings.ReplaceAll(currentEnt.TOTPSecret, " ", ""), time.Now())
-				copySensitive(code, "TOTP")
-			}
-		}))
-		viewFlex.AddItem(makeRow("TOTP:", viewTOTP, btnTotp), 1, 0, false)
-		viewFlex.AddItem(makeRow("", viewTOTPBar), 1, 0, false)
-		drawTOTP()
-		//currentEnt.Attachments = nil // Logins don't have attachments, ensure it's empty
+		// TOTP (only render if present)
+		cleanSecret := strings.ReplaceAll(currentEnt.TOTPSecret, " ", "")
+		if cleanSecret != "" {
+			viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
+			btnTotp := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() {
+				code, err := totp.GenerateCode(cleanSecret, time.Now())
+				if err == nil {
+					copySensitive(code, "TOTP")
+				}
+			}))
+			viewFlex.AddItem(makeRow("TOTP:", viewTOTP, btnTotp), 1, 0, false)
+			viewFlex.AddItem(makeRow("", viewTOTPBar), 1, 0, false)
+			drawTOTP()
+		} else {
+			// Keep these empty so if the user previously viewed a TOTP entry, stale values don't show.
+			viewTOTP.SetText("")
+			viewTOTPBar.SetText("")
+		}
 
 	case TypeCard:
 		num := currentEnt.CardNumber
@@ -379,26 +396,30 @@ func lockApp() {
 }
 
 func drawTOTP() {
-	if currentEnt.TOTPSecret != "" && currentEnt.Type == TypeLogin {
-		code, err := totp.GenerateCode(strings.ReplaceAll(currentEnt.TOTPSecret, " ", ""), time.Now())
-		if err == nil {
-			viewTOTP.SetText(code)
-			sec := time.Now().Unix() % 30
-			remain := 30 - sec
-			bars := int((float64(remain) / 30.0) * 20.0)
-			barStr := strings.Repeat("█", bars) + strings.Repeat("▒", 20-bars)
-			color := "green"
-			if remain <= 5 {
-				color = "red"
-			} else if remain <= 10 {
-				color = "yellow"
+	if currentEnt.Type == TypeLogin {
+		secret := strings.ReplaceAll(currentEnt.TOTPSecret, " ", "")
+		if secret != "" {
+			code, err := totp.GenerateCode(secret, time.Now())
+			if err == nil {
+				viewTOTP.SetText(code)
+				sec := time.Now().Unix() % 30
+				remain := 30 - sec
+				bars := int((float64(remain) / 30.0) * 20.0)
+				barStr := strings.Repeat("█", bars) + strings.Repeat("▒", 20-bars)
+				color := "green"
+				if remain <= 5 {
+					color = "red"
+				} else if remain <= 10 {
+					color = "yellow"
+				}
+				viewTOTPBar.SetText(fmt.Sprintf("[%s]%02ds [%s][-]", color, remain, barStr))
+				return
 			}
-			viewTOTPBar.SetText(fmt.Sprintf("[%s]%02ds [%s][-]", color, remain, barStr))
 		}
-	} else {
-		viewTOTP.SetText("None")
-		viewTOTPBar.SetText("")
 	}
+	// No TOTP (or error): keep blank rather than showing "None".
+	viewTOTP.SetText("")
+	viewTOTPBar.SetText("")
 }
 
 func showHistory() {
@@ -490,4 +511,58 @@ func formatBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// responsiveSplit is a tiny wrapper that keeps a Flex in a stable percentage split
+// as the terminal resizes.
+type responsiveSplit struct {
+	*tview.Flex
+	left, right tview.Primitive
+	leftRatio   float64
+	minLeft     int
+	minRight    int
+	lastW       int
+	lastH       int
+}
+
+func newResponsiveSplit(left, right tview.Primitive, leftRatio float64, minLeft, minRight int) *responsiveSplit {
+	r := &responsiveSplit{
+		Flex:      tview.NewFlex(),
+		left:      left,
+		right:     right,
+		leftRatio: leftRatio,
+		minLeft:   minLeft,
+		minRight:  minRight,
+	}
+	// Initial weights; real sizes are set during Draw() when we know the width.
+	r.Flex.AddItem(left, 0, 1, true)
+	r.Flex.AddItem(right, 0, 1, false)
+	return r
+}
+
+func (r *responsiveSplit) Draw(screen tcell.Screen) {
+	x, y, w, h := r.GetRect()
+	if w != r.lastW || h != r.lastH {
+		leftW := int(float64(w) * r.leftRatio)
+		if leftW < r.minLeft {
+			leftW = r.minLeft
+		}
+		if w-leftW < r.minRight {
+			leftW = w - r.minRight
+		}
+		if leftW < 0 {
+			leftW = 0
+		}
+		// If the terminal is extremely narrow, let the right pane win.
+		if w-leftW < 0 {
+			leftW = 0
+		}
+
+		r.Flex.SetRect(x, y, w, h)
+		r.Flex.ResizeItem(r.left, leftW, 0)
+		r.Flex.ResizeItem(r.right, 0, 1)
+
+		r.lastW, r.lastH = w, h
+	}
+	r.Flex.Draw(screen)
 }

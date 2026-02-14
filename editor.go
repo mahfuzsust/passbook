@@ -170,49 +170,71 @@ func openEditor(ent Entry) {
 
 		dropZone := tview.NewTextArea().
 			SetLabel("Drag File Here").
-			SetPlaceholder("Click here, then drop file...").
+			SetPlaceholder("Click here, then drop/paste a file path, then press Enter to attach").
 			SetSize(5, 40) // 5 rows high, 40 cols wide
 
-		// IMPORTANT: styling to show focus state
+		// Styling
 		dropZone.SetBorder(true)
+		dropZone.SetTitle(" Dropzone ")
 		dropZone.SetTitleColor(tcell.ColorYellow)
 		dropZone.SetBackgroundColor(tcell.ColorBlack)
 
-		// 3. Attach Button with Robust Path Cleaning
+		resetDropZone := func() {
+			dropZone.SetText("", true)
+			dropZone.SetLabel("Drag File Here")
+			dropZone.SetPlaceholder("Click here, then drop/paste a file path, then press Enter to attach")
+			dropZone.SetBorder(true)
+			dropZone.SetTitle(" Dropzone ")
+			dropZone.SetTitleColor(tcell.ColorYellow)
+			dropZone.SetBackgroundColor(tcell.ColorBlack)
+		}
 
-		dropZone.SetMovedFunc(func() {
+		attachFromDropZone := func() {
 			rawPath := dropZone.GetText()
 			cleanPath := strings.Trim(rawPath, "\"' \n\r\t")
-			if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
-				cleanPath = strings.ReplaceAll(cleanPath, "\\ ", " ")
-			}
-
 			if cleanPath == "" {
 				return
 			}
 
-			fi, err := os.Stat(cleanPath)
-			if err == nil && !fi.IsDir() {
-				// Add Attachment
-				id := fmt.Sprintf("%d", time.Now().UnixNano())
-				att := Attachment{
-					ID:       id,
-					FileName: filepath.Base(cleanPath),
-					Size:     fi.Size(),
-				}
-				pendingAttachments = append(pendingAttachments, att)
-				pendingFilePaths[id] = cleanPath
-
-				// Success! Clear input and refresh list
-				dropZone.SetText("", true).SetPlaceholder("Click here, then drop file...")
-				dropZone.SetTitleColor(tcell.ColorYellow)
-				dropZone.SetBackgroundColor(tcell.ColorBlack)
-				refreshAttachmentList(TypeFile)
+			// Some terminals provide escaped spaces.
+			if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
+				cleanPath = strings.ReplaceAll(cleanPath, "\\ ", " ")
 			}
-		})
-		editorForm.AddFormItem(dropZone)
-		//refreshAttachmentList(ent.Type) // Pass type to handle visibility
 
+			// Only single path.
+			if strings.Contains(cleanPath, "\n") || strings.Contains(cleanPath, "\r") {
+				return
+			}
+
+			fi, err := os.Stat(cleanPath)
+			if err != nil || fi.IsDir() {
+				return
+			}
+
+			id := fmt.Sprintf("%d", time.Now().UnixNano())
+			att := Attachment{ID: id, FileName: filepath.Base(cleanPath), Size: fi.Size()}
+			pendingAttachments = append(pendingAttachments, att)
+			pendingFilePaths[id] = cleanPath
+
+			resetDropZone()
+			refreshAttachmentList(TypeFile)
+			app.SetFocus(attachList)
+		}
+
+		// Let Enter trigger attach.
+		dropZone.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+			if event.Key() == tcell.KeyEnter {
+				attachFromDropZone()
+				return nil
+			}
+			return event
+		})
+
+		// Dropzone is a real FormItem, so it can live in the form.
+		editorForm.AddFormItem(dropZone)
+
+		resetDropZone()
+		refreshAttachmentList(TypeFile)
 	}
 
 	editorForm.AddTextArea("Notes", ent.CustomText, 50, 5, 0, nil)
