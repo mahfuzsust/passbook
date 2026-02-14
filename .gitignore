@@ -27,6 +27,5 @@ go.work.sum
 data/
 config.json
 
-passbook
 
 .task
