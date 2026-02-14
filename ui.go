@@ -22,10 +22,8 @@ func setupUI() {
 	setupLogin()
 	setupMainLayout()
 	setupModals()
-	setupEditor() // In editor.go
+	setupEditor()
 }
-
-// --- Setup Functions ---
 
 func goToMain(pwd string) {
 	if pwd == "" {
@@ -103,10 +101,8 @@ func setupMainLayout() {
 	rightPages.AddPage("empty", emptyView, true, true)
 	rightPages.AddPage("content", viewFlex, true, false)
 
-	// Replace fixed sizing with a responsive 30/70 split.
 	mainFlex := newResponsiveSplit(leftFlex, rightPages, 0.30, 24, 40)
 
-	// Keybindings
 	mainFlex.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
 		case tcell.KeyCtrlA:
@@ -169,7 +165,40 @@ func setupModals() {
 	pages.AddPage("history", centeredModal(historyList, 50, 15), true, false)
 }
 
-// --- Logic ---
+func selectTreePath(path string) {
+	if treeView == nil {
+		return
+	}
+	root := treeView.GetRoot()
+	if root == nil {
+		return
+	}
+
+	var dfs func(n *tview.TreeNode) *tview.TreeNode
+	dfs = func(n *tview.TreeNode) *tview.TreeNode {
+		if n == nil {
+			return nil
+		}
+		if ref := n.GetReference(); ref != nil {
+			if s, ok := ref.(string); ok && s == path {
+				return n
+			}
+		}
+		for _, ch := range n.GetChildren() {
+			if found := dfs(ch); found != nil {
+				return found
+			}
+		}
+		return nil
+	}
+
+	if node := dfs(root); node != nil {
+		treeView.SetCurrentNode(node)
+		if app != nil {
+			app.SetFocus(treeView)
+		}
+	}
+}
 
 func refreshTree(filter string) {
 	root := treeView.GetRoot()
@@ -228,25 +257,22 @@ func loadEntry(path string) {
 
 func updateViewPane() {
 	viewFlex.Clear()
-	attachmentList.Clear() // FIX: Clear attachment data to prevent persistence
+	attachmentList.Clear()
 
 	viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
 
-	// Title
 	viewTitle.SetText(currentEnt.Title)
 	viewFlex.AddItem(makeRow("Title:", viewTitle), 1, 0, false)
 	viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
 
 	switch currentEnt.Type {
 	case TypeLogin:
-		// Username (only render if present)
 		if currentEnt.Username != "" {
 			viewSubtitle.SetText(currentEnt.Username)
 			btnCopy := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() { clipboard.WriteAll(currentEnt.Username); notifyCopied("Username") }))
 			viewFlex.AddItem(makeRow("Username:", viewSubtitle, btnCopy), 1, 0, false)
 		}
 
-		// Password (only render if present)
 		if currentEnt.Password != "" {
 			pass := strings.Repeat("*", len(currentEnt.Password))
 			if showSensitive {
@@ -258,14 +284,14 @@ func updateViewPane() {
 			btnHist := styleButton(tview.NewButton("History").SetSelectedFunc(func() { showHistory() }))
 			viewFlex.AddItem(makeRow("Password:", viewPassword, btnShow, btnPass, btnHist), 1, 0, false)
 		} else {
-			// Ensure sensitive state doesn't linger visually when there's no password row.
 			showSensitive = false
 		}
 
 		viewDetails.SetText(currentEnt.Link)
-		viewFlex.AddItem(makeRow("Link:", viewDetails), 1, 0, false)
+		if strings.TrimSpace(currentEnt.Link) != "" {
+			viewFlex.AddItem(makeRow("Link:", viewDetails), 1, 0, false)
+		}
 
-		// TOTP (only render if present)
 		cleanSecret := strings.ReplaceAll(currentEnt.TOTPSecret, " ", "")
 		if cleanSecret != "" {
 			viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
@@ -279,7 +305,6 @@ func updateViewPane() {
 			viewFlex.AddItem(makeRow("", viewTOTPBar), 1, 0, false)
 			drawTOTP()
 		} else {
-			// Keep these empty so if the user previously viewed a TOTP entry, stale values don't show.
 			viewTOTP.SetText("")
 			viewTOTPBar.SetText("")
 		}
@@ -303,19 +328,21 @@ func updateViewPane() {
 		}
 		viewPassword.SetText(cvv)
 		viewFlex.AddItem(makeRow("CVV:", viewPassword), 1, 0, false)
-		//currentEnt.Attachments = nil // Cards don't have attachments, ensure it's empty
 
 	case TypeNote:
 		currentEnt.Attachments = nil
 	}
 
 	viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
-	viewFlex.AddItem(tview.NewTextView().SetText("[yellow]Notes:[-]").SetDynamicColors(true), 1, 0, false)
-	viewCustom.SetText(currentEnt.CustomText)
-	viewFlex.AddItem(viewCustom, 0, 1, false)
+	if strings.TrimSpace(currentEnt.CustomText) != "" {
+		viewFlex.AddItem(tview.NewTextView().SetText("[yellow]Notes:[-]").SetDynamicColors(true), 1, 0, false)
+		viewCustom.SetText(currentEnt.CustomText)
+		viewFlex.AddItem(viewCustom, 0, 1, false)
+	} else {
+		viewCustom.SetText("")
+	}
 	viewFlex.AddItem(viewStatus, 1, 0, false)
 
-	// Attachments (Conditional Render)
 	if len(currentEnt.Attachments) > 0 {
 		viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
 		viewFlex.AddItem(tview.NewTextView().SetText("[yellow]Attachments:[-]").SetDynamicColors(true), 1, 0, false)
@@ -325,7 +352,6 @@ func updateViewPane() {
 			label := fmt.Sprintf("[blue::u]➤ %s[-:-:-] [dim](%s)[-]", a.FileName, formatBytes(a.Size))
 			attachmentList.AddItem(label, "", 0, func() { downloadAttachment(a) })
 		}
-		// Calculate height dynamically
 		viewFlex.AddItem(attachmentList, len(currentEnt.Attachments)*2, 1, false)
 	}
 }
@@ -340,8 +366,6 @@ func deleteEntry() {
 		refreshTree(searchField.GetText())
 	}
 }
-
-// --- Interaction Helpers ---
 
 func notifyCopied(item string) {
 	viewStatus.SetText(fmt.Sprintf("[green]✓ %s copied![-]", item))
@@ -383,19 +407,41 @@ func downloadAttachment(att Attachment) {
 	notifyCopied(att.FileName + " downloaded")
 }
 
-// --- Utils ---
-
 func lockApp() {
 	masterKey = nil
 	currentPath = ""
 	currentEnt = Entry{}
-	refreshTree("")
-	loginForm.GetFormItem(0).(*tview.InputField).SetText("")
-	pages.SwitchToPage("login")
-	app.SetFocus(loginForm)
+
+	if treeView != nil {
+		refreshTree("")
+	}
+	if loginForm != nil {
+		if item := loginForm.GetFormItem(0); item != nil {
+			if in, ok := item.(*tview.InputField); ok {
+				in.SetText("")
+			}
+		}
+	}
+	if pages != nil {
+		pages.SwitchToPage("login")
+	}
+	if app != nil && loginForm != nil {
+		app.SetFocus(loginForm)
+	}
 }
 
 func drawTOTP() {
+	if viewTOTP == nil || viewTOTPBar == nil {
+		return
+	}
+	if pages != nil {
+		if name, _ := pages.GetFrontPage(); name == "login" {
+			viewTOTP.SetText("")
+			viewTOTPBar.SetText("")
+			return
+		}
+	}
+
 	if currentEnt.Type == TypeLogin {
 		secret := strings.ReplaceAll(currentEnt.TOTPSecret, " ", "")
 		if secret != "" {
@@ -417,12 +463,14 @@ func drawTOTP() {
 			}
 		}
 	}
-	// No TOTP (or error): keep blank rather than showing "None".
 	viewTOTP.SetText("")
 	viewTOTPBar.SetText("")
 }
 
 func showHistory() {
+	if historyList == nil || pages == nil {
+		return
+	}
 	historyList.Clear()
 	for i := len(currentEnt.History) - 1; i >= 0; i-- {
 		historyList.AddItem(currentEnt.History[i].Password, currentEnt.History[i].Date, 0, nil)
@@ -448,8 +496,6 @@ func showDeleteModal() {
 	deleteModal.SetText("Delete " + currentEnt.Title + "?")
 	pages.SwitchToPage("delete")
 }
-
-// --- Styling Helpers ---
 
 func styleButton(b *tview.Button) *tview.Button {
 	b.SetBackgroundColor(colorUnfocusedBg)
@@ -513,8 +559,6 @@ func formatBytes(b int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-// responsiveSplit is a tiny wrapper that keeps a Flex in a stable percentage split
-// as the terminal resizes.
 type responsiveSplit struct {
 	*tview.Flex
 	left, right tview.Primitive
@@ -534,7 +578,6 @@ func newResponsiveSplit(left, right tview.Primitive, leftRatio float64, minLeft,
 		minLeft:   minLeft,
 		minRight:  minRight,
 	}
-	// Initial weights; real sizes are set during Draw() when we know the width.
 	r.Flex.AddItem(left, 0, 1, true)
 	r.Flex.AddItem(right, 0, 1, false)
 	return r
@@ -553,7 +596,6 @@ func (r *responsiveSplit) Draw(screen tcell.Screen) {
 		if leftW < 0 {
 			leftW = 0
 		}
-		// If the terminal is extremely narrow, let the right pane win.
 		if w-leftW < 0 {
 			leftW = 0
 		}

@@ -1,42 +1,35 @@
 package main
 
 import (
-	"github.com/rivo/tview"
 	"time"
+
+	"github.com/rivo/tview"
 )
 
-// --- Global Application State ---
-
 var (
-	// Core
 	app          = tview.NewApplication()
 	pages        = tview.NewPages()
 	masterKey    []byte
 	dataDir      = "~/.passbook/data"
 	lastActivity time.Time
 
-	// Current Selection State
 	currentPath string
 	currentEnt  Entry
 	editingEnt  Entry
 
-	// Temporary State (for Editor/Saver)
 	pendingAttachments []Attachment
-	pendingFilePaths   map[string]string // Maps Attachment.ID -> Local File Path
+	pendingFilePaths   map[string]string
 	pendingSaveData    []byte
 	pendingPath        string
 	lastGeneratedPass  string
 
-	// UI Components - Login
 	loginForm *tview.Form
 
-	// UI Components - Main Layout
 	searchField *tview.InputField
 	treeView    *tview.TreeView
 	rightPages  *tview.Pages
 	viewFlex    *tview.Flex
 
-	// UI Components - Viewer
 	viewTitle      *tview.TextView
 	viewSubtitle   *tview.TextView
 	viewPassword   *tview.TextView
@@ -48,7 +41,6 @@ var (
 	attachmentList *tview.List
 	showSensitive  bool
 
-	// UI Components - Editor
 	editorForm       *tview.Form
 	editorLayout     *tview.Flex
 	attachFlex       *tview.Flex
@@ -57,7 +49,6 @@ var (
 	fileBrowser      *tview.TreeView
 	fileBrowserModal *tview.Flex
 
-	// UI Components - Modals & Tools
 	settingsForm   *tview.Form
 	deleteModal    *tview.Modal
 	collisionModal *tview.Modal

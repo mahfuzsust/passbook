@@ -10,14 +10,12 @@ import (
 
 func main() {
 	loadConfig()
-	// Helpers from config.go
 	os.MkdirAll(expandPath(dataDir), 0700)
 	os.MkdirAll(getAttachmentDir(), 0700)
 	lastActivity = time.Now()
 
-	setupUI() // from ui.go
+	setupUI()
 
-	// Global Input Handlers
 	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		lastActivity = time.Now()
 		return event
@@ -27,14 +25,13 @@ func main() {
 		return event, action
 	})
 
-	// Background Ticker
 	go func() {
 		for range time.Tick(1 * time.Second) {
 			app.QueueUpdateDraw(func() {
 				if len(masterKey) > 0 && time.Since(lastActivity) > 5*time.Minute {
-					lockApp() // from ui.go
+					lockApp()
 				} else {
-					drawTOTP() // from ui.go
+					drawTOTP()
 				}
 			})
 		}

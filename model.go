@@ -4,8 +4,6 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-// --- Constants ---
-
 const (
 	colorUnfocusedBg = tcell.Color236
 	colorFocusedBg   = tcell.Color24
@@ -18,8 +16,6 @@ const (
 	TypeFile  EntryType = "File"
 )
 
-// --- Data Models ---
-
 type EntryType string
 
 type PasswordHistory struct {
@@ -28,8 +24,8 @@ type PasswordHistory struct {
 }
 
 type Attachment struct {
-	ID       string `json:"id"`        // Random ID for storage
-	FileName string `json:"file_name"` // Original filename
+	ID       string `json:"id"`
+	FileName string `json:"file_name"`
 	Size     int64  `json:"size"`
 }
 
@@ -46,8 +42,6 @@ type Entry struct {
 	CustomText  string            `json:"custom_text,omitempty"`
 	Attachments []Attachment      `json:"attachments,omitempty"`
 	History     []PasswordHistory `json:"history,omitempty"`
-
-	// Legacy fields (optional backward compatibility)
-	FileName string `json:"file_name,omitempty"`
-	FileData []byte `json:"file_data,omitempty"`
+	FileName    string            `json:"file_name,omitempty"`
+	FileData    []byte            `json:"file_data,omitempty"`
 }

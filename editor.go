@@ -14,7 +14,6 @@ import (
 )
 
 func setupEditor() {
-	// 1. Create Menu (Vertical List)
 	createList = tview.NewList().ShowSecondaryText(false)
 	createList.AddItem("Login", "Password & 2FA", 'l', func() { newEntry(TypeLogin) })
 	createList.AddItem("Card", "Credit/Debit Details", 'c', func() { newEntry(TypeCard) })
@@ -23,7 +22,6 @@ func setupEditor() {
 	createList.SetBorder(true).SetTitle(" Create New ")
 	pages.AddPage("create_menu", centeredModal(createList, 30, 14), true, false)
 
-	// 2. Editor Layout
 	editorForm = tview.NewForm()
 	attachList = tview.NewList().ShowSecondaryText(false).SetMainTextColor(tcell.ColorGreen)
 
@@ -149,7 +147,7 @@ func openEditor(ent Entry) {
 	editorLayout.RemoveItem(attachFlex)
 	switch ent.Type {
 	case TypeLogin:
-		ent.Attachments = nil // Clear attachments for login entries
+		ent.Attachments = nil
 		editorForm.AddInputField("Username", ent.Username, 40, nil, nil)
 		editorForm.AddInputField("Password", ent.Password, 40, nil, nil)
 		editorForm.AddButton("Generate Password", func() { updatePassPreview(); pages.SwitchToPage("passgen") })
@@ -161,7 +159,7 @@ func openEditor(ent Entry) {
 		editorForm.AddInputField("Expiry (MM/YY)", ent.Expiry, 10, nil, nil)
 		editorForm.AddInputField("CVV", ent.CVV, 5, nil, nil)
 	case TypeFile:
-		editorLayout.AddItem(attachFlex, 0, 0, false) // Hidden by default
+		editorLayout.AddItem(attachFlex, 0, 0, false)
 
 		editorForm.AddButton("Browse Filesystem", func() {
 			home, _ := os.UserHomeDir()
@@ -171,9 +169,8 @@ func openEditor(ent Entry) {
 		dropZone := tview.NewTextArea().
 			SetLabel("Drag File Here").
 			SetPlaceholder("Click here, then drop/paste a file path, then press Enter to attach").
-			SetSize(5, 40) // 5 rows high, 40 cols wide
+			SetSize(5, 40)
 
-		// Styling
 		dropZone.SetBorder(true)
 		dropZone.SetTitle(" Dropzone ")
 		dropZone.SetTitleColor(tcell.ColorYellow)
@@ -196,12 +193,10 @@ func openEditor(ent Entry) {
 				return
 			}
 
-			// Some terminals provide escaped spaces.
 			if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
 				cleanPath = strings.ReplaceAll(cleanPath, "\\ ", " ")
 			}
 
-			// Only single path.
 			if strings.Contains(cleanPath, "\n") || strings.Contains(cleanPath, "\r") {
 				return
 			}
@@ -221,7 +216,6 @@ func openEditor(ent Entry) {
 			app.SetFocus(attachList)
 		}
 
-		// Let Enter trigger attach.
 		dropZone.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 			if event.Key() == tcell.KeyEnter {
 				attachFromDropZone()
@@ -230,7 +224,6 @@ func openEditor(ent Entry) {
 			return event
 		})
 
-		// Dropzone is a real FormItem, so it can live in the form.
 		editorForm.AddFormItem(dropZone)
 
 		resetDropZone()
@@ -392,6 +385,7 @@ func commitSave(newPath string, enc []byte) {
 	}
 	os.WriteFile(newPath, enc, 0600)
 	refreshTree(searchField.GetText())
+	selectTreePath(newPath)
 	pages.SwitchToPage("main")
 	loadEntry(newPath)
 }
