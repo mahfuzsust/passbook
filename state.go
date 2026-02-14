@@ -16,10 +16,10 @@ var (
 	kdfThreads  uint8
 
 	currentPath string
-	currentEnt  Entry
-	editingEnt  Entry
+	currentEnt  *Entry
+	editingEnt  *Entry
 
-	pendingAttachments []Attachment
+	pendingAttachments []*Attachment
 	pendingFilePaths   map[string]string
 	pendingSaveData    []byte
 	pendingPath        string

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -111,7 +110,7 @@ func setupMainLayout() {
 			showCreateMenu()
 			return nil
 		case tcell.KeyCtrlE:
-			if currentPath != "" {
+			if currentEnt != nil && currentPath != "" {
 				openEditor(currentEnt)
 			}
 			return nil
@@ -217,8 +216,8 @@ func refreshTree(filter string) {
 
 		count := 0
 		for _, f := range files {
-			if !f.IsDir() && strings.HasSuffix(f.Name(), ".md") {
-				name := strings.TrimSuffix(f.Name(), ".md")
+			if !f.IsDir() && strings.HasSuffix(f.Name(), ".pb") {
+				name := strings.TrimSuffix(f.Name(), ".pb")
 				if filter == "" || strings.Contains(strings.ToLower(name), strings.ToLower(filter)) {
 					child := tview.NewTreeNode(name).SetReference(filepath.Join(dir, f.Name())).SetSelectable(true)
 					catNode.AddChild(child)
@@ -245,8 +244,9 @@ func loadEntry(path string) {
 		return
 	}
 
-	currentEnt = Entry{}
-	if json.Unmarshal(decrypted, &currentEnt) == nil {
+	ent, err := unmarshalEntry(decrypted)
+	if err == nil {
+		currentEnt = ent
 		currentPath = path
 		showSensitive = false
 		updateViewPane()
@@ -264,7 +264,7 @@ func updateViewPane() {
 	viewFlex.AddItem(makeRow("Title:", viewTitle), 1, 0, false)
 	viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
 
-	switch currentEnt.Type {
+	switch EntryType(currentEnt.Type) {
 	case TypeLogin:
 		if currentEnt.Username != "" {
 			viewSubtitle.SetText(currentEnt.Username)
@@ -306,7 +306,7 @@ func updateViewPane() {
 			viewFlex.AddItem(makeRow("Link:", linkText, btnOpen, btnCopy), 1, 0, false)
 		}
 
-		cleanSecret := strings.ReplaceAll(currentEnt.TOTPSecret, " ", "")
+		cleanSecret := strings.ReplaceAll(currentEnt.TotpSecret, " ", "")
 		if cleanSecret != "" {
 			viewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
 			btnTotp := styleButton(tview.NewButton("cp").SetSelectedFunc(func() {
@@ -338,7 +338,7 @@ func updateViewPane() {
 
 		cvv := "***"
 		if showSensitive {
-			cvv = currentEnt.CVV
+			cvv = currentEnt.Cvv
 		}
 		viewPassword.SetText(cvv)
 		viewFlex.AddItem(makeRow("CVV:", viewPassword), 1, 0, false)
@@ -392,7 +392,7 @@ func updateViewPane() {
 func deleteEntry() {
 	if currentPath != "" {
 		for _, att := range currentEnt.Attachments {
-			err := os.Remove(filepath.Join(getAttachmentDir(), att.ID))
+			err := os.Remove(filepath.Join(getAttachmentDir(), att.Id))
 			if err != nil {
 				return
 			}
@@ -430,8 +430,8 @@ func copySensitive(text, item string) {
 	}()
 }
 
-func downloadAttachment(att Attachment) {
-	data, err := os.ReadFile(filepath.Join(getAttachmentDir(), att.ID))
+func downloadAttachment(att *Attachment) {
+	data, err := os.ReadFile(filepath.Join(getAttachmentDir(), att.Id))
 	if err != nil {
 		viewStatus.SetText("[red]Failed to read attachment[-]")
 		return
@@ -459,29 +459,6 @@ func downloadAttachment(att Attachment) {
 	viewStatus.SetText(fmt.Sprintf("[green]✓ Saved to Downloads: %s[-]", att.FileName))
 }
 
-func lockApp() {
-	masterKey = nil
-	currentPath = ""
-	currentEnt = Entry{}
-
-	if treeView != nil {
-		refreshTree("")
-	}
-	if loginForm != nil {
-		if item := loginForm.GetFormItem(0); item != nil {
-			if in, ok := item.(*tview.InputField); ok {
-				in.SetText("")
-			}
-		}
-	}
-	if pages != nil {
-		pages.SwitchToPage("login")
-	}
-	if app != nil && loginForm != nil {
-		app.SetFocus(loginForm)
-	}
-}
-
 func drawTOTP() {
 	if viewTOTP == nil || viewTOTPBar == nil {
 		return
@@ -494,8 +471,8 @@ func drawTOTP() {
 		}
 	}
 
-	if currentEnt.Type == TypeLogin {
-		secret := strings.ReplaceAll(currentEnt.TOTPSecret, " ", "")
+	if currentEnt != nil && EntryType(currentEnt.Type) == TypeLogin {
+		secret := strings.ReplaceAll(currentEnt.TotpSecret, " ", "")
 		if secret != "" {
 			code, err := totp.GenerateCode(secret, time.Now())
 			if err == nil {

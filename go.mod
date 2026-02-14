@@ -8,6 +8,7 @@ require (
 	github.com/pquerna/otp v1.5.0
 	github.com/rivo/tview v0.42.1-0.20250929082832-e113793670e2
 	golang.org/x/crypto v0.48.0
+	google.golang.org/protobuf v1.36.11
 )
 
 require (

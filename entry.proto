@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+option go_package = ".;main";
+
+message PasswordHistory {
+  string password = 1;
+  string date = 2;
+}
+
+message Attachment {
+  string id = 1;
+  string file_name = 2;
+  int64 size = 3;
+}
+
+message Entry {
+  string type = 1;
+  string title = 2;
+  string username = 3;
+  string password = 4;
+  string link = 5;
+  string totp_secret = 6;
+  string card_number = 7;
+  string expiry = 8;
+  string cvv = 9;
+  string custom_text = 10;
+  repeated Attachment attachments = 11;
+  repeated PasswordHistory history = 12;
+  string file_name = 13;
+  bytes file_data = 14;
+}
+

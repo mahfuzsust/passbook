@@ -40,20 +40,20 @@ On first run, PassBook creates:
 
 ## 🗂️ Vault layout (on disk)
 
-Inside `<dataDir>` you’ll see:
+Inside `<dataDir>` you'll see:
 
-- `logins/` — encrypted JSON entries stored as `*.md`
-- `cards/` — encrypted JSON entries stored as `*.md`
-- `notes/` — encrypted JSON entries stored as `*.md`
-- `files/` — encrypted JSON entries stored as `*.md` (plus attachment metadata)
+- `logins/` — encrypted protobuf entries stored as `*.pb`
+- `cards/` — encrypted protobuf entries stored as `*.pb`
+- `notes/` — encrypted protobuf entries stored as `*.pb`
+- `files/` — encrypted protobuf entries stored as `*.pb` (plus attachment metadata)
 - `_attachments/` — encrypted attachment blobs keyed by attachment ID
 - `.secret` — vault-local KDF configuration (salt + Argon2id parameters)
 
 Notes:
 
-- The `*.md` extension is just a filename convention; the content is encrypted JSON, not Markdown.
+- The `*.pb` extension indicates Protocol Buffer binary format; the content is encrypted protobuf data.
 - Entry filenames are based on the entry Title.
-- If you create a new entry with a duplicate title, you’ll be prompted to Replace or Add Suffix.
+- If you create a new entry with a duplicate title, you'll be prompted to Replace or Add Suffix.
 
 ## 🔐 Security architecture (current)
 

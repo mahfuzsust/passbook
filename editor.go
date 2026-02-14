@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -97,11 +96,11 @@ func setupCollisionModals() {
 			} else if label == "Replace" {
 				commitSave(pendingPath, pendingSaveData)
 			} else if label == "Add Suffix" {
-				dir, base := filepath.Dir(pendingPath), strings.TrimSuffix(filepath.Base(pendingPath), ".md")
+				dir, base := filepath.Dir(pendingPath), strings.TrimSuffix(filepath.Base(pendingPath), ".pb")
 				counter := 1
 				var newPath string
 				for {
-					newPath = filepath.Join(dir, fmt.Sprintf("%s_%d.md", base, counter))
+					newPath = filepath.Join(dir, fmt.Sprintf("%s_%d.pb", base, counter))
 					if _, err := os.Stat(newPath); os.IsNotExist(err) {
 						break
 					}
@@ -133,31 +132,33 @@ func showCreateMenu() {
 
 func newEntry(t EntryType) {
 	currentPath = ""
-	openEditor(Entry{Type: t})
+	ent := NewEntry(t)
+	openEditor(ent)
 }
 
-func openEditor(ent Entry) {
+func openEditor(ent *Entry) {
 	editingEnt = ent
-	pendingAttachments = append([]Attachment{}, ent.Attachments...)
+	pendingAttachments = append([]*Attachment{}, ent.Attachments...)
 	pendingFilePaths = make(map[string]string)
 
 	editorForm.Clear(true)
 	editorForm.AddInputField("Title", ent.Title, 40, nil, nil)
 
 	editorLayout.RemoveItem(attachFlex)
-	switch ent.Type {
+	switch EntryType(ent.Type) {
 	case TypeLogin:
+		// don't store attachments on login/card/note types
 		ent.Attachments = nil
 		editorForm.AddInputField("Username", ent.Username, 40, nil, nil)
 		editorForm.AddInputField("Password", ent.Password, 40, nil, nil)
 		editorForm.AddButton("Generate Password", func() { updatePassPreview(); pages.SwitchToPage("passgen") })
 		editorForm.AddInputField("Link", ent.Link, 40, nil, nil)
-		editorForm.AddInputField("TOTP Secret", ent.TOTPSecret, 40, nil, nil)
+		editorForm.AddInputField("TOTP Secret", ent.TotpSecret, 40, nil, nil)
 	case TypeCard:
 		ent.Attachments = nil
 		editorForm.AddInputField("Card Number", ent.CardNumber, 40, nil, nil)
 		editorForm.AddInputField("Expiry (MM/YY)", ent.Expiry, 10, nil, nil)
-		editorForm.AddInputField("CVV", ent.CVV, 5, nil, nil)
+		editorForm.AddInputField("CVV", ent.Cvv, 5, nil, nil)
 	case TypeFile:
 		editorLayout.AddItem(attachFlex, 0, 0, false)
 
@@ -207,7 +208,7 @@ func openEditor(ent Entry) {
 			}
 
 			id := fmt.Sprintf("%d", time.Now().UnixNano())
-			att := Attachment{ID: id, FileName: filepath.Base(cleanPath), Size: fi.Size()}
+			att := &Attachment{Id: id, FileName: filepath.Base(cleanPath), Size: fi.Size()}
 			pendingAttachments = append(pendingAttachments, att)
 			pendingFilePaths[id] = cleanPath
 
@@ -231,7 +232,7 @@ func openEditor(ent Entry) {
 	}
 
 	editorForm.AddTextArea("Notes", ent.CustomText, 50, 5, 0, nil)
-	editorForm.AddButton("Save", func() { saveEntry(ent.Type) })
+	editorForm.AddButton("Save", func() { saveEntry(EntryType(ent.Type)) })
 	editorForm.AddButton("Cancel", func() { pages.SwitchToPage("main"); app.SetFocus(treeView) })
 	styleForm(editorForm)
 	editorForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -252,7 +253,7 @@ func refreshAttachmentList(t EntryType) {
 			size = 6
 			for i, att := range pendingAttachments {
 				label := att.FileName
-				if _, isNew := pendingFilePaths[att.ID]; isNew {
+				if _, isNew := pendingFilePaths[att.Id]; isNew {
 					label += " [green](New)[-]"
 				}
 				idx := i
@@ -289,7 +290,7 @@ func openFileBrowser(path string) {
 			node.SetExpanded(!node.IsExpanded())
 		} else {
 			id := fmt.Sprintf("%d", time.Now().UnixNano())
-			att := Attachment{ID: id, FileName: filepath.Base(path), Size: fi.Size()}
+			att := &Attachment{Id: id, FileName: filepath.Base(path), Size: fi.Size()}
 			pendingAttachments = append(pendingAttachments, att)
 			pendingFilePaths[id] = path
 			refreshAttachmentList(TypeFile)
@@ -322,24 +323,37 @@ func saveEntry(eType EntryType) {
 		title = "Untitled"
 	}
 
-	ent := Entry{Type: eType, Title: title, CustomText: editorForm.GetFormItemByLabel("Notes").(*tview.TextArea).GetText(), History: editingEnt.History, Attachments: pendingAttachments}
+	var priorPassword string
+	var priorHistory []*PasswordHistory
+	if editingEnt != nil {
+		priorPassword = editingEnt.Password
+		priorHistory = editingEnt.History
+	}
+
+	ent := &Entry{
+		Type:        string(eType),
+		Title:       title,
+		CustomText:  editorForm.GetFormItemByLabel("Notes").(*tview.TextArea).GetText(),
+		History:     priorHistory,
+		Attachments: pendingAttachments,
+	}
 
 	switch eType {
 	case TypeLogin:
 		ent.Username = editorForm.GetFormItemByLabel("Username").(*tview.InputField).GetText()
 		ent.Password = editorForm.GetFormItemByLabel("Password").(*tview.InputField).GetText()
 		ent.Link = editorForm.GetFormItemByLabel("Link").(*tview.InputField).GetText()
-		ent.TOTPSecret = editorForm.GetFormItemByLabel("TOTP Secret").(*tview.InputField).GetText()
-		if editingEnt.Password != "" && editingEnt.Password != ent.Password {
-			ent.History = append(ent.History, PasswordHistory{Password: editingEnt.Password, Date: time.Now().Format("2006-01-02 15:04")})
+		ent.TotpSecret = editorForm.GetFormItemByLabel("TOTP Secret").(*tview.InputField).GetText()
+		if priorPassword != "" && priorPassword != ent.Password {
+			ent.History = append(ent.History, &PasswordHistory{Password: priorPassword, Date: time.Now().Format("2006-01-02 15:04")})
 		}
 	case TypeCard:
 		ent.CardNumber = editorForm.GetFormItemByLabel("Card Number").(*tview.InputField).GetText()
 		ent.Expiry = editorForm.GetFormItemByLabel("Expiry (MM/YY)").(*tview.InputField).GetText()
-		ent.CVV = editorForm.GetFormItemByLabel("CVV").(*tview.InputField).GetText()
+		ent.Cvv = editorForm.GetFormItemByLabel("CVV").(*tview.InputField).GetText()
 	}
 
-	bytes, _ := json.Marshal(ent)
+	bytes, _ := marshalEntry(ent)
 	enc, _ := encrypt(bytes)
 
 	subDir := strings.ToLower(string(eType)) + "s"
@@ -348,7 +362,7 @@ func saveEntry(eType EntryType) {
 	if err != nil {
 		return
 	}
-	filename := ent.Title + ".md"
+	filename := ent.Title + ".pb"
 	newPath := filepath.Join(fullDir, filename)
 
 	_, err = os.Stat(newPath)

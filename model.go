@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/gdamore/tcell/v2"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -18,30 +19,47 @@ const (
 
 type EntryType string
 
-type PasswordHistory struct {
-	Password string `json:"password"`
-	Date     string `json:"date"`
+// Helper functions to convert between Entry and the internal format
+func (e *Entry) GetTypeEnum() EntryType {
+	return EntryType(e.Type)
 }
 
-type Attachment struct {
-	ID       string `json:"id"`
-	FileName string `json:"file_name"`
-	Size     int64  `json:"size"`
+func (e *Entry) SetTypeEnum(t EntryType) {
+	e.Type = string(t)
 }
 
-type Entry struct {
-	Type        EntryType         `json:"type"`
-	Title       string            `json:"title"`
-	Username    string            `json:"username,omitempty"`
-	Password    string            `json:"password,omitempty"`
-	Link        string            `json:"link,omitempty"`
-	TOTPSecret  string            `json:"totp_secret,omitempty"`
-	CardNumber  string            `json:"card_number,omitempty"`
-	Expiry      string            `json:"expiry,omitempty"`
-	CVV         string            `json:"cvv,omitempty"`
-	CustomText  string            `json:"custom_text,omitempty"`
-	Attachments []Attachment      `json:"attachments,omitempty"`
-	History     []PasswordHistory `json:"history,omitempty"`
-	FileName    string            `json:"file_name,omitempty"`
-	FileData    []byte            `json:"file_data,omitempty"`
+func (e *Entry) GetTOTPSecret() string {
+	return e.TotpSecret
+}
+
+func (e *Entry) SetTOTPSecret(s string) {
+	e.TotpSecret = s
+}
+
+func (e *Entry) GetCVV() string {
+	return e.Cvv
+}
+
+func (e *Entry) SetCVV(s string) {
+	e.Cvv = s
+}
+
+// Helper to create a new Entry
+func NewEntry(t EntryType) *Entry {
+	return &Entry{
+		Type:        string(t),
+		Attachments: make([]*Attachment, 0),
+		History:     make([]*PasswordHistory, 0),
+	}
+}
+
+// Helper functions for serialization
+func marshalEntry(e *Entry) ([]byte, error) {
+	return proto.Marshal(e)
+}
+
+func unmarshalEntry(data []byte) (*Entry, error) {
+	e := &Entry{}
+	err := proto.Unmarshal(data, e)
+	return e, err
 }
