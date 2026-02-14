@@ -1,17 +1,14 @@
 package main
 
 import (
-	"time"
-
 	"github.com/rivo/tview"
 )
 
 var (
-	app          = tview.NewApplication()
-	pages        = tview.NewPages()
-	masterKey    []byte
-	dataDir      = "~/.passbook/data"
-	lastActivity time.Time
+	app       = tview.NewApplication()
+	pages     = tview.NewPages()
+	masterKey []byte
+	dataDir   = "~/.passbook/data"
 
 	kdfSalt     []byte
 	kdfTime     uint32
