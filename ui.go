@@ -121,9 +121,6 @@ func setupMainLayout() {
 		case tcell.KeyCtrlF:
 			app.SetFocus(searchField)
 			return nil
-		case tcell.KeyCtrlO:
-			openSettings()
-			return nil
 		case tcell.KeyCtrlQ:
 			app.Stop()
 			return nil
@@ -138,10 +135,6 @@ func setupMainLayout() {
 }
 
 func setupModals() {
-	settingsForm = tview.NewForm()
-	settingsForm.SetBorder(true).SetTitle(" Settings ")
-	pages.AddPage("settings", centeredModal(settingsForm, 50, 10), true, false)
-
 	deleteModal = tview.NewModal().
 		AddButtons([]string{"Delete", "Cancel"}).
 		SetDoneFunc(func(index int, label string) {
@@ -476,20 +469,6 @@ func showHistory() {
 		historyList.AddItem(currentEnt.History[i].Password, currentEnt.History[i].Date, 0, nil)
 	}
 	pages.SwitchToPage("history")
-}
-
-func openSettings() {
-	settingsForm.Clear(true)
-	settingsForm.AddInputField("Data Directory", dataDir, 40, nil, nil)
-	settingsForm.AddButton("Save", func() {
-		dataDir = settingsForm.GetFormItem(0).(*tview.InputField).GetText()
-		saveConfig()
-		refreshTree(searchField.GetText())
-		pages.SwitchToPage("main")
-	})
-	settingsForm.AddButton("Cancel", func() { pages.SwitchToPage("main") })
-	styleForm(settingsForm)
-	pages.SwitchToPage("settings")
 }
 
 func showDeleteModal() {

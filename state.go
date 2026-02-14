@@ -49,7 +49,6 @@ var (
 	fileBrowser      *tview.TreeView
 	fileBrowserModal *tview.Flex
 
-	settingsForm   *tview.Form
 	deleteModal    *tview.Modal
 	collisionModal *tview.Modal
 	errorModal     *tview.Modal
