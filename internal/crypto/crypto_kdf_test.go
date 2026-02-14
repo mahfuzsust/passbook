@@ -1,15 +1,17 @@
-package main
+package crypto
 
 import "testing"
 
 func TestDeriveKey_Argon2Deterministic(t *testing.T) {
-	kdfSalt = []byte("0123456789abcdef")
-	kdfTime = 1
-	kdfMemoryKB = 32 * 1024
-	kdfThreads = 1
+	p := KDFParams{
+		Salt:     []byte("0123456789abcdef"),
+		Time:     1,
+		MemoryKB: 32 * 1024,
+		Threads:  1,
+	}
 
-	k1 := deriveKey("password")
-	k2 := deriveKey("password")
+	k1 := DeriveKey("password", p)
+	k2 := DeriveKey("password", p)
 	if len(k1) != 32 {
 		t.Fatalf("expected 32-byte key, got %d", len(k1))
 	}

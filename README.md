@@ -17,18 +17,65 @@ PassBook is a terminal-based password manager built in Go. It stores your vault 
 
 ## 🚀 Installation
 
-### Prerequisites
+### Option A: Download from GitHub Releases (recommended)
 
+1) Open the latest release page and copy the download URL for your OS/arch:
+
+https://github.com/mahfuzsust/passbook/releases/latest
+
+2) Download + install (macOS/Linux)
+
+Update the version (`vX.Y.Z`) and OS/arch in the URL, then run:
+
+```bash
+curl -fL https://github.com/mahfuzsust/passbook/releases/download/vX.Y.Z/passbook_vX.Y.Z_darwin_arm64.tar.gz -o passbook.tar.gz
+
+tar -xzf passbook.tar.gz
+
+chmod +x passbook
+
+sudo cp -f passbook /usr/local/bin/passbook
+```
+
+Verify:
+
+```bash
+passbook --help
+```
+
+Notes:
+- For Windows, download the `.zip` asset and place `passbook.exe` somewhere on your `PATH`.
+- For Linux assets, the archive name will include `linux_<arch>`.
+- For Intel macOS, use `darwin_amd64`.
+
+### Option B: Build from source
+
+Prerequisites:
 - Go (see `go.mod`)
 
-### Build from source
+Clone and build using the new `cmd/` structure:
 
 ```bash
 git clone https://github.com/mahfuzsust/passbook.git
 cd passbook
 
-go build -o passbook .
+go build -o passbook ./cmd/passbook
 ./passbook
+```
+
+Or install into your Go bin:
+
+```bash
+go install ./cmd/passbook
+passbook
+```
+
+## ▶️ Usage
+
+Run:
+
+```bash
+passbook
 ```
 
 On first run, PassBook creates:
@@ -134,6 +181,31 @@ Viewer behavior:
 | File browser | `Esc` | Cancel file picker |
 | Password generator | `Esc` | Close generator |
 | History | `Esc` | Close history |
+
+## Protobuf code generation
+
+This repo includes a simple command to regenerate `internal/pb/entry.pb.go` from `internal/pb/entry.proto`.
+
+Prerequisites:
+
+- `protoc` installed and on your `PATH`
+- `protoc-gen-go` installed (example):
+
+  ```sh
+  go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+  ```
+
+Generate via Taskfile:
+
+```sh
+task gen:rpc
+```
+
+Or generate via Go:
+
+```sh
+go generate ./...
+```
 
 ## 🧰 Built with
 

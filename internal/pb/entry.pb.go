@@ -4,14 +4,15 @@
 // 	protoc        v6.33.4
 // source: entry.proto
 
-package main
+package pb
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -312,7 +313,7 @@ const file_entry_proto_rawDesc = "" +
 	"\vattachments\x18\v \x03(\v2\v.AttachmentR\vattachments\x12*\n" +
 	"\ahistory\x18\f \x03(\v2\x10.PasswordHistoryR\ahistory\x12\x1b\n" +
 	"\tfile_name\x18\r \x01(\tR\bfileName\x12\x1b\n" +
-	"\tfile_data\x18\x0e \x01(\fR\bfileDataB\bZ\x06.;mainb\x06proto3"
+	"\tfile_data\x18\x0e \x01(\fR\bfileDataB\x19Z\x17passbook/internal/pb;pbb\x06proto3"
 
 var (
 	file_entry_proto_rawDescOnce sync.Once

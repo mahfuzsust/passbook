@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = ".;main";
+option go_package = "passbook/internal/pb;pb";
 
 message PasswordHistory {
   string password = 1;
@@ -29,4 +29,3 @@ message Entry {
   string file_name = 13;
   bytes file_data = 14;
 }
-

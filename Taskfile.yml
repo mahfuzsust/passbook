@@ -1,0 +1,22 @@
+version: '3'
+
+tasks:
+  deps:proto:
+    desc: Install protobuf compile dependencies
+    env:
+      PROTOC_GEN_GO_VERSION: latest
+    cmds:
+      - go install "google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION}"
+
+  gen:rpc:
+    desc: Generate rpc code
+    deps:
+      - deps:proto
+    dir: internal/pb
+    sources:
+      - entry.proto
+    generates:
+      - entry.pb.go
+    cmds:
+      - rm -f entry.pb.go
+      - protoc --proto_path=. --go_out=. --go_opt=paths=source_relative entry.proto

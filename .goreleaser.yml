@@ -6,7 +6,7 @@ before:
 
 builds:
   - id: passbook
-    main: .
+    main: ./cmd/passbook
     binary: passbook
     env:
       - CGO_ENABLED=0

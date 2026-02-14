@@ -1,4 +1,4 @@
-package main
+package crypto
 
 import (
 	"crypto/aes"
@@ -11,14 +11,19 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-func deriveKey(password string) []byte {
-	ensureKDFParams()
-	key := argon2.IDKey([]byte(password), kdfSalt, kdfTime, kdfMemoryKB, kdfThreads, 32)
-	return key
+type KDFParams struct {
+	Salt     []byte
+	Time     uint32
+	MemoryKB uint32
+	Threads  uint8
 }
 
-func encrypt(plaintext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(masterKey)
+func DeriveKey(password string, p KDFParams) []byte {
+	return argon2.IDKey([]byte(password), p.Salt, p.Time, p.MemoryKB, p.Threads, 32)
+}
+
+func Encrypt(key []byte, plaintext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
@@ -33,8 +38,8 @@ func encrypt(plaintext []byte) ([]byte, error) {
 	return gcm.Seal(nonce, nonce, plaintext, nil), nil
 }
 
-func decrypt(ciphertext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(masterKey)
+func Decrypt(key []byte, ciphertext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
@@ -46,11 +51,11 @@ func decrypt(ciphertext []byte) ([]byte, error) {
 	if len(ciphertext) < nonceSize {
 		return nil, fmt.Errorf("ciphertext too short")
 	}
-	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	return gcm.Open(nil, nonce, ciphertext, nil)
+	nonce, rest := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	return gcm.Open(nil, nonce, rest, nil)
 }
 
-func generatePassword(length int, useUpper, useLower, useSpecial bool) string {
+func GeneratePassword(length int, useUpper, useLower, useSpecial bool) string {
 	charset := ""
 	if useUpper {
 		charset += "ABCDEFGHIJKLMNOPQRSTUVWXYZ"

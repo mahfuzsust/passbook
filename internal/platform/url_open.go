@@ -1,11 +1,11 @@
-package main
+package platform
 
 import (
 	"os/exec"
 	"runtime"
 )
 
-func openURL(url string) error {
+func OpenURL(url string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
