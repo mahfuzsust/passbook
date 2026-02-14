@@ -265,15 +265,6 @@ func refreshAttachmentList(t EntryType) {
 	}
 	editorLayout.ResizeItem(attachFlex, size, 0)
 }
-
-func getCurrentEditorState() Entry {
-	e := editingEnt
-	e.Title = editorForm.GetFormItemByLabel("Title").(*tview.InputField).GetText()
-	e.CustomText = editorForm.GetFormItemByLabel("Notes").(*tview.TextArea).GetText()
-	e.Attachments = pendingAttachments
-	return e
-}
-
 func openFileBrowser(path string) {
 	rootDir, _ := filepath.Abs(path)
 	rootNode := tview.NewTreeNode(rootDir).SetColor(tcell.ColorYellow).SetReference(rootDir)
@@ -353,11 +344,14 @@ func saveEntry(eType EntryType) {
 
 	subDir := strings.ToLower(string(eType)) + "s"
 	fullDir := filepath.Join(expandPath(dataDir), subDir)
-	os.MkdirAll(fullDir, 0700)
+	err := os.MkdirAll(fullDir, 0700)
+	if err != nil {
+		return
+	}
 	filename := ent.Title + ".md"
 	newPath := filepath.Join(fullDir, filename)
 
-	_, err := os.Stat(newPath)
+	_, err = os.Stat(newPath)
 	if !os.IsNotExist(err) && currentPath != newPath {
 		if currentPath == "" {
 			pendingSaveData, pendingPath = enc, newPath
@@ -377,13 +371,22 @@ func commitSave(newPath string, enc []byte) {
 		data, err := os.ReadFile(localPath)
 		if err == nil {
 			encData, _ := encrypt(data)
-			os.WriteFile(filepath.Join(getAttachmentDir(), id), encData, 0600)
+			err := os.WriteFile(filepath.Join(getAttachmentDir(), id), encData, 0600)
+			if err != nil {
+				return
+			}
 		}
 	}
 	if currentPath != "" && currentPath != newPath {
-		os.Remove(currentPath)
+		err := os.Remove(currentPath)
+		if err != nil {
+			return
+		}
 	}
-	os.WriteFile(newPath, enc, 0600)
+	err := os.WriteFile(newPath, enc, 0600)
+	if err != nil {
+		return
+	}
 	refreshTree(searchField.GetText())
 	selectTreePath(newPath)
 	pages.SwitchToPage("main")

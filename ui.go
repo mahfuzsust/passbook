@@ -127,6 +127,8 @@ func setupMainLayout() {
 		case tcell.KeyEsc:
 			app.SetFocus(treeView)
 			return nil
+		default:
+			panic("unhandled default case")
 		}
 		return event
 	})
@@ -206,7 +208,10 @@ func refreshTree(filter string) {
 	for _, c := range cats {
 		catNode := tview.NewTreeNode(fmt.Sprintf("%s %ss", c.I, c.T)).SetColor(tcell.ColorSkyblue).SetSelectable(true).SetExpanded(true)
 		dir := filepath.Join(basePath, strings.ToLower(string(c.T))+"s")
-		os.MkdirAll(dir, 0700)
+		err := os.MkdirAll(dir, 0700)
+		if err != nil {
+			return
+		}
 		files, _ := os.ReadDir(dir)
 
 		count := 0
@@ -262,7 +267,13 @@ func updateViewPane() {
 	case TypeLogin:
 		if currentEnt.Username != "" {
 			viewSubtitle.SetText(currentEnt.Username)
-			btnCopy := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() { clipboard.WriteAll(currentEnt.Username); notifyCopied("Username") }))
+			btnCopy := styleButton(tview.NewButton("Copy").SetSelectedFunc(func() {
+				err := clipboard.WriteAll(currentEnt.Username)
+				if err != nil {
+					return
+				}
+				notifyCopied("Username")
+			}))
 			viewFlex.AddItem(makeRow("Username:", viewSubtitle, btnCopy), 1, 0, false)
 		}
 
@@ -352,9 +363,15 @@ func updateViewPane() {
 func deleteEntry() {
 	if currentPath != "" {
 		for _, att := range currentEnt.Attachments {
-			os.Remove(filepath.Join(getAttachmentDir(), att.ID))
+			err := os.Remove(filepath.Join(getAttachmentDir(), att.ID))
+			if err != nil {
+				return
+			}
 		}
-		os.Remove(currentPath)
+		err := os.Remove(currentPath)
+		if err != nil {
+			return
+		}
 		currentPath = ""
 		refreshTree(searchField.GetText())
 	}
@@ -366,13 +383,19 @@ func notifyCopied(item string) {
 }
 
 func copySensitive(text, item string) {
-	clipboard.WriteAll(text)
+	err := clipboard.WriteAll(text)
+	if err != nil {
+		return
+	}
 	viewStatus.SetText(fmt.Sprintf("[green]✓ %s copied (clears in 30s)[-]", item))
 	go func() {
 		time.Sleep(30 * time.Second)
 		curr, _ := clipboard.ReadAll()
 		if curr == text {
-			clipboard.WriteAll("")
+			err := clipboard.WriteAll("")
+			if err != nil {
+				return
+			}
 			app.QueueUpdateDraw(func() { viewStatus.SetText("[yellow]Clipboard cleared[-]") })
 		}
 	}()
@@ -396,7 +419,10 @@ func downloadAttachment(att Attachment) {
 		downDir = filepath.Join(home, "Downloads")
 	}
 
-	os.WriteFile(filepath.Join(downDir, att.FileName), dec, 0644)
+	err = os.WriteFile(filepath.Join(downDir, att.FileName), dec, 0644)
+	if err != nil {
+		return
+	}
 	notifyCopied(att.FileName + " downloaded")
 }
 

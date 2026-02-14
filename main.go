@@ -10,8 +10,14 @@ import (
 
 func main() {
 	loadConfig()
-	os.MkdirAll(expandPath(dataDir), 0700)
-	os.MkdirAll(getAttachmentDir(), 0700)
+	err := os.MkdirAll(expandPath(dataDir), 0700)
+	if err != nil {
+		return
+	}
+	err = os.MkdirAll(getAttachmentDir(), 0700)
+	if err != nil {
+		return
+	}
 	lastActivity = time.Now()
 
 	setupUI()
