@@ -13,6 +13,11 @@ var (
 	dataDir      = "~/.passbook/data"
 	lastActivity time.Time
 
+	kdfSalt     []byte
+	kdfTime     uint32
+	kdfMemoryKB uint32
+	kdfThreads  uint8
+
 	currentPath string
 	currentEnt  Entry
 	editingEnt  Entry

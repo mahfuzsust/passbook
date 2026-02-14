@@ -18,6 +18,7 @@ func main() {
 	if err != nil {
 		return
 	}
+	ensureKDFSecret()
 	lastActivity = time.Now()
 
 	setupUI()

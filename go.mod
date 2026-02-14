@@ -7,6 +7,7 @@ require (
 	github.com/gdamore/tcell/v2 v2.8.1
 	github.com/pquerna/otp v1.5.0
 	github.com/rivo/tview v0.42.1-0.20250929082832-e113793670e2
+	golang.org/x/crypto v0.23.0
 )
 
 require (

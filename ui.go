@@ -29,8 +29,10 @@ func goToMain(pwd string) {
 	if pwd == "" {
 		return
 	}
+	ensureKDFSecret()
 	masterKey = deriveKey(pwd)
 	refreshTree("")
+
 	pages.SwitchToPage("main")
 	app.SetFocus(treeView)
 }
@@ -128,9 +130,8 @@ func setupMainLayout() {
 			app.SetFocus(treeView)
 			return nil
 		default:
-			panic("unhandled default case")
+			return event
 		}
-		return event
 	})
 
 	pages.AddPage("main", mainFlex, true, false)
@@ -404,10 +405,12 @@ func copySensitive(text, item string) {
 func downloadAttachment(att Attachment) {
 	data, err := os.ReadFile(filepath.Join(getAttachmentDir(), att.ID))
 	if err != nil {
+		viewStatus.SetText("[red]Failed to read attachment[-]")
 		return
 	}
 	dec, err := decrypt(data)
 	if err != nil {
+		viewStatus.SetText("[red]Failed to decrypt attachment (wrong key?)[-]")
 		return
 	}
 
@@ -419,11 +422,13 @@ func downloadAttachment(att Attachment) {
 		downDir = filepath.Join(home, "Downloads")
 	}
 
-	err = os.WriteFile(filepath.Join(downDir, att.FileName), dec, 0644)
+	dest := filepath.Join(downDir, att.FileName)
+	err = os.WriteFile(dest, dec, 0644)
 	if err != nil {
+		viewStatus.SetText("[red]Failed to save to Downloads[-]")
 		return
 	}
-	notifyCopied(att.FileName + " downloaded")
+	viewStatus.SetText(fmt.Sprintf("[green]✓ Saved to Downloads: %s[-]", att.FileName))
 }
 
 func lockApp() {

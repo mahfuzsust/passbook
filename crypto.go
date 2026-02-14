@@ -4,15 +4,17 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"math/big"
+
+	"golang.org/x/crypto/argon2"
 )
 
 func deriveKey(password string) []byte {
-	hash := sha256.Sum256([]byte(password))
-	return hash[:]
+	ensureKDFParams()
+	key := argon2.IDKey([]byte(password), kdfSalt, kdfTime, kdfMemoryKB, kdfThreads, 32)
+	return key
 }
 
 func encrypt(plaintext []byte) ([]byte, error) {
