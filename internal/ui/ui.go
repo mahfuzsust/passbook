@@ -104,16 +104,20 @@ func setupLogin() {
 	uiLoginForm.SetBorder(true).SetTitle(" PassBook Login ").SetTitleAlign(tview.AlignCenter)
 	styleForm(uiLoginForm)
 
-	flex := tview.NewFlex().
-		AddItem(nil, 0, 1, false).
-		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).AddItem(nil, 0, 1, false).AddItem(uiLoginForm, 9, 1, true).AddItem(nil, 0, 1, false), 60, 1, true).
-		AddItem(nil, 0, 1, false)
-	uiPages.AddPage("login", flex, true, true)
+	uiLoginModal = newResponsiveModal(uiLoginForm, 40, 9, 80, 15, 0.5, 0.4)
+	uiPages.AddPage("login", uiLoginModal, true, true)
 }
 
 func setupMainLayout() {
 	uiSearchField = styleInput(tview.NewInputField().SetLabel("Search: ")).SetPlaceholder("Ctrl+F")
 	uiSearchField.SetChangedFunc(func(text string) { refreshTree(text) })
+	uiSearchField.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEnter {
+			uiApp.SetFocus(uiTreeView)
+			return nil
+		}
+		return event
+	})
 
 	root := tview.NewTreeNode("Vault").SetSelectable(false)
 	uiTreeView = tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
@@ -206,7 +210,7 @@ func setupModals() {
 		}
 		return event
 	})
-	uiPages.AddPage("history", centeredModal(uiHistoryList, 50, 15), true, false)
+	uiPages.AddPage("history", newResponsiveModal(uiHistoryList, 50, 15, 80, 25, 0.6, 0.65), true, false)
 }
 
 func selectTreePath(path string) {
@@ -575,10 +579,101 @@ func makeRow(label string, content *tview.TextView, buttons ...*tview.Button) *t
 	return f
 }
 
-func centeredModal(p tview.Primitive, width, height int) tview.Primitive {
-	return tview.NewFlex().AddItem(nil, 0, 1, false).
-		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).AddItem(nil, 0, 1, false).AddItem(p, height, 1, true).AddItem(nil, 0, 1, false), width, 1, true).
+type responsiveModal struct {
+	*tview.Flex
+	content       tview.Primitive
+	minWidth      int
+	minHeight     int
+	maxWidth      int
+	maxHeight     int
+	widthPercent  float64
+	heightPercent float64
+	lastW         int
+	lastH         int
+}
+
+func newResponsiveModal(p tview.Primitive, minWidth, minHeight, maxWidth, maxHeight int, widthPercent, heightPercent float64) *responsiveModal {
+	r := &responsiveModal{
+		Flex:          tview.NewFlex(),
+		content:       p,
+		minWidth:      minWidth,
+		minHeight:     minHeight,
+		maxWidth:      maxWidth,
+		maxHeight:     maxHeight,
+		widthPercent:  widthPercent,
+		heightPercent: heightPercent,
+	}
+
+	// Initial setup
+	innerFlex := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(nil, 0, 1, false).
+		AddItem(p, minHeight, 1, true).
 		AddItem(nil, 0, 1, false)
+
+	r.Flex.AddItem(nil, 0, 1, false).
+		AddItem(innerFlex, minWidth, 1, true).
+		AddItem(nil, 0, 1, false)
+
+	return r
+}
+
+func (r *responsiveModal) Draw(screen tcell.Screen) {
+	_, _, w, h := r.GetRect()
+
+	if w != r.lastW || h != r.lastH {
+		// Calculate responsive dimensions
+		modalW := int(float64(w) * r.widthPercent)
+		if modalW < r.minWidth {
+			modalW = r.minWidth
+		}
+		if r.maxWidth > 0 && modalW > r.maxWidth {
+			modalW = r.maxWidth
+		}
+		if modalW > w {
+			modalW = w
+		}
+
+		modalH := int(float64(h) * r.heightPercent)
+		if modalH < r.minHeight {
+			modalH = r.minHeight
+		}
+		if r.maxHeight > 0 && modalH > r.maxHeight {
+			modalH = r.maxHeight
+		}
+		if modalH > h {
+			modalH = h
+		}
+
+		// Calculate padding
+		padLeft := (w - modalW) / 2
+		padRight := w - modalW - padLeft
+		padTop := (h - modalH) / 2
+		padBottom := h - modalH - padTop
+
+		// Rebuild layout with new dimensions
+		r.Flex.Clear()
+
+		innerFlex := tview.NewFlex().SetDirection(tview.FlexRow)
+		if padTop > 0 {
+			innerFlex.AddItem(nil, padTop, 0, false)
+		}
+		innerFlex.AddItem(r.content, modalH, 0, true)
+		if padBottom > 0 {
+			innerFlex.AddItem(nil, padBottom, 0, false)
+		}
+
+		if padLeft > 0 {
+			r.Flex.AddItem(nil, padLeft, 0, false)
+		}
+		r.Flex.AddItem(innerFlex, modalW, 0, true)
+		if padRight > 0 {
+			r.Flex.AddItem(nil, padRight, 0, false)
+		}
+
+		r.lastW, r.lastH = w, h
+	}
+
+	r.Flex.Draw(screen)
 }
 
 func formatBytes(b int64) string {

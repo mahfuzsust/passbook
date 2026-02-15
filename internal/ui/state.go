@@ -27,7 +27,8 @@ var (
 	uiPendingPath        string
 	uiLastGeneratedPass  string
 
-	uiLoginForm *tview.Form
+	uiLoginForm  *tview.Form
+	uiLoginModal tview.Primitive
 
 	uiSearchField *tview.InputField
 	uiTreeView    *tview.TreeView
@@ -51,7 +52,7 @@ var (
 	uiAttachList       *tview.List
 	uiCreateList       *tview.List
 	uiFileBrowser      *tview.TreeView
-	uiFileBrowserModal *tview.Flex
+	uiFileBrowserModal tview.Primitive
 
 	uiDeleteModal    *tview.Modal
 	uiCollisionModal *tview.Modal

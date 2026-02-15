@@ -23,7 +23,7 @@ func setupEditor() {
 	uiCreateList.AddItem("Note", "Secure Text", 'n', func() { newEntry(TypeNote) })
 	uiCreateList.AddItem("File", "Encrypted Attachments", 'f', func() { newEntry(TypeFile) })
 	uiCreateList.SetBorder(true).SetTitle(" Create New ")
-	uiPages.AddPage("create_menu", centeredModal(uiCreateList, 30, 14), true, false)
+	uiPages.AddPage("create_menu", newResponsiveModal(uiCreateList, 30, 14, 50, 20, 0.4, 0.5), true, false)
 
 	uiEditorForm = tview.NewForm()
 	uiAttachList = tview.NewList().ShowSecondaryText(false).SetMainTextColor(tcell.ColorGreen)
@@ -35,7 +35,7 @@ func setupEditor() {
 	uiEditorLayout = tview.NewFlex().SetDirection(tview.FlexRow)
 	uiEditorLayout.AddItem(uiEditorForm, 0, 1, true)
 	uiEditorLayout.SetBorder(true).SetTitle(" Edit Entry ")
-	uiPages.AddPage("editor", centeredModal(uiEditorLayout, 70, 30), true, false)
+	uiPages.AddPage("editor", newResponsiveModal(uiEditorLayout, 60, 25, 120, 50, 0.8, 0.85), true, false)
 
 	setupFileBrowser()
 	setupPassGen()
@@ -52,10 +52,7 @@ func setupFileBrowser() {
 		return event
 	})
 
-	uiFileBrowserModal = tview.NewFlex().
-		AddItem(nil, 0, 1, false).
-		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).AddItem(nil, 0, 1, false).AddItem(uiFileBrowser, 25, 1, true).AddItem(nil, 0, 1, false), 70, 1, true).
-		AddItem(nil, 0, 1, false)
+	uiFileBrowserModal = newResponsiveModal(uiFileBrowser, 50, 20, 100, 40, 0.7, 0.75)
 	uiPages.AddPage("filebrowser", uiFileBrowserModal, true, false)
 }
 
@@ -88,7 +85,7 @@ func setupPassGen() {
 		AddItem(tview.NewTextView().SetText(""), 1, 0, false).
 		AddItem(uiPassGenForm, 0, 1, true)
 	uiPassGenLayout.SetBorder(true).SetTitle(" Generator ")
-	uiPages.AddPage("passgen", centeredModal(uiPassGenLayout, 45, 20), true, false)
+	uiPages.AddPage("passgen", newResponsiveModal(uiPassGenLayout, 45, 20, 70, 30, 0.6, 0.6), true, false)
 }
 
 func setupCollisionModals() {
