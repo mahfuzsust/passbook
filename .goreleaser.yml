@@ -42,3 +42,16 @@ release:
     name: passbook
   draft: false
   prerelease: auto
+
+brews:
+  - name: passbook
+    repository:
+      owner: mahfuzsust
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/mahfuzsust/passbook"
+    description: "PassBook is a terminal-based password vault built in Go."
+    license: "MIT"
+    test: |
+      system "#{bin}/passbook --help"

@@ -17,7 +17,14 @@ PassBook is a terminal-based password manager built in Go. It stores your vault 
 
 ## 🚀 Installation
 
-### Option A: Download from GitHub Releases (recommended)
+### Option A: Homebrew (macOS/Linux)
+
+```bash
+brew install mahfuzsust/tap/passbook
+```
+
+
+### Option B: Download from GitHub Releases (recommended)
 
 1) Open the latest release page and copy the download URL for your OS/arch:
 
@@ -48,7 +55,7 @@ Notes:
 - For Linux assets, the archive name will include `linux_<arch>`.
 - For Intel macOS, use `darwin_amd64`.
 
-### Option B: Build from source
+### Option C: Build from source
 
 Prerequisites:
 - Go (see `go.mod`)
