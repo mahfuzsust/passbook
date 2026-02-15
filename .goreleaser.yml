@@ -27,11 +27,7 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
-    name_template: >-
-      {{ .ProjectName }}_
-      {{ .Version }}_
-      {{ .Os }}_
-      {{ .Arch }}
+    name_template: "{{ .ArchiveName }}"
 
 checksum:
   name_template: checksums.txt
@@ -45,6 +41,8 @@ release:
 
 brews:
   - name: passbook
+    ids:
+      - default
     repository:
       owner: mahfuzsust
       name: homebrew-tap
@@ -53,3 +51,7 @@ brews:
     homepage: "https://github.com/mahfuzsust/passbook"
     description: "Terminal-based password manager built in Go"
     license: "MIT"
+    install: |
+      bin.install "passbook"
+    test: |
+      system "#{bin}/passbook", "--help"
