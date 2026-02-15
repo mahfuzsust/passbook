@@ -29,12 +29,6 @@ func NewApp(c config.AppConfig) (*AppHandle, error) {
 	if err := os.MkdirAll(getAttachmentDir(), 0700); err != nil {
 		return nil, err
 	}
-	var err error
-	uiKDF, err = crypto.EnsureKDFSecret(uiDataDir)
-	if err != nil {
-		return nil, err
-	}
-
 	setupUI()
 	uiPages.SwitchToPage("login")
 	return &AppHandle{}, nil
@@ -42,30 +36,9 @@ func NewApp(c config.AppConfig) (*AppHandle, error) {
 
 type AppHandle struct{}
 
-func expandPath(p string) string { return config.ExpandPath(p) }
-
 func getAttachmentDir() string {
 	return filepath.Join(uiDataDir, "_attachments")
 }
-
-func ensureKDFSecret() {
-	if len(uiKDF.Salt) == 0 {
-		p, err := crypto.EnsureKDFSecret(uiDataDir)
-		if err == nil {
-			uiKDF = p
-		}
-	}
-}
-
-func deriveKey(password string) []byte { return crypto.DeriveKey(password, uiKDF) }
-
-func encrypt(plaintext []byte) ([]byte, error) { return crypto.Encrypt(uiMasterKey, plaintext) }
-
-func decrypt(ciphertext []byte) ([]byte, error) { return crypto.Decrypt(uiMasterKey, ciphertext) }
-
-func openURL(url string) error { return platform.OpenURL(url) }
-
-func marshalEntry(e *pb.Entry) ([]byte, error) { return proto.Marshal(e) }
 
 func unmarshalEntry(data []byte) (*pb.Entry, error) {
 	e := &pb.Entry{}
@@ -97,8 +70,15 @@ func goToMain(pwd string) {
 	if pwd == "" {
 		return
 	}
-	ensureKDFSecret()
-	uiMasterKey = deriveKey(pwd)
+
+	mkey := crypto.DeriveMasterKey(pwd)
+	secret, err := crypto.EnsureKDFSecret(uiDataDir, mkey)
+
+	if err == nil {
+		uiKDF = secret
+	}
+
+	uiMasterKey = crypto.DeriveKey(pwd, uiKDF)
 	refreshTree("")
 
 	uiPages.SwitchToPage("main")
@@ -267,7 +247,7 @@ func selectTreePath(path string) {
 func refreshTree(filter string) {
 	root := uiTreeView.GetRoot()
 	root.ClearChildren()
-	basePath := expandPath(uiDataDir)
+	basePath := config.ExpandPath(uiDataDir)
 
 	cats := []struct {
 		T EntryType
@@ -308,7 +288,7 @@ func loadEntry(path string) {
 	if err != nil {
 		return
 	}
-	decrypted, err := decrypt(data)
+	decrypted, err := crypto.Decrypt(uiMasterKey, data)
 	if err != nil {
 		return
 	}
@@ -364,7 +344,7 @@ func updateViewPane() {
 		if strings.TrimSpace(uiCurrentEnt.Link) != "" {
 			linkText := tview.NewTextView().SetDynamicColors(true)
 			linkText.SetText("[blue::u]" + uiCurrentEnt.Link + "[-:-:-]")
-			btnOpen := styleButton(tview.NewButton("open").SetSelectedFunc(func() { _ = openURL(uiCurrentEnt.Link) }))
+			btnOpen := styleButton(tview.NewButton("open").SetSelectedFunc(func() { _ = platform.OpenURL(uiCurrentEnt.Link) }))
 			btnCopy := styleButton(tview.NewButton("cp").SetSelectedFunc(func() {
 				err := clipboard.WriteAll(uiCurrentEnt.Link)
 				if err != nil {

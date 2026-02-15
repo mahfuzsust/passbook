@@ -1,6 +1,8 @@
 package crypto
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -26,23 +28,29 @@ func secretPath(dataDir string) string {
 	return filepath.Join(dataDir, ".secret")
 }
 
-func EnsureKDFSecret(dataDir string) (KDFParams, error) {
-	if p, err := loadKDFSecret(dataDir); err == nil {
+func EnsureKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
+	if p, err := loadKDFSecret(dataDir, masterKey); err == nil {
 		return p, nil
 	}
-	if err := writeKDFSecretAtomic(dataDir, KDFParams{}); err != nil {
+	if err := writeKDFSecretAtomic(dataDir, KDFParams{}, masterKey); err != nil {
 		return KDFParams{}, err
 	}
-	return loadKDFSecret(dataDir)
+	return loadKDFSecret(dataDir, masterKey)
 }
 
-func loadKDFSecret(dataDir string) (KDFParams, error) {
+func loadKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
 	b, err := os.ReadFile(secretPath(dataDir))
 	if err != nil {
 		return KDFParams{}, err
 	}
+	// Decrypt the file content
+	plaintext, err := DecryptAES256GCM(b, masterKey)
+	if err != nil {
+		return KDFParams{}, err
+	}
+
 	var sf secretFile
-	if err := json.Unmarshal(b, &sf); err != nil {
+	if err := json.Unmarshal(plaintext, &sf); err != nil {
 		return KDFParams{}, err
 	}
 	if sf.Version <= 0 {
@@ -57,7 +65,7 @@ func loadKDFSecret(dataDir string) (KDFParams, error) {
 	return p, nil
 }
 
-func writeKDFSecretAtomic(dataDir string, p KDFParams) error {
+func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte) error {
 	ensureKDFParams(&p)
 	if len(p.Salt) != 16 {
 		s := make([]byte, 16)
@@ -75,13 +83,19 @@ func writeKDFSecretAtomic(dataDir string, p KDFParams) error {
 	}
 	b, _ := json.MarshalIndent(sf, "", "  ")
 
+	// Encrypt the JSON data
+	ciphertext, err := EncryptAES256GCM(b, masterKey)
+	if err != nil {
+		return err
+	}
+
 	vaultDir := filepath.Dir(secretPath(dataDir))
 	if err := os.MkdirAll(vaultDir, 0700); err != nil {
 		return err
 	}
 
 	tmp := secretPath(dataDir) + ".tmp"
-	if err := os.WriteFile(tmp, b, 0600); err != nil {
+	if err := os.WriteFile(tmp, ciphertext, 0600); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, secretPath(dataDir)); err != nil {
@@ -101,4 +115,58 @@ func ensureKDFParams(p *KDFParams) {
 	if p.Threads == 0 {
 		p.Threads = 2
 	}
+}
+
+func EncryptAES256GCM(plaintext, key []byte) ([]byte, error) {
+	if len(key) != 32 {
+		return nil, errors.New("key must be 32 bytes for AES-256")
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+
+	// Prepend nonce to ciphertext
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	return ciphertext, nil
+}
+
+func DecryptAES256GCM(ciphertext, key []byte) ([]byte, error) {
+	if len(key) != 32 {
+		return nil, errors.New("key must be 32 bytes for AES-256")
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return nil, errors.New("ciphertext too short")
+	}
+
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return plaintext, nil
 }

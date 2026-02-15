@@ -22,6 +22,19 @@ func DeriveKey(password string, p KDFParams) []byte {
 	return argon2.IDKey([]byte(password), p.Salt, p.Time, p.MemoryKB, p.Threads, 32)
 }
 
+func DeriveMasterKey(masterPassword string) []byte {
+	salt := []byte("768250f1-214a-4b8d-89b4-5edf1e85f65e")
+
+	return argon2.IDKey(
+		[]byte(masterPassword),
+		salt,
+		1,
+		64*1024,
+		4,
+		32,
+	)
+}
+
 func Encrypt(key []byte, plaintext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {

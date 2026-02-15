@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"passbook/internal/crypto"
 	"path/filepath"
 	"testing"
 
@@ -19,10 +20,10 @@ func TestAttachmentEncryptDecryptRoundTrip(t *testing.T) {
 	uiKDF.MemoryKB = 32
 	uiKDF.Threads = 1
 
-	uiMasterKey = deriveKey("pw")
+	uiMasterKey = crypto.DeriveKey("pw", uiKDF)
 
 	plaintext := []byte("hello")
-	enc, err := encrypt(plaintext)
+	enc, err := crypto.Encrypt(uiMasterKey, plaintext)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +36,7 @@ func TestAttachmentEncryptDecryptRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dec, err := decrypt(readEnc)
+	dec, err := crypto.Decrypt(uiMasterKey, readEnc)
 	if err != nil {
 		t.Fatal(err)
 	}

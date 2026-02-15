@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"passbook/internal/crypto"
 	"path/filepath"
 	"runtime"
 )
@@ -13,7 +14,7 @@ func downloadAttachment(att *Attachment) {
 		uiViewStatus.SetText("[red]Failed to read attachment[-]")
 		return
 	}
-	dec, err := decrypt(data)
+	dec, err := crypto.Decrypt(uiMasterKey, data)
 	if err != nil {
 		uiViewStatus.SetText("[red]Failed to decrypt attachment (wrong key?)[-]")
 		return

@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"passbook/internal/config"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+	"google.golang.org/protobuf/proto"
 )
 
 func setupEditor() {
@@ -60,7 +62,7 @@ func setupFileBrowser() {
 func setupPassGen() {
 	uiPassGenPreview = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 	uiPassGenForm = tview.NewForm()
-	uiPassGenForm.AddInputField("Length", "16", 10, tview.InputFieldInteger, nil)
+	uiPassGenForm.AddInputField("Length", "28", 10, tview.InputFieldInteger, nil)
 	uiPassGenForm.AddCheckbox("A-Z", true, nil)
 	uiPassGenForm.AddCheckbox("a-z", true, nil)
 	uiPassGenForm.AddCheckbox("Special", true, nil)
@@ -354,11 +356,11 @@ func saveEntry(eType EntryType) {
 		ent.Cvv = uiEditorForm.GetFormItemByLabel("CVV").(*tview.InputField).GetText()
 	}
 
-	bytes, _ := marshalEntry(ent)
-	enc, _ := encrypt(bytes)
+	bytes, _ := proto.Marshal(ent)
+	enc, _ := crypto.Encrypt(uiMasterKey, bytes)
 
 	subDir := strings.ToLower(string(eType)) + "s"
-	fullDir := filepath.Join(expandPath(uiDataDir), subDir)
+	fullDir := filepath.Join(config.ExpandPath(uiDataDir), subDir)
 	err := os.MkdirAll(fullDir, 0700)
 	if err != nil {
 		return
@@ -385,7 +387,7 @@ func commitSave(newPath string, enc []byte) {
 	for id, localPath := range uiPendingFilePaths {
 		data, err := os.ReadFile(localPath)
 		if err == nil {
-			encData, _ := encrypt(data)
+			encData, _ := crypto.Encrypt(uiMasterKey, data)
 			err := os.WriteFile(filepath.Join(getAttachmentDir(), id), encData, 0600)
 			if err != nil {
 				return
