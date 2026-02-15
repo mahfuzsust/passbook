@@ -65,18 +65,29 @@ func setupPassGen() {
 	uiPassGenForm.AddCheckbox("Special", true, nil)
 	uiPassGenForm.AddButton("Refresh", func() { updatePassPreview() })
 	uiPassGenForm.AddButton("Use", func() {
-		if item := uiEditorForm.GetFormItemByLabel("Password"); item != nil {
-			item.(*tview.InputField).SetText(uiLastGeneratedPass)
+		if uiEditorPasswordField != nil {
+			uiEditorPasswordField.SetText(uiLastGeneratedPass)
+			uiPages.SwitchToPage("editor")
+			uiApp.SetFocus(uiEditorPasswordField)
+		} else {
+			uiPages.SwitchToPage("editor")
 		}
-		uiPages.SwitchToPage("editor")
 	})
 	uiPassGenForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEsc {
 			uiPages.SwitchToPage("editor")
+			if uiEditorPasswordField != nil {
+				uiApp.SetFocus(uiEditorPasswordField)
+			}
 		}
 		return event
 	})
-	uiPassGenForm.AddButton("Cancel", func() { uiPages.SwitchToPage("editor") })
+	uiPassGenForm.AddButton("Cancel", func() {
+		uiPages.SwitchToPage("editor")
+		if uiEditorPasswordField != nil {
+			uiApp.SetFocus(uiEditorPasswordField)
+		}
+	})
 	styleForm(uiPassGenForm)
 
 	uiPassGenLayout = tview.NewFlex().SetDirection(tview.FlexRow).
@@ -150,8 +161,15 @@ func openEditor(ent *Entry) {
 	case TypeLogin:
 		ent.Attachments = nil
 		uiEditorForm.AddInputField("Username", ent.Username, 40, nil, nil)
-		uiEditorForm.AddInputField("Password", ent.Password, 40, nil, nil)
-		uiEditorForm.AddButton("Generate Password", func() { updatePassPreview(); uiPages.SwitchToPage("passgen") })
+
+		// Store password field reference
+		uiEditorPasswordField = tview.NewInputField().SetLabel("Password").SetText(ent.Password).SetFieldWidth(40)
+		uiEditorForm.AddFormItem(uiEditorPasswordField)
+		uiEditorForm.AddButton("generate", func() {
+			updatePassPreview()
+			uiPages.SwitchToPage("passgen")
+		})
+
 		uiEditorForm.AddInputField("Link", ent.Link, 40, nil, nil)
 		uiEditorForm.AddInputField("TOTP Secret", ent.TotpSecret, 40, nil, nil)
 	case TypeCard:
@@ -341,7 +359,12 @@ func saveEntry(eType EntryType) {
 	switch eType {
 	case TypeLogin:
 		ent.Username = uiEditorForm.GetFormItemByLabel("Username").(*tview.InputField).GetText()
-		ent.Password = uiEditorForm.GetFormItemByLabel("Password").(*tview.InputField).GetText()
+
+		// Get password from stored field reference
+		if uiEditorPasswordField != nil {
+			ent.Password = uiEditorPasswordField.GetText()
+		}
+
 		ent.Link = uiEditorForm.GetFormItemByLabel("Link").(*tview.InputField).GetText()
 		ent.TotpSecret = uiEditorForm.GetFormItemByLabel("TOTP Secret").(*tview.InputField).GetText()
 		if priorPassword != "" && priorPassword != ent.Password {

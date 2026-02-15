@@ -46,13 +46,14 @@ var (
 	uiAttachmentList *tview.List
 	uiShowSensitive  bool
 
-	uiEditorForm       *tview.Form
-	uiEditorLayout     *tview.Flex
-	uiAttachFlex       *tview.Flex
-	uiAttachList       *tview.List
-	uiCreateList       *tview.List
-	uiFileBrowser      *tview.TreeView
-	uiFileBrowserModal tview.Primitive
+	uiEditorForm          *tview.Form
+	uiEditorLayout        *tview.Flex
+	uiEditorPasswordField *tview.InputField
+	uiAttachFlex          *tview.Flex
+	uiAttachList          *tview.List
+	uiCreateList          *tview.List
+	uiFileBrowser         *tview.TreeView
+	uiFileBrowserModal    tview.Primitive
 
 	uiDeleteModal    *tview.Modal
 	uiCollisionModal *tview.Modal
