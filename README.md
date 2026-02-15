@@ -102,31 +102,69 @@ Notes:
 - Entry filenames are based on the entry Title.
 - If you create a new entry with a duplicate title, you'll be prompted to Replace or Add Suffix.
 
-## 🔐 Security architecture (current)
+## 🔐 Security architecture
 
 ### Encryption
 
-- AES-GCM with a random nonce.
-- Nonce is prepended to ciphertext.
+- **Algorithm**: AES-256-GCM (Galois/Counter Mode) providing authenticated encryption.
+- **Nonce**: Random nonce generated per encryption operation (12 bytes with Go's `cipher.NewGCM`).
+- **Format**: Nonce is prepended to ciphertext for storage.
+- **Key size**: 256-bit (32-byte) keys.
 
-### Key derivation (production)
+### Two-stage key derivation
 
-- The encryption key is derived from the master password using Argon2id (password-hardening KDF).
-- A per-vault random salt and the Argon2id parameters are stored in `<dataDir>/.secret`.
+PassBook uses a two-stage key derivation process:
 
-Why `.secret` lives in the vault:
+#### Stage 1: Master Key
 
-- It keeps the vault portable (move `<dataDir>` anywhere and it still unlocks).
-- Losing `~/.passbook/config.json` won’t permanently lock you out as long as you still have the vault folder.
+- **Purpose**: Encrypt/decrypt the vault-local `.secret` file.
+- **KDF**: Argon2id with fixed parameters (hard-coded).
+  - Time: 6
+  - Memory: 256 MB
+  - Threads: 4
+  - Salt: fixed UUID string 
+- **Input**: your master password
+- **Output**: 32-byte master key
 
-Important:
+#### Stage 2: Vault Encryption Key
 
-- Don’t delete `<dataDir>/.secret`. Without it, previously-encrypted data can’t be decrypted.
+- **Purpose**: Encrypt/decrypt all vault entry files (`*.pb`) and attachment blobs.
+- **KDF**: Argon2id with vault-specific parameters loaded from `.secret`.
+  - Defaults (used when `.secret` is first created, and enforced if fields are missing):
+    - Time: 6
+    - Memory: 256 MB
+    - Threads: 4
+  - Salt: 16-byte random salt (per vault)
+- **Input**: your master password + vault salt
+- **Output**: 32-byte vault encryption key
 
-### Attachments
+### The `.secret` file
 
-- Attachments are encrypted with the same AEAD construction.
-- Downloading an attachment writes the decrypted file to your OS Downloads folder.
+Located at `<dataDir>/.secret`.
+
+- The file contains a small JSON document (versioned schema) with:
+  - `salt` (16 bytes)
+  - Argon2id parameters (`time`, `memory_kb`, `threads`)
+  - metadata like `kdf` ("argon2id") and `key_len` (32)
+- The JSON is **encrypted at rest** using AES-256-GCM with the **Stage 1 master key**.
+
+**Portability**: The vault is self-contained—moving `<dataDir>` also moves `.secret`, entries, and attachments.
+
+**Important**: Don't delete `<dataDir>/.secret`. Without it, the vault salt/KDF params are lost and existing encrypted data becomes undecryptable.
+
+### Entries and attachments
+
+All vault data is encrypted with the Stage 2 vault encryption key:
+
+- **Entry files** (`*.pb`): protobuf bytes encrypted with AES-256-GCM.
+- **Attachment files** (`_attachments/`): raw bytes encrypted with AES-256-GCM.
+- **Format**: `[nonce][ciphertext+tag]` where nonce is prepended.
+
+### Why two stages?
+
+1. **Vault-specific KDF**: You can store per-vault salt/parameters without baking them into code.
+2. **Defense in depth**: `.secret` is encrypted too; stealing it doesn't expose vault params without the password.
+3. **Portability**: Everything needed to unlock (except the password) lives under `<dataDir>`.
 
 ## ☁️ Cloud syncing (example: iCloud Drive on macOS)
 

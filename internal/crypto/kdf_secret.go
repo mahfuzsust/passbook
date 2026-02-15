@@ -107,13 +107,13 @@ func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte) error {
 
 func ensureKDFParams(p *KDFParams) {
 	if p.Time == 0 {
-		p.Time = 3
+		p.Time = 6
 	}
 	if p.MemoryKB == 0 {
-		p.MemoryKB = 64 * 1024
+		p.MemoryKB = 256 * 1024
 	}
 	if p.Threads == 0 {
-		p.Threads = 2
+		p.Threads = 4
 	}
 }
 

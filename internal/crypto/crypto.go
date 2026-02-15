@@ -28,8 +28,8 @@ func DeriveMasterKey(masterPassword string) []byte {
 	return argon2.IDKey(
 		[]byte(masterPassword),
 		salt,
-		1,
-		64*1024,
+		6,
+		256*1024,
 		4,
 		32,
 	)
