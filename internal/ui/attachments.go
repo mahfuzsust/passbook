@@ -35,4 +35,7 @@ func downloadAttachment(att *Attachment) {
 		return
 	}
 	uiViewStatus.SetText(fmt.Sprintf("[green]✓ Saved to Downloads: %s[-]", att.FileName))
+
+	// Clear selection to prevent persistent highlighting
+	uiAttachmentList.SetCurrentItem(-1)
 }
