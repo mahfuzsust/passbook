@@ -51,7 +51,5 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/mahfuzsust/passbook"
-    description: "PassBook is a terminal-based password vault built in Go."
+    description: "Terminal-based password manager built in Go"
     license: "MIT"
-    test: |
-      system "#{bin}/passbook --help"
