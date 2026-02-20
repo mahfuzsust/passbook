@@ -48,7 +48,12 @@ var (
 
 	uiEditorForm          *tview.Form
 	uiEditorLayout        *tview.Flex
+	uiEditorTitleField    *tview.InputField
+	uiEditorSaveButton    *tview.Button
 	uiEditorPasswordField *tview.InputField
+	uiEditorCardNumber    *tview.InputField
+	uiEditorExpiry        *tview.InputField
+	uiEditorCVV           *tview.InputField
 	uiAttachFlex          *tview.Flex
 	uiAttachList          *tview.List
 	uiCreateList          *tview.List

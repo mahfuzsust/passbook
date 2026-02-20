@@ -154,7 +154,19 @@ func openEditor(ent *Entry) {
 	uiPendingFilePaths = make(map[string]string)
 
 	uiEditorForm.Clear(true)
-	uiEditorForm.AddInputField("Title", ent.Title, 40, nil, nil)
+	uiEditorTitleField, uiEditorPasswordField, uiEditorSaveButton = nil, nil, nil
+	uiEditorCardNumber, uiEditorExpiry, uiEditorCVV = nil, nil, nil
+
+	if uiCurrentPath == "" {
+		uiEditorLayout.SetTitle(" Add Entry ")
+	} else {
+		uiEditorLayout.SetTitle(" Edit Entry ")
+	}
+
+	titleField := tview.NewInputField().SetLabel("Title").SetText(ent.Title).SetFieldWidth(40)
+	titleField.SetChangedFunc(func(text string) { updateEditorSaveState() })
+	uiEditorTitleField = titleField
+	uiEditorForm.AddFormItem(titleField)
 
 	uiEditorLayout.RemoveItem(uiAttachFlex)
 	switch EntryType(ent.Type) {
@@ -174,9 +186,69 @@ func openEditor(ent *Entry) {
 		uiEditorForm.AddInputField("TOTP Secret", ent.TotpSecret, 40, nil, nil)
 	case TypeCard:
 		ent.Attachments = nil
-		uiEditorForm.AddInputField("Card Number", ent.CardNumber, 40, nil, nil)
-		uiEditorForm.AddInputField("Expiry (MM/YY)", ent.Expiry, 10, nil, nil)
-		uiEditorForm.AddInputField("CVV", ent.Cvv, 5, nil, nil)
+
+		cardNumberField := tview.NewInputField().SetLabel("Card Number").SetText(ent.CardNumber).SetFieldWidth(40)
+		cardNumberField.SetAcceptanceFunc(func(text string, last rune) bool {
+			if last == 0 {
+				return len(text) <= 16
+			}
+			if len(text) > 16 {
+				return false
+			}
+			for _, r := range text {
+				if r < '0' || r > '9' {
+					return false
+				}
+			}
+			return true
+		})
+		cardNumberField.SetChangedFunc(func(string) { updateEditorSaveState() })
+		uiEditorCardNumber = cardNumberField
+		uiEditorForm.AddFormItem(cardNumberField)
+
+		expiryField := tview.NewInputField().SetLabel("Expiry (MM/YY)").SetText(ent.Expiry).SetFieldWidth(10)
+		expiryField.SetAcceptanceFunc(func(text string, last rune) bool {
+			if last == 0 {
+				return len(text) <= 5
+			}
+			if len(text) > 5 {
+				return false
+			}
+			for i, r := range text {
+				if i == 2 {
+					if r != '/' {
+						return false
+					}
+					continue
+				}
+				if r < '0' || r > '9' {
+					return false
+				}
+			}
+			return true
+		})
+		expiryField.SetChangedFunc(func(string) { updateEditorSaveState() })
+		uiEditorExpiry = expiryField
+		uiEditorForm.AddFormItem(expiryField)
+
+		cvvField := tview.NewInputField().SetLabel("CVV").SetText(ent.Cvv).SetFieldWidth(5)
+		cvvField.SetAcceptanceFunc(func(text string, last rune) bool {
+			if last == 0 {
+				return len(text) <= 3
+			}
+			if len(text) > 3 {
+				return false
+			}
+			for _, r := range text {
+				if r < '0' || r > '9' {
+					return false
+				}
+			}
+			return true
+		})
+		cvvField.SetChangedFunc(func(string) { updateEditorSaveState() })
+		uiEditorCVV = cvvField
+		uiEditorForm.AddFormItem(cvvField)
 	case TypeFile:
 		uiEditorLayout.AddItem(uiAttachFlex, 0, 0, false)
 
@@ -250,9 +322,24 @@ func openEditor(ent *Entry) {
 	}
 
 	uiEditorForm.AddTextArea("Notes", ent.CustomText, 50, 5, 0, nil)
+	saveButtonIndex := uiEditorForm.GetButtonCount()
 	uiEditorForm.AddButton("Save", func() { saveEntry(EntryType(ent.Type)) })
+	uiEditorSaveButton = uiEditorForm.GetButton(saveButtonIndex)
+	updateEditorSaveState()
 	uiEditorForm.AddButton("Cancel", func() { uiPages.SwitchToPage("main"); uiApp.SetFocus(uiTreeView) })
 	styleForm(uiEditorForm)
+	if uiEditorSaveButton != nil {
+		uiEditorSaveButton.SetLabelColor(tcell.ColorIndianRed)
+		uiEditorSaveButton.SetBackgroundColor(colorUnfocusedBg)
+		uiEditorSaveButton.SetFocusFunc(func() {
+			uiEditorSaveButton.SetLabelColor(tcell.ColorIndianRed)
+			uiEditorSaveButton.SetBackgroundColor(tcell.ColorWhite)
+		})
+		uiEditorSaveButton.SetBlurFunc(func() {
+			uiEditorSaveButton.SetBackgroundColor(colorUnfocusedBg)
+			uiEditorSaveButton.SetLabelColor(tcell.ColorIndianRed)
+		})
+	}
 	uiEditorForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEsc {
 			uiPages.SwitchToPage("main")
@@ -260,6 +347,85 @@ func openEditor(ent *Entry) {
 		return event
 	})
 	uiPages.SwitchToPage("editor")
+}
+
+func validateTitleField() (string, error) {
+	if uiEditorTitleField == nil {
+		return "", fmt.Errorf("title field unavailable")
+	}
+
+	title := strings.TrimSpace(uiEditorTitleField.GetText())
+	if title == "" {
+		return "", fmt.Errorf("title is required")
+	}
+	if strings.ContainsAny(title, `<>:"/\\|?*`) || title == "." || title == ".." {
+		return "", fmt.Errorf("title contains invalid characters")
+	}
+
+	return title, nil
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func validateCardFields() (string, string, string, error) {
+	if uiEditingEnt == nil || EntryType(uiEditingEnt.Type) != TypeCard {
+		return "", "", "", nil
+	}
+	if uiEditorCardNumber == nil || uiEditorExpiry == nil || uiEditorCVV == nil {
+		return "", "", "", fmt.Errorf("card fields unavailable")
+	}
+
+	number := strings.TrimSpace(uiEditorCardNumber.GetText())
+	expiry := strings.TrimSpace(uiEditorExpiry.GetText())
+	cvv := strings.TrimSpace(uiEditorCVV.GetText())
+
+	if number != "" {
+		if len(number) != 16 || !isDigits(number) {
+			return "", "", "", fmt.Errorf("card number must be 16 digits")
+		}
+	}
+
+	if expiry != "" {
+		if len(expiry) != 5 || expiry[2] != '/' {
+			return "", "", "", fmt.Errorf("expiry must be MM/YY")
+		}
+		mm, yy := expiry[:2], expiry[3:]
+		if !isDigits(mm) || !isDigits(yy) {
+			return "", "", "", fmt.Errorf("expiry must be MM/YY")
+		}
+		month, _ := strconv.Atoi(mm)
+		if month < 1 || month > 12 {
+			return "", "", "", fmt.Errorf("expiry must be MM/YY")
+		}
+	}
+
+	if cvv != "" {
+		if len(cvv) != 3 || !isDigits(cvv) {
+			return "", "", "", fmt.Errorf("CVV must be 3 digits")
+		}
+	}
+
+	return number, expiry, cvv, nil
+}
+
+func updateEditorSaveState() {
+	if uiEditorTitleField == nil || uiEditorSaveButton == nil {
+		return
+	}
+
+	_, titleErr := validateTitleField()
+	_, _, _, cardErr := validateCardFields()
+	uiEditorSaveButton.SetDisabled(titleErr != nil || cardErr != nil)
 }
 
 func refreshAttachmentList(t EntryType) {
@@ -336,9 +502,16 @@ func addNodes(target *tview.TreeNode, path string) {
 }
 
 func saveEntry(eType EntryType) {
-	title := uiEditorForm.GetFormItemByLabel("Title").(*tview.InputField).GetText()
-	if title == "" {
-		title = "Untitled"
+	title, err := validateTitleField()
+	if err != nil {
+		updateEditorSaveState()
+		return
+	}
+
+	cardNumber, expiry, cvv, err := validateCardFields()
+	if err != nil {
+		updateEditorSaveState()
+		return
 	}
 
 	var priorPassword string
@@ -371,9 +544,9 @@ func saveEntry(eType EntryType) {
 			ent.History = append(ent.History, &PasswordHistory{Password: priorPassword, Date: time.Now().Format("2006-01-02 15:04")})
 		}
 	case TypeCard:
-		ent.CardNumber = uiEditorForm.GetFormItemByLabel("Card Number").(*tview.InputField).GetText()
-		ent.Expiry = uiEditorForm.GetFormItemByLabel("Expiry (MM/YY)").(*tview.InputField).GetText()
-		ent.Cvv = uiEditorForm.GetFormItemByLabel("CVV").(*tview.InputField).GetText()
+		ent.CardNumber = cardNumber
+		ent.Expiry = expiry
+		ent.Cvv = cvv
 	}
 
 	bytes, _ := proto.Marshal(ent)
@@ -381,7 +554,7 @@ func saveEntry(eType EntryType) {
 
 	subDir := strings.ToLower(string(eType)) + "s"
 	fullDir := filepath.Join(config.ExpandPath(uiDataDir), subDir)
-	err := os.MkdirAll(fullDir, 0700)
+	err = os.MkdirAll(fullDir, 0700)
 	if err != nil {
 		return
 	}
