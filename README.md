@@ -14,6 +14,7 @@ PassBook is a terminal-based password manager built in Go. It stores your vault 
   - Copying non-sensitive values shows a quick status.
 - Password history: Login entries keep prior passwords + timestamps when the password changes.
 - Password generator: Generate a password and insert it into the editor.
+- Change master password: Re-encrypts all entries and attachments with a new password and fresh salt.
 - Cloud-sync friendly: Point the data directory at iCloud Drive / Dropbox / etc.
 - Responsive layout: Left pane stays ~30% width and right pane ~70% width as the terminal resizes.
 
@@ -193,6 +194,7 @@ Paths starting with `~/` are expanded.
 | `Ctrl+E` | Edit selected entry |
 | `Ctrl+D` | Delete selected entry |
 | `Ctrl+F` | Focus search |
+| `Ctrl+P` | Change master password |
 | `Ctrl+Q` | Quit |
 | `Esc` | Focus vault tree |
 
