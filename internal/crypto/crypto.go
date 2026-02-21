@@ -166,6 +166,74 @@ func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte) error {
 	return nil
 }
 
+// ReKeyVault writes a new .secret file with a fresh salt, encrypted with the
+// new master key. Call ReKeyEntries separately to re-encrypt vault data.
+func ReKeyVault(dataDir string, newMasterKey []byte) error {
+	if err := writeKDFSecretAtomic(dataDir, KDFParams{}, newMasterKey); err != nil {
+		return fmt.Errorf("writing new secret: %w", err)
+	}
+	return nil
+}
+
+// ReKeyEntries decrypts all .pb entries and attachments with oldKey, then
+// re-encrypts them in place with newKey.
+func ReKeyEntries(dataDir string, oldKey, newKey []byte) error {
+	// 1. Re-encrypt all .pb entry files in category sub-directories.
+	categories := []string{"logins", "cards", "notes", "files"}
+	for _, cat := range categories {
+		dir := filepath.Join(dataDir, cat)
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("reading %s: %w", dir, err)
+		}
+		for _, f := range files {
+			if f.IsDir() || filepath.Ext(f.Name()) != ".pb" {
+				continue
+			}
+			path := filepath.Join(dir, f.Name())
+			if err := reEncryptFile(path, oldKey, newKey); err != nil {
+				return fmt.Errorf("re-encrypting %s: %w", path, err)
+			}
+		}
+	}
+
+	// 2. Re-encrypt all attachment blobs.
+	attDir := filepath.Join(dataDir, "_attachments")
+	attFiles, err := os.ReadDir(attDir)
+	if err == nil {
+		for _, f := range attFiles {
+			if f.IsDir() {
+				continue
+			}
+			path := filepath.Join(attDir, f.Name())
+			if err := reEncryptFile(path, oldKey, newKey); err != nil {
+				return fmt.Errorf("re-encrypting attachment %s: %w", path, err)
+			}
+		}
+	}
+	return nil
+}
+
+// reEncryptFile decrypts a file with oldKey and re-encrypts it with newKey in place.
+func reEncryptFile(path string, oldKey, newKey []byte) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	plain, err := Decrypt(oldKey, data)
+	if err != nil {
+		return err
+	}
+	enc, err := Encrypt(newKey, plain)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, enc, 0600)
+}
+
 func ensureKDFParams(p *KDFParams) {
 	if p.Time == 0 {
 		p.Time = 6

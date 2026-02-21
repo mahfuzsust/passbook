@@ -55,7 +55,7 @@ func setupMainLayout() {
 		SetText("\n\n\n[yellow]Select an item from the list to view details.[-]")
 
 	uiRightPages = tview.NewPages()
-	uiRightPages.SetBorder(true).SetTitle(" (Ctrl+A Create | Ctrl+E Edit | Ctrl+D Delete) ")
+	uiRightPages.SetBorder(true).SetTitle(" (Ctrl+A Create | Ctrl+E Edit | Ctrl+D Delete | Ctrl+P Password) ")
 	uiRightPages.AddPage("empty", emptyView, true, true)
 	uiRightPages.AddPage("content", uiViewFlex, true, false)
 
@@ -78,6 +78,9 @@ func setupMainLayout() {
 			return nil
 		case tcell.KeyCtrlF:
 			uiApp.SetFocus(uiSearchField)
+			return nil
+		case tcell.KeyCtrlP:
+			showChangePassword()
 			return nil
 		case tcell.KeyCtrlQ:
 			uiApp.Stop()

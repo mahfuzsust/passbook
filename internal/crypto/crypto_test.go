@@ -268,3 +268,111 @@ func TestDecryptAES256GCMFailsWithTamperedCiphertext(t *testing.T) {
 		t.Fatalf("expected error when decrypting tampered ciphertext")
 	}
 }
+
+func TestReKeyVaultWritesNewSecret(t *testing.T) {
+	dir := t.TempDir()
+	oldMasterKey := bytes.Repeat([]byte{0xAA}, 32)
+	newMasterKey := bytes.Repeat([]byte{0xBB}, 32)
+
+	// Create initial secret.
+	_, err := EnsureKDFSecret(dir, oldMasterKey)
+	if err != nil {
+		t.Fatalf("EnsureKDFSecret error: %v", err)
+	}
+
+	// Re-key vault (writes new .secret).
+	if err := ReKeyVault(dir, newMasterKey); err != nil {
+		t.Fatalf("ReKeyVault error: %v", err)
+	}
+
+	// Old master key should no longer work.
+	if _, err := loadKDFSecret(dir, oldMasterKey); err == nil {
+		t.Fatalf("expected old master key to fail after re-key")
+	}
+
+	// New master key should work.
+	p, err := loadKDFSecret(dir, newMasterKey)
+	if err != nil {
+		t.Fatalf("expected new master key to work: %v", err)
+	}
+	if len(p.Salt) != 16 {
+		t.Fatalf("expected 16-byte salt, got %d", len(p.Salt))
+	}
+}
+
+func TestReKeyEntriesReEncryptsFiles(t *testing.T) {
+	dir := t.TempDir()
+	oldKey := bytes.Repeat([]byte{0xCC}, 32)
+	newKey := bytes.Repeat([]byte{0xDD}, 32)
+
+	// Create a category directory with an encrypted .pb file.
+	loginsDir := filepath.Join(dir, "logins")
+	if err := os.MkdirAll(loginsDir, 0700); err != nil {
+		t.Fatalf("MkdirAll error: %v", err)
+	}
+	plaintext := []byte("test entry data")
+	enc, err := Encrypt(oldKey, plaintext)
+	if err != nil {
+		t.Fatalf("Encrypt error: %v", err)
+	}
+	entryPath := filepath.Join(loginsDir, "test.pb")
+	if err := os.WriteFile(entryPath, enc, 0600); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+
+	// Create an attachment directory with an encrypted file.
+	attDir := filepath.Join(dir, "_attachments")
+	if err := os.MkdirAll(attDir, 0700); err != nil {
+		t.Fatalf("MkdirAll error: %v", err)
+	}
+	attPlain := []byte("attachment data")
+	attEnc, err := Encrypt(oldKey, attPlain)
+	if err != nil {
+		t.Fatalf("Encrypt error: %v", err)
+	}
+	attPath := filepath.Join(attDir, "att1")
+	if err := os.WriteFile(attPath, attEnc, 0600); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+
+	// Re-key entries.
+	if err := ReKeyEntries(dir, oldKey, newKey); err != nil {
+		t.Fatalf("ReKeyEntries error: %v", err)
+	}
+
+	// Old key should no longer decrypt the entry.
+	data, _ := os.ReadFile(entryPath)
+	if _, err := Decrypt(oldKey, data); err == nil {
+		t.Fatalf("expected old key to fail after re-key")
+	}
+
+	// New key should decrypt the entry.
+	got, err := Decrypt(newKey, data)
+	if err != nil {
+		t.Fatalf("Decrypt with new key error: %v", err)
+	}
+	if !bytes.Equal(got, plaintext) {
+		t.Fatalf("plaintext mismatch after re-key")
+	}
+
+	// New key should decrypt the attachment.
+	attData, _ := os.ReadFile(attPath)
+	gotAtt, err := Decrypt(newKey, attData)
+	if err != nil {
+		t.Fatalf("Decrypt attachment with new key error: %v", err)
+	}
+	if !bytes.Equal(gotAtt, attPlain) {
+		t.Fatalf("attachment plaintext mismatch after re-key")
+	}
+}
+
+func TestReKeyEntriesSkipsMissingDirs(t *testing.T) {
+	dir := t.TempDir()
+	oldKey := bytes.Repeat([]byte{0xEE}, 32)
+	newKey := bytes.Repeat([]byte{0xFF}, 32)
+
+	// Should succeed even with no category directories.
+	if err := ReKeyEntries(dir, oldKey, newKey); err != nil {
+		t.Fatalf("ReKeyEntries error on empty vault: %v", err)
+	}
+}

@@ -69,4 +69,5 @@ func setupUI() {
 	setupMainLayout()
 	setupModals()
 	setupEditor()
+	setupChangePassword()
 }
