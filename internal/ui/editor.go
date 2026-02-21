@@ -4,12 +4,10 @@ import (
 	"fmt"
 	"os"
 	"passbook/internal/config"
+	"passbook/internal/crypto"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
-
-	"passbook/internal/crypto"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -40,20 +38,6 @@ func setupEditor() {
 	setupFileBrowser()
 	setupPassGen()
 	setupCollisionModals()
-}
-
-func setupFileBrowser() {
-	uiFileBrowser = tview.NewTreeView()
-	uiFileBrowser.SetBorder(true).SetTitle(" Select File (Enter to Pick, Esc Cancel) ")
-	uiFileBrowser.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEsc {
-			uiPages.SwitchToPage("editor")
-		}
-		return event
-	})
-
-	uiFileBrowserModal = newResponsiveModal(uiFileBrowser, 50, 20, 100, 40, 0.7, 0.75)
-	uiPages.AddPage("filebrowser", uiFileBrowserModal, true, false)
 }
 
 func setupPassGen() {
@@ -169,156 +153,16 @@ func openEditor(ent *Entry) {
 	uiEditorForm.AddFormItem(titleField)
 
 	uiEditorLayout.RemoveItem(uiAttachFlex)
+
 	switch EntryType(ent.Type) {
 	case TypeLogin:
-		ent.Attachments = nil
-		uiEditorForm.AddInputField("Username", ent.Username, 40, nil, nil)
-
-		// Store password field reference
-		uiEditorPasswordField = tview.NewInputField().SetLabel("Password").SetText(ent.Password).SetFieldWidth(40)
-		uiEditorForm.AddFormItem(uiEditorPasswordField)
-		uiEditorForm.AddButton("generate", func() {
-			updatePassPreview()
-			uiPages.SwitchToPage("passgen")
-		})
-
-		uiEditorForm.AddInputField("Link", ent.Link, 40, nil, nil)
-		uiEditorForm.AddInputField("TOTP Secret", ent.TotpSecret, 40, nil, nil)
+		addLoginFields(ent)
 	case TypeCard:
-		ent.Attachments = nil
-
-		cardNumberField := tview.NewInputField().SetLabel("Card Number").SetText(ent.CardNumber).SetFieldWidth(40)
-		cardNumberField.SetAcceptanceFunc(func(text string, last rune) bool {
-			if last == 0 {
-				return len(text) <= 16
-			}
-			if len(text) > 16 {
-				return false
-			}
-			for _, r := range text {
-				if r < '0' || r > '9' {
-					return false
-				}
-			}
-			return true
-		})
-		cardNumberField.SetChangedFunc(func(string) { updateEditorSaveState() })
-		uiEditorCardNumber = cardNumberField
-		uiEditorForm.AddFormItem(cardNumberField)
-
-		expiryField := tview.NewInputField().SetLabel("Expiry (MM/YY)").SetText(ent.Expiry).SetFieldWidth(10)
-		expiryField.SetAcceptanceFunc(func(text string, last rune) bool {
-			if last == 0 {
-				return len(text) <= 5
-			}
-			if len(text) > 5 {
-				return false
-			}
-			for i, r := range text {
-				if i == 2 {
-					if r != '/' {
-						return false
-					}
-					continue
-				}
-				if r < '0' || r > '9' {
-					return false
-				}
-			}
-			return true
-		})
-		expiryField.SetChangedFunc(func(string) { updateEditorSaveState() })
-		uiEditorExpiry = expiryField
-		uiEditorForm.AddFormItem(expiryField)
-
-		cvvField := tview.NewInputField().SetLabel("CVV").SetText(ent.Cvv).SetFieldWidth(5)
-		cvvField.SetAcceptanceFunc(func(text string, last rune) bool {
-			if last == 0 {
-				return len(text) <= 3
-			}
-			if len(text) > 3 {
-				return false
-			}
-			for _, r := range text {
-				if r < '0' || r > '9' {
-					return false
-				}
-			}
-			return true
-		})
-		cvvField.SetChangedFunc(func(string) { updateEditorSaveState() })
-		uiEditorCVV = cvvField
-		uiEditorForm.AddFormItem(cvvField)
+		addCardFields(ent)
+	case TypeNote:
+		addNoteFields(ent)
 	case TypeFile:
-		uiEditorLayout.AddItem(uiAttachFlex, 0, 0, false)
-
-		uiEditorForm.AddButton("Browse Filesystem", func() {
-			home, _ := os.UserHomeDir()
-			openFileBrowser(home)
-		})
-
-		dropZone := tview.NewTextArea().
-			SetLabel("Drag File Here").
-			SetPlaceholder("Click here, then drop/paste a file path, then press Enter to attach").
-			SetSize(5, 40)
-
-		dropZone.SetBorder(true)
-		dropZone.SetTitle(" Dropzone ")
-		dropZone.SetTitleColor(tcell.ColorYellow)
-		dropZone.SetBackgroundColor(tcell.ColorBlack)
-
-		resetDropZone := func() {
-			dropZone.SetText("", true)
-			dropZone.SetLabel("Drag File Here")
-			dropZone.SetPlaceholder("Click here, then drop/paste a file path, then press Enter to attach")
-			dropZone.SetBorder(true)
-			dropZone.SetTitle(" Dropzone ")
-			dropZone.SetTitleColor(tcell.ColorYellow)
-			dropZone.SetBackgroundColor(tcell.ColorBlack)
-		}
-
-		attachFromDropZone := func() {
-			rawPath := dropZone.GetText()
-			cleanPath := strings.Trim(rawPath, "\"' \n\r\t")
-			if cleanPath == "" {
-				return
-			}
-
-			if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
-				cleanPath = strings.ReplaceAll(cleanPath, "\\ ", " ")
-			}
-
-			if strings.Contains(cleanPath, "\n") || strings.Contains(cleanPath, "\r") {
-				return
-			}
-
-			fi, err := os.Stat(cleanPath)
-			if err != nil || fi.IsDir() {
-				return
-			}
-
-			id := fmt.Sprintf("%d", time.Now().UnixNano())
-			att := &Attachment{Id: id, FileName: filepath.Base(cleanPath), Size: fi.Size()}
-			uiPendingAttachments = append(uiPendingAttachments, att)
-			uiPendingFilePaths[id] = cleanPath
-
-			resetDropZone()
-			refreshAttachmentList(TypeFile)
-			uiApp.SetFocus(uiAttachList)
-		}
-
-		dropZone.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-			if event.Key() == tcell.KeyEnter {
-				attachFromDropZone()
-				return nil
-			}
-			return event
-		})
-
-		uiEditorForm.AddFormItem(dropZone)
-
-		resetDropZone()
-		refreshAttachmentList(TypeFile)
+		addFileFields(ent)
 	}
 
 	uiEditorForm.AddTextArea("Notes", ent.CustomText, 50, 5, 0, nil)
@@ -340,10 +184,14 @@ func openEditor(ent *Entry) {
 			uiEditorSaveButton.SetLabelColor(tcell.ColorIndianRed)
 		})
 	}
+	uiEditorForm.SetFocusFunc(func() { highlightFocusedEditorItem() })
 	uiEditorForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEsc {
 			uiPages.SwitchToPage("main")
 		}
+		go func() {
+			uiApp.QueueUpdateDraw(func() { highlightFocusedEditorItem() })
+		}()
 		return event
 	})
 	uiPages.SwitchToPage("editor")
@@ -365,140 +213,14 @@ func validateTitleField() (string, error) {
 	return title, nil
 }
 
-func isDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-func validateCardFields() (string, string, string, error) {
-	if uiEditingEnt == nil || EntryType(uiEditingEnt.Type) != TypeCard {
-		return "", "", "", nil
-	}
-	if uiEditorCardNumber == nil || uiEditorExpiry == nil || uiEditorCVV == nil {
-		return "", "", "", fmt.Errorf("card fields unavailable")
-	}
-
-	number := strings.TrimSpace(uiEditorCardNumber.GetText())
-	expiry := strings.TrimSpace(uiEditorExpiry.GetText())
-	cvv := strings.TrimSpace(uiEditorCVV.GetText())
-
-	if number != "" {
-		if len(number) != 16 || !isDigits(number) {
-			return "", "", "", fmt.Errorf("card number must be 16 digits")
-		}
-	}
-
-	if expiry != "" {
-		if len(expiry) != 5 || expiry[2] != '/' {
-			return "", "", "", fmt.Errorf("expiry must be MM/YY")
-		}
-		mm, yy := expiry[:2], expiry[3:]
-		if !isDigits(mm) || !isDigits(yy) {
-			return "", "", "", fmt.Errorf("expiry must be MM/YY")
-		}
-		month, _ := strconv.Atoi(mm)
-		if month < 1 || month > 12 {
-			return "", "", "", fmt.Errorf("expiry must be MM/YY")
-		}
-	}
-
-	if cvv != "" {
-		if len(cvv) != 3 || !isDigits(cvv) {
-			return "", "", "", fmt.Errorf("CVV must be 3 digits")
-		}
-	}
-
-	return number, expiry, cvv, nil
-}
-
 func updateEditorSaveState() {
 	if uiEditorTitleField == nil || uiEditorSaveButton == nil {
 		return
 	}
 
 	_, titleErr := validateTitleField()
-	_, _, _, cardErr := validateCardFields()
+	cardErr := validateCardFields()
 	uiEditorSaveButton.SetDisabled(titleErr != nil || cardErr != nil)
-}
-
-func refreshAttachmentList(t EntryType) {
-	uiAttachList.Clear()
-	size := 0
-
-	if t == TypeFile || len(uiPendingAttachments) > 0 {
-		if len(uiPendingAttachments) > 0 {
-			size = 6
-			for i, att := range uiPendingAttachments {
-				label := att.FileName
-				if _, isNew := uiPendingFilePaths[att.Id]; isNew {
-					label += " [green](New)[-]"
-				}
-				idx := i
-				uiAttachList.AddItem(label, "Press Enter to Remove", 0, func() {
-					uiPendingAttachments = append(uiPendingAttachments[:idx], uiPendingAttachments[idx+1:]...)
-					refreshAttachmentList(t)
-				})
-			}
-		}
-	}
-	uiEditorLayout.ResizeItem(uiAttachFlex, size, 0)
-}
-func openFileBrowser(path string) {
-	rootDir, _ := filepath.Abs(path)
-	rootNode := tview.NewTreeNode(rootDir).SetColor(tcell.ColorYellow).SetReference(rootDir)
-	uiFileBrowser.SetRoot(rootNode).SetCurrentNode(rootNode)
-	addNodes(rootNode, rootDir)
-
-	uiFileBrowser.SetSelectedFunc(func(node *tview.TreeNode) {
-		ref := node.GetReference()
-		if ref == nil {
-			return
-		}
-		path := ref.(string)
-		fi, err := os.Stat(path)
-		if err != nil {
-			return
-		}
-
-		if fi.IsDir() {
-			if len(node.GetChildren()) == 0 {
-				addNodes(node, path)
-			}
-			node.SetExpanded(!node.IsExpanded())
-		} else {
-			id := fmt.Sprintf("%d", time.Now().UnixNano())
-			att := &Attachment{Id: id, FileName: filepath.Base(path), Size: fi.Size()}
-			uiPendingAttachments = append(uiPendingAttachments, att)
-			uiPendingFilePaths[id] = path
-			refreshAttachmentList(TypeFile)
-			uiPages.SwitchToPage("editor")
-		}
-	})
-	uiPages.SwitchToPage("filebrowser")
-}
-
-func addNodes(target *tview.TreeNode, path string) {
-	files, err := os.ReadDir(path)
-	if err != nil {
-		return
-	}
-	for _, f := range files {
-		if strings.HasPrefix(f.Name(), ".") {
-			continue
-		}
-		node := tview.NewTreeNode(f.Name()).SetReference(filepath.Join(path, f.Name()))
-		if f.IsDir() {
-			node.SetColor(tcell.ColorSkyblue)
-		}
-		target.AddChild(node)
-	}
 }
 
 func saveEntry(eType EntryType) {
@@ -508,8 +230,7 @@ func saveEntry(eType EntryType) {
 		return
 	}
 
-	cardNumber, expiry, cvv, err := validateCardFields()
-	if err != nil {
+	if err := validateCardFields(); err != nil {
 		updateEditorSaveState()
 		return
 	}
@@ -531,22 +252,16 @@ func saveEntry(eType EntryType) {
 
 	switch eType {
 	case TypeLogin:
-		ent.Username = uiEditorForm.GetFormItemByLabel("Username").(*tview.InputField).GetText()
-
-		// Get password from stored field reference
-		if uiEditorPasswordField != nil {
-			ent.Password = uiEditorPasswordField.GetText()
-		}
-
-		ent.Link = uiEditorForm.GetFormItemByLabel("Link").(*tview.InputField).GetText()
-		ent.TotpSecret = uiEditorForm.GetFormItemByLabel("TOTP Secret").(*tview.InputField).GetText()
-		if priorPassword != "" && priorPassword != ent.Password {
-			ent.History = append(ent.History, &PasswordHistory{Password: priorPassword, Date: time.Now().Format("2006-01-02 15:04")})
-		}
+		collectLoginFields(ent, priorPassword)
 	case TypeCard:
-		ent.CardNumber = cardNumber
+		number, expiry, cvv := collectCardFields()
+		ent.CardNumber = number
 		ent.Expiry = expiry
 		ent.Cvv = cvv
+	case TypeNote:
+		collectNoteFields(ent)
+	case TypeFile:
+		collectFileFields(ent)
 	}
 
 	bytes, _ := proto.Marshal(ent)
@@ -554,23 +269,15 @@ func saveEntry(eType EntryType) {
 
 	subDir := strings.ToLower(string(eType)) + "s"
 	fullDir := filepath.Join(config.ExpandPath(uiDataDir), subDir)
-	err = os.MkdirAll(fullDir, 0700)
-	if err != nil {
+	if err := os.MkdirAll(fullDir, 0700); err != nil {
 		return
 	}
 	filename := ent.Title + ".pb"
 	newPath := filepath.Join(fullDir, filename)
 
-	_, err = os.Stat(newPath)
-	if !os.IsNotExist(err) && uiCurrentPath != newPath {
-		if uiCurrentPath == "" {
-			uiPendingSaveData, uiPendingPath = enc, newPath
-			uiCollisionModal.SetText(fmt.Sprintf("'%s' exists. Replace or Add Suffix?", filename))
-			uiPages.SwitchToPage("collision")
-		} else {
-			uiErrorModal.SetText(fmt.Sprintf("Cannot rename to '%s': File exists.", ent.Title))
-			uiPages.SwitchToPage("error")
-		}
+	if _, err := os.Stat(newPath); !os.IsNotExist(err) && uiCurrentPath != newPath {
+		uiErrorModal.SetText("Title already exists. Please change the title.")
+		uiPages.SwitchToPage("error")
 		return
 	}
 	commitSave(newPath, enc)
@@ -581,24 +288,46 @@ func commitSave(newPath string, enc []byte) {
 		data, err := os.ReadFile(localPath)
 		if err == nil {
 			encData, _ := crypto.Encrypt(uiMasterKey, data)
-			err := os.WriteFile(filepath.Join(getAttachmentDir(), id), encData, 0600)
-			if err != nil {
+			if err := os.WriteFile(filepath.Join(getAttachmentDir(), id), encData, 0600); err != nil {
 				return
 			}
 		}
 	}
 	if uiCurrentPath != "" && uiCurrentPath != newPath {
-		err := os.Remove(uiCurrentPath)
-		if err != nil {
+		if err := os.Remove(uiCurrentPath); err != nil {
 			return
 		}
 	}
-	err := os.WriteFile(newPath, enc, 0600)
-	if err != nil {
+	if err := os.WriteFile(newPath, enc, 0600); err != nil {
 		return
 	}
 	refreshTree(uiSearchField.GetText())
 	selectTreePath(newPath)
 	uiPages.SwitchToPage("main")
 	loadEntry(newPath)
+}
+
+func highlightFocusedEditorItem() {
+	focused := uiApp.GetFocus()
+	for i := 0; i < uiEditorForm.GetFormItemCount(); i++ {
+		item := uiEditorForm.GetFormItem(i)
+		if input, ok := item.(*tview.InputField); ok {
+			input.SetLabelColor(tcell.ColorWhite)
+			input.SetFieldBackgroundColor(colorUnfocusedBg)
+		} else if ta, ok := item.(*tview.TextArea); ok {
+			ta.SetLabelStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite))
+		}
+	}
+	for i := 0; i < uiEditorForm.GetFormItemCount(); i++ {
+		item := uiEditorForm.GetFormItem(i)
+		if p, ok := item.(tview.Primitive); ok && p == focused {
+			if input, ok := item.(*tview.InputField); ok {
+				input.SetLabelColor(tcell.ColorYellow)
+				input.SetFieldBackgroundColor(colorFocusedBg)
+			} else if ta, ok := item.(*tview.TextArea); ok {
+				ta.SetLabelStyle(tcell.StyleDefault.Foreground(tcell.ColorYellow))
+			}
+			return
+		}
+	}
 }

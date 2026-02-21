@@ -10,7 +10,6 @@ import (
 	"passbook/internal/config"
 	"passbook/internal/crypto"
 	"passbook/internal/pb"
-	"passbook/internal/platform"
 
 	"github.com/atotto/clipboard"
 	"github.com/gdamore/tcell/v2"
@@ -319,85 +318,13 @@ func updateViewPane() {
 
 	switch EntryType(uiCurrentEnt.Type) {
 	case TypeLogin:
-		if uiCurrentEnt.Username != "" {
-			uiViewSubtitle.SetText(uiCurrentEnt.Username)
-			btnCopy := styleButton(tview.NewButton("cp").SetSelectedFunc(func() {
-				err := clipboard.WriteAll(uiCurrentEnt.Username)
-				if err != nil {
-					return
-				}
-				notifyCopied("Username")
-			}))
-			uiViewFlex.AddItem(makeRow("Username:", uiViewSubtitle, btnCopy), 1, 0, false)
-		}
-
-		if uiCurrentEnt.Password != "" {
-			pass := strings.Repeat("*", len(uiCurrentEnt.Password))
-			if uiShowSensitive {
-				pass = uiCurrentEnt.Password
-			}
-			uiViewPassword.SetText(pass)
-			btnPass := styleButton(tview.NewButton("cp").SetSelectedFunc(func() { copySensitive(uiCurrentEnt.Password, "Password") }))
-			btnShow := styleButton(tview.NewButton("vw").SetSelectedFunc(func() { uiShowSensitive = !uiShowSensitive; updateViewPane() }))
-			btnHist := styleButton(tview.NewButton("his").SetSelectedFunc(func() { showHistory() }))
-			uiViewFlex.AddItem(makeRow("Password:", uiViewPassword, btnShow, btnPass, btnHist), 1, 0, false)
-		} else {
-			uiShowSensitive = false
-		}
-
-		if strings.TrimSpace(uiCurrentEnt.Link) != "" {
-			linkText := tview.NewTextView().SetDynamicColors(true)
-			linkText.SetText("[blue::u]" + uiCurrentEnt.Link + "[-:-:-]")
-			btnOpen := styleButton(tview.NewButton("open").SetSelectedFunc(func() { _ = platform.OpenURL(uiCurrentEnt.Link) }))
-			btnCopy := styleButton(tview.NewButton("cp").SetSelectedFunc(func() {
-				err := clipboard.WriteAll(uiCurrentEnt.Link)
-				if err != nil {
-					return
-				}
-				notifyCopied("Link")
-			}))
-			uiViewFlex.AddItem(makeRow("Link:", linkText, btnOpen, btnCopy), 1, 0, false)
-		}
-
-		cleanSecret := strings.ReplaceAll(uiCurrentEnt.TotpSecret, " ", "")
-		if cleanSecret != "" {
-			uiViewFlex.AddItem(tview.NewTextView().SetText(""), 1, 0, false)
-			btnTotp := styleButton(tview.NewButton("cp").SetSelectedFunc(func() {
-				code, err := totp.GenerateCode(cleanSecret, time.Now())
-				if err == nil {
-					copySensitive(code, "TOTP")
-				}
-			}))
-			uiViewFlex.AddItem(makeRow("TOTP:", uiViewTOTP, btnTotp), 1, 0, false)
-			uiViewFlex.AddItem(makeRow("", uiViewTOTPBar), 1, 0, false)
-			drawTOTP()
-		} else {
-			uiViewTOTP.SetText("")
-			uiViewTOTPBar.SetText("")
-		}
-
+		renderLoginView()
 	case TypeCard:
-		num := uiCurrentEnt.CardNumber
-		if !uiShowSensitive && len(num) > 4 {
-			num = "**** **** **** " + num[len(num)-4:]
-		}
-		uiViewSubtitle.SetText(num)
-		btnCopy := styleButton(tview.NewButton("cp").SetSelectedFunc(func() { copySensitive(uiCurrentEnt.CardNumber, "Card") }))
-		btnShow := styleButton(tview.NewButton("vw").SetSelectedFunc(func() { uiShowSensitive = !uiShowSensitive; updateViewPane() }))
-		uiViewFlex.AddItem(makeRow("Number:", uiViewSubtitle, btnShow, btnCopy), 1, 0, false)
-
-		uiViewDetails.SetText(uiCurrentEnt.Expiry)
-		uiViewFlex.AddItem(makeRow("Expiry:", uiViewDetails), 1, 0, false)
-
-		cvv := "***"
-		if uiShowSensitive {
-			cvv = uiCurrentEnt.Cvv
-		}
-		uiViewPassword.SetText(cvv)
-		uiViewFlex.AddItem(makeRow("CVV:", uiViewPassword), 1, 0, false)
-
+		renderCardView()
 	case TypeNote:
-		uiCurrentEnt.Attachments = nil
+		renderNoteView()
+	case TypeFile:
+		renderFileView()
 	}
 
 	if len(uiCurrentEnt.Attachments) > 0 {
@@ -674,19 +601,6 @@ func (r *responsiveModal) Draw(screen tcell.Screen) {
 	}
 
 	r.Flex.Draw(screen)
-}
-
-func formatBytes(b int64) string {
-	const unit = 1024
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 type responsiveSplit struct {
