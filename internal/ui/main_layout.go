@@ -22,9 +22,10 @@ func setupMainLayout() {
 		return event
 	})
 
-	root := tview.NewTreeNode("Vault").SetSelectable(false)
+	root := tview.NewTreeNode("").SetSelectable(false).SetExpanded(true)
 	uiTreeView = tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
-	uiTreeView.SetBorder(true).SetTitle(" Vault (Ctrl+A Add) ")
+	uiTreeView.SetTopLevel(1)
+	uiTreeView.SetBorder(true).SetTitle(" Vault ")
 	uiTreeView.SetSelectedFunc(func(node *tview.TreeNode) {
 		ref := node.GetReference()
 		if ref == nil {
@@ -54,7 +55,7 @@ func setupMainLayout() {
 		SetText("\n\n\n[yellow]Select an item from the list to view details.[-]")
 
 	uiRightPages = tview.NewPages()
-	uiRightPages.SetBorder(true).SetTitle(" Contents (Ctrl+E Edit | Ctrl+D Delete) ")
+	uiRightPages.SetBorder(true).SetTitle(" (Ctrl+A Create | Ctrl+E Edit | Ctrl+D Delete) ")
 	uiRightPages.AddPage("empty", emptyView, true, true)
 	uiRightPages.AddPage("content", uiViewFlex, true, false)
 
