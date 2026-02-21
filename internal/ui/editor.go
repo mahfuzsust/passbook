@@ -6,7 +6,6 @@ import (
 	"passbook/internal/config"
 	"passbook/internal/crypto"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -15,13 +14,7 @@ import (
 )
 
 func setupEditor() {
-	uiCreateList = tview.NewList().ShowSecondaryText(false)
-	uiCreateList.AddItem("Login", "Password & 2FA", 'l', func() { newEntry(TypeLogin) })
-	uiCreateList.AddItem("Card", "Credit/Debit Details", 'c', func() { newEntry(TypeCard) })
-	uiCreateList.AddItem("Note", "Secure Text", 'n', func() { newEntry(TypeNote) })
-	uiCreateList.AddItem("File", "Encrypted Attachments", 'f', func() { newEntry(TypeFile) })
-	uiCreateList.SetBorder(true).SetTitle(" Create New ")
-	uiPages.AddPage("create_menu", newResponsiveModal(uiCreateList, 30, 14, 50, 20, 0.4, 0.5), true, false)
+	setupCreateMenu()
 
 	uiEditorForm = tview.NewForm()
 	uiAttachList = tview.NewList().ShowSecondaryText(false).SetMainTextColor(tcell.ColorGreen)
@@ -38,49 +31,6 @@ func setupEditor() {
 	setupFileBrowser()
 	setupPassGen()
 	setupCollisionModals()
-}
-
-func setupPassGen() {
-	uiPassGenPreview = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
-	uiPassGenForm = tview.NewForm()
-	uiPassGenForm.AddInputField("Length", "28", 10, tview.InputFieldInteger, nil)
-	uiPassGenForm.AddCheckbox("A-Z", true, nil)
-	uiPassGenForm.AddCheckbox("a-z", true, nil)
-	uiPassGenForm.AddCheckbox("Special", true, nil)
-	uiPassGenForm.AddButton("Refresh", func() { updatePassPreview() })
-	uiPassGenForm.AddButton("Use", func() {
-		if uiEditorPasswordField != nil {
-			uiEditorPasswordField.SetText(uiLastGeneratedPass)
-			uiPages.SwitchToPage("editor")
-			uiApp.SetFocus(uiEditorPasswordField)
-		} else {
-			uiPages.SwitchToPage("editor")
-		}
-	})
-	uiPassGenForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEsc {
-			uiPages.SwitchToPage("editor")
-			if uiEditorPasswordField != nil {
-				uiApp.SetFocus(uiEditorPasswordField)
-			}
-		}
-		return event
-	})
-	uiPassGenForm.AddButton("Cancel", func() {
-		uiPages.SwitchToPage("editor")
-		if uiEditorPasswordField != nil {
-			uiApp.SetFocus(uiEditorPasswordField)
-		}
-	})
-	styleForm(uiPassGenForm)
-
-	uiPassGenLayout = tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(tview.NewTextView().SetText("Generated:").SetTextColor(tcell.ColorYellow), 1, 0, false).
-		AddItem(uiPassGenPreview, 1, 0, false).
-		AddItem(tview.NewTextView().SetText(""), 1, 0, false).
-		AddItem(uiPassGenForm, 0, 1, true)
-	uiPassGenLayout.SetBorder(true).SetTitle(" Generator ")
-	uiPages.AddPage("passgen", newResponsiveModal(uiPassGenLayout, 45, 20, 70, 30, 0.6, 0.6), true, false)
 }
 
 func setupCollisionModals() {
@@ -110,20 +60,6 @@ func setupCollisionModals() {
 	uiErrorModal = tview.NewModal().AddButtons([]string{"OK"}).
 		SetDoneFunc(func(i int, l string) { uiPages.SwitchToPage("editor") })
 	uiPages.AddPage("error", uiErrorModal, true, false)
-}
-
-func updatePassPreview() {
-	lStr := uiPassGenForm.GetFormItemByLabel("Length").(*tview.InputField).GetText()
-	l, _ := strconv.Atoi(lStr)
-	upper := uiPassGenForm.GetFormItemByLabel("A-Z").(*tview.Checkbox).IsChecked()
-	lower := uiPassGenForm.GetFormItemByLabel("a-z").(*tview.Checkbox).IsChecked()
-	special := uiPassGenForm.GetFormItemByLabel("Special").(*tview.Checkbox).IsChecked()
-	uiLastGeneratedPass = crypto.GeneratePassword(l, upper, lower, special)
-	uiPassGenPreview.SetText("[green]" + uiLastGeneratedPass)
-}
-
-func showCreateMenu() {
-	uiPages.SwitchToPage("create_menu")
 }
 
 func newEntry(t EntryType) {
