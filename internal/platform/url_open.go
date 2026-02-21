@@ -6,14 +6,17 @@ import (
 )
 
 func OpenURL(url string) error {
-	var cmd *exec.Cmd
+	cmd := buildOpenCommand(url)
+	return cmd.Start()
+}
+
+func buildOpenCommand(url string) *exec.Cmd {
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", url)
+		return exec.Command("open", url)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
 	default:
-		cmd = exec.Command("xdg-open", url)
+		return exec.Command("xdg-open", url)
 	}
-	return cmd.Start()
 }

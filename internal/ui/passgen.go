@@ -1,12 +1,11 @@
 package ui
 
 import (
+	"passbook/internal/utils"
 	"strconv"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
-
-	"passbook/internal/crypto"
 )
 
 var (
@@ -66,6 +65,6 @@ func updatePassPreview() {
 	upper := uiPassGenForm.GetFormItemByLabel("A-Z").(*tview.Checkbox).IsChecked()
 	lower := uiPassGenForm.GetFormItemByLabel("a-z").(*tview.Checkbox).IsChecked()
 	special := uiPassGenForm.GetFormItemByLabel("Special").(*tview.Checkbox).IsChecked()
-	uiLastGeneratedPass = crypto.GeneratePassword(l, upper, lower, special)
+	uiLastGeneratedPass = utils.GeneratePassword(l, upper, lower, special)
 	uiPassGenPreview.SetText("[green]" + uiLastGeneratedPass)
 }
