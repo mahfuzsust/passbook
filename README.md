@@ -1,5 +1,7 @@
 # 🔐 PassBook (Terminal Password Manager)
 
+![Downloads](https://img.shields.io/github/downloads/mahfuzsust/passbook/total)
+
 PassBook is a terminal-based password manager built in Go. It stores your vault locally as encrypted files, provides a TUI for browsing/editing entries, and includes built-in TOTP generation with a live countdown.
 
 ## ✨ Features
