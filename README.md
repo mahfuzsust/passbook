@@ -15,6 +15,7 @@ PassBook is a terminal-based password manager built in Go. It stores your vault 
 - Password history: Login entries keep prior passwords + timestamps when the password changes.
 - Password generator: Generate a password and insert it into the editor.
 - Change master password: Re-encrypts all entries and attachments with a new password and fresh salt.
+- Import from Bitwarden: Import your vault from a Bitwarden JSON export via the CLI.
 - Cloud-sync friendly: Point the data directory at iCloud Drive / Dropbox / etc.
 - Responsive layout: Left pane stays ~30% width and right pane ~70% width as the terminal resizes.
 
@@ -94,6 +95,27 @@ On first run, PassBook creates:
 - Default vault: `~/.passbook/data`
 - Vault secret: `<dataDir>/.secret`
 - Attachments: `<dataDir>/_attachments`
+
+## 📥 Importing from Bitwarden
+
+You can import entries from a Bitwarden JSON export without launching the TUI:
+
+```bash
+passbook --import bitwarden /path/to/bitwarden_export.json
+```
+
+You will be prompted for your master password. The importer will:
+
+1. Parse the Bitwarden JSON export.
+2. Map Bitwarden item types to PassBook entry types:
+   - Type 1 (Login) → Login
+   - Type 2 (Secure Note) → Note
+   - Type 3 (Card) → Card
+3. Preserve custom fields by appending them to the Notes section.
+4. Handle duplicate titles by appending a numeric suffix (e.g. `GitHub_1.pb`).
+5. Encrypt each entry and write it to the vault.
+
+**Note:** Export your Bitwarden vault as **unencrypted JSON** (`Settings → Export Vault → File format: .json`). Delete the export file after importing.
 
 ## 🗂️ Vault layout (on disk)
 
