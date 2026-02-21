@@ -4,14 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"passbook/internal/config"
-	"passbook/internal/crypto"
 	"passbook/internal/pb"
-
-	"google.golang.org/protobuf/proto"
 )
 
 // bitwardenExport represents the top-level Bitwarden JSON export.
@@ -71,84 +66,22 @@ func ImportBitwarden(jsonPath, masterPassword string, cfg config.AppConfig) erro
 		return fmt.Errorf("parsing JSON: %w", err)
 	}
 
-	dataDir := config.ExpandPath(cfg.DataDir)
+	var entries []*pb.Entry
+	var subDirs, names []string
 
-	// Ensure directories exist.
-	if err := os.MkdirAll(dataDir, 0700); err != nil {
-		return fmt.Errorf("creating data dir: %w", err)
-	}
-
-	// Derive encryption keys.
-	masterKey := crypto.DeriveMasterKey(masterPassword)
-	kdfParams, err := crypto.EnsureKDFSecret(dataDir, masterKey)
-	if err != nil {
-		return fmt.Errorf("wrong master password or vault error: %w", err)
-	}
-	encKey := crypto.DeriveKey(masterPassword, kdfParams)
-
-	var imported, skipped int
 	for _, item := range export.Items {
-		entry, subDir := convertItem(item)
-		if entry == nil {
-			skipped++
-			continue
-		}
-
-		fullDir := filepath.Join(dataDir, subDir)
-		if err := os.MkdirAll(fullDir, 0700); err != nil {
-			return fmt.Errorf("creating dir %s: %w", subDir, err)
-		}
-
-		title := sanitizeTitle(entry.Title)
-		if title == "" {
-			title = "Untitled"
-		}
-		entry.Title = title
-
-		filename := title + ".pb"
-		path := filepath.Join(fullDir, filename)
-
-		// Handle duplicate titles by appending a suffix.
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			counter := 1
-			for {
-				path = filepath.Join(fullDir, fmt.Sprintf("%s_%d.pb", title, counter))
-				if _, err := os.Stat(path); os.IsNotExist(err) {
-					break
-				}
-				counter++
-			}
-		}
-
-		bytes, err := proto.Marshal(entry)
-		if err != nil {
-			fmt.Printf("  ⚠ skipping %q: marshal error: %v\n", item.Name, err)
-			skipped++
-			continue
-		}
-
-		enc, err := crypto.Encrypt(encKey, bytes)
-		if err != nil {
-			fmt.Printf("  ⚠ skipping %q: encrypt error: %v\n", item.Name, err)
-			skipped++
-			continue
-		}
-
-		if err := os.WriteFile(path, enc, 0600); err != nil {
-			fmt.Printf("  ⚠ skipping %q: write error: %v\n", item.Name, err)
-			skipped++
-			continue
-		}
-
-		imported++
+		entry, subDir := convertBitwardenItem(item)
+		entries = append(entries, entry)
+		subDirs = append(subDirs, subDir)
+		names = append(names, item.Name)
 	}
 
-	fmt.Printf("Import complete: %d imported, %d skipped (total %d items)\n",
-		imported, skipped, len(export.Items))
-	return nil
+	return saveEntries(entries, subDirs, names, masterPassword, cfg)
 }
 
-func convertItem(item bitwardenItem) (*pb.Entry, string) {
+func convertBitwardenItem(item bitwardenItem) (*pb.Entry, string) {
+	fields := convertBitwardenFields(item.Fields)
+
 	switch item.Type {
 	case 1: // Login
 		entry := &pb.Entry{
@@ -164,20 +97,13 @@ func convertItem(item bitwardenItem) (*pb.Entry, string) {
 				entry.Link = item.Login.URIs[0].URI
 			}
 		}
-		// Map Bitwarden password history.
 		for _, h := range item.PasswordHistory {
 			entry.History = append(entry.History, &pb.PasswordHistory{
 				Password: h.Password,
 				Date:     h.LastUsedDate,
 			})
 		}
-		// Append custom fields to notes.
-		if extra := formatFields(item.Fields); extra != "" {
-			if entry.CustomText != "" {
-				entry.CustomText += "\n\n"
-			}
-			entry.CustomText += extra
-		}
+		entry.CustomText = appendNotes(entry.CustomText, formatCustomFields(fields))
 		return entry, "logins"
 
 	case 2: // Secure Note
@@ -186,12 +112,7 @@ func convertItem(item bitwardenItem) (*pb.Entry, string) {
 			Title:      item.Name,
 			CustomText: item.Notes,
 		}
-		if extra := formatFields(item.Fields); extra != "" {
-			if entry.CustomText != "" {
-				entry.CustomText += "\n\n"
-			}
-			entry.CustomText += extra
-		}
+		entry.CustomText = appendNotes(entry.CustomText, formatCustomFields(fields))
 		return entry, "notes"
 
 	case 3: // Card
@@ -211,18 +132,10 @@ func convertItem(item bitwardenItem) (*pb.Entry, string) {
 				entry.Expiry = item.Card.ExpYear
 			}
 			if item.Card.CardholderName != "" {
-				if entry.CustomText != "" {
-					entry.CustomText += "\n\n"
-				}
-				entry.CustomText += "Cardholder: " + item.Card.CardholderName
+				entry.CustomText = appendNotes(entry.CustomText, "Cardholder: "+item.Card.CardholderName)
 			}
 		}
-		if extra := formatFields(item.Fields); extra != "" {
-			if entry.CustomText != "" {
-				entry.CustomText += "\n\n"
-			}
-			entry.CustomText += extra
-		}
+		entry.CustomText = appendNotes(entry.CustomText, formatCustomFields(fields))
 		return entry, "cards"
 
 	default:
@@ -230,32 +143,10 @@ func convertItem(item bitwardenItem) (*pb.Entry, string) {
 	}
 }
 
-func formatFields(fields []bitwardenField) string {
-	if len(fields) == 0 {
-		return ""
-	}
-	var parts []string
+func convertBitwardenFields(fields []bitwardenField) [][2]string {
+	var result [][2]string
 	for _, f := range fields {
-		if f.Name != "" || f.Value != "" {
-			parts = append(parts, fmt.Sprintf("%s: %s", f.Name, f.Value))
-		}
+		result = append(result, [2]string{f.Name, f.Value})
 	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return "Custom Fields:\n" + strings.Join(parts, "\n")
-}
-
-func sanitizeTitle(title string) string {
-	title = strings.TrimSpace(title)
-	// Remove characters that are invalid in filenames.
-	replacer := strings.NewReplacer(
-		"<", "", ">", "", ":", "", "\"", "", "/", "-",
-		"\\", "-", "|", "", "?", "", "*", "",
-	)
-	title = replacer.Replace(title)
-	if title == "." || title == ".." {
-		title = "entry"
-	}
-	return title
+	return result
 }

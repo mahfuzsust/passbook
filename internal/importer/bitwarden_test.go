@@ -56,6 +56,16 @@ func decryptEntry(t *testing.T, path string, key []byte) *pb.Entry {
 	return entry
 }
 
+func deriveTestKey(t *testing.T, dir, password string) []byte {
+	t.Helper()
+	masterKey := crypto.DeriveMasterKey(password)
+	kdf, err := crypto.EnsureKDFSecret(dir, masterKey)
+	if err != nil {
+		t.Fatalf("EnsureKDFSecret: %v", err)
+	}
+	return crypto.DeriveKey(password, kdf)
+}
+
 func TestImportBitwardenLogin(t *testing.T) {
 	password := "testpass"
 	dir, cfg := setupTestVault(t, password)

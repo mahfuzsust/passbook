@@ -49,19 +49,26 @@ func main() {
 }
 
 func runImport(source string, args []string) {
-	if source != "bitwarden" {
-		fmt.Fprintf(os.Stderr, "Unsupported import source: %q (supported: bitwarden)\n", source)
+	supported := map[string]string{
+		"bitwarden":  ".json",
+		"1password":  ".1pux",
+		"lastpass":   ".csv",
+	}
+
+	ext, ok := supported[source]
+	if !ok {
+		fmt.Fprintf(os.Stderr, "Unsupported import source: %q (supported: bitwarden, 1password, lastpass)\n", source)
 		os.Exit(1)
 	}
 
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: passbook --import bitwarden <path_to_json_file>")
+		fmt.Fprintf(os.Stderr, "Usage: passbook --import %s <path_to_%s_file>\n", source, ext)
 		os.Exit(1)
 	}
-	jsonPath := args[0]
+	filePath := args[0]
 
-	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "File not found: %s\n", jsonPath)
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "File not found: %s\n", filePath)
 		os.Exit(1)
 	}
 
@@ -75,7 +82,17 @@ func runImport(source string, args []string) {
 	password := string(pwdBytes)
 
 	cfg := config.LoadOrInit()
-	if err := importer.ImportBitwarden(jsonPath, password, cfg); err != nil {
+
+	switch source {
+	case "bitwarden":
+		err = importer.ImportBitwarden(filePath, password, cfg)
+	case "1password":
+		err = importer.Import1Password(filePath, password, cfg)
+	case "lastpass":
+		err = importer.ImportLastPass(filePath, password, cfg)
+	}
+
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Import failed: %v\n", err)
 		os.Exit(1)
 	}

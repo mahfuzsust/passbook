@@ -16,6 +16,8 @@ PassBook is a terminal-based password manager built in Go. It stores your vault 
 - Password generator: Generate a password and insert it into the editor.
 - Change master password: Re-encrypts all entries and attachments with a new password and fresh salt.
 - Import from Bitwarden: Import your vault from a Bitwarden JSON export via the CLI.
+- Import from 1Password: Import your vault from a 1Password `.1pux` export via the CLI.
+- Import from LastPass: Import your vault from a LastPass CSV export via the CLI.
 - Cloud-sync friendly: Point the data directory at iCloud Drive / Dropbox / etc.
 - Responsive layout: Left pane stays ~30% width and right pane ~70% width as the terminal resizes.
 
@@ -96,26 +98,59 @@ On first run, PassBook creates:
 - Vault secret: `<dataDir>/.secret`
 - Attachments: `<dataDir>/_attachments`
 
-## 📥 Importing from Bitwarden
+## 📥 Importing
 
-You can import entries from a Bitwarden JSON export without launching the TUI:
+PassBook can import entries from external password managers without launching the TUI. You will be prompted for your master password.
+
+### Bitwarden (JSON)
 
 ```bash
 passbook --import bitwarden /path/to/bitwarden_export.json
 ```
 
-You will be prompted for your master password. The importer will:
+Export your Bitwarden vault as **unencrypted JSON** (`Settings → Export Vault → File format: .json`).
 
-1. Parse the Bitwarden JSON export.
-2. Map Bitwarden item types to PassBook entry types:
-   - Type 1 (Login) → Login
-   - Type 2 (Secure Note) → Note
-   - Type 3 (Card) → Card
-3. Preserve custom fields by appending them to the Notes section.
-4. Handle duplicate titles by appending a numeric suffix (e.g. `GitHub_1.pb`).
-5. Encrypt each entry and write it to the vault.
+Item type mapping:
+- Type 1 (Login) → Login
+- Type 2 (Secure Note) → Note
+- Type 3 (Card) → Card
 
-**Note:** Export your Bitwarden vault as **unencrypted JSON** (`Settings → Export Vault → File format: .json`). Delete the export file after importing.
+Password history and custom fields are preserved.
+
+### 1Password (.1pux)
+
+```bash
+passbook --import 1password /path/to/1password_export.1pux
+```
+
+Export your 1Password vault via `File → Export → 1PUX format`.
+
+Category mapping:
+- `001` (Login) → Login
+- `002` (Credit Card) → Card
+- `003` (Secure Note) → Note
+- `006` (Document) → Note
+- Other categories → Note (to avoid data loss)
+
+TOTP secrets, extra section fields, and cardholder names are preserved.
+
+### LastPass (CSV)
+
+```bash
+passbook --import lastpass /path/to/lastpass_export.csv
+```
+
+Export your LastPass vault via `Account Options → Advanced → Export`.
+
+- Standard entries are imported as Login entries.
+- Secure Notes (URL = `http://sn`) are imported as Note entries.
+- TOTP secrets and extra/notes fields are preserved.
+
+### Common behavior
+
+- Duplicate titles are handled by appending a numeric suffix (e.g. `GitHub_1.pb`).
+- Each entry is encrypted and written to the vault.
+- **Delete the export file after importing.**
 
 ## 🗂️ Vault layout (on disk)
 
