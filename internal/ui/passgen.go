@@ -9,6 +9,12 @@ import (
 	"passbook/internal/crypto"
 )
 
+var (
+	uiPassGenForm    *tview.Form
+	uiPassGenLayout  *tview.Flex
+	uiPassGenPreview *tview.TextView
+)
+
 // setupPassGen configures the password generator modal.
 func setupPassGen() {
 	uiPassGenPreview = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)

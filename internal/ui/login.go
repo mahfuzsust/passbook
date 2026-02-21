@@ -7,6 +7,11 @@ import (
 	"github.com/rivo/tview"
 )
 
+var (
+	uiLoginForm  *tview.Form
+	uiLoginModal tview.Primitive
+)
+
 func goToMain(pwd string) {
 	if pwd == "" {
 		return

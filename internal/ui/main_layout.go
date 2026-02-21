@@ -5,6 +5,12 @@ import (
 	"github.com/rivo/tview"
 )
 
+var (
+	uiSearchField *tview.InputField
+	uiTreeView    *tview.TreeView
+	uiRightPages  *tview.Pages
+)
+
 func setupMainLayout() {
 	uiSearchField = styleInput(tview.NewInputField().SetLabel("Search: ")).SetPlaceholder("Ctrl+F")
 	uiSearchField.SetChangedFunc(func(text string) { refreshTree(text) })

@@ -2,6 +2,10 @@ package ui
 
 import "github.com/rivo/tview"
 
+var (
+	uiCreateList *tview.List
+)
+
 // setupCreateMenu configures the entry type selection modal.
 func setupCreateMenu() {
 	uiCreateList = tview.NewList().ShowSecondaryText(false)

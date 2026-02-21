@@ -12,6 +12,20 @@ import (
 	"github.com/rivo/tview"
 )
 
+var (
+	uiViewFlex       *tview.Flex
+	uiViewTitle      *tview.TextView
+	uiViewSubtitle   *tview.TextView
+	uiViewPassword   *tview.TextView
+	uiViewDetails    *tview.TextView
+	uiViewTOTP       *tview.TextView
+	uiViewTOTPBar    *tview.TextView
+	uiViewCustom     *tview.TextView
+	uiViewStatus     *tview.TextView
+	uiAttachmentList *tview.List
+	uiShowSensitive  bool
+)
+
 func updateViewPane() {
 	uiViewFlex.Clear()
 	uiAttachmentList.Clear()

@@ -5,11 +5,23 @@ import (
 	"path/filepath"
 
 	"passbook/internal/config"
+	"passbook/internal/crypto"
 	"passbook/internal/pb"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 	"google.golang.org/protobuf/proto"
+)
+
+var (
+	uiApp   = tview.NewApplication()
+	uiPages = tview.NewPages()
+
+	uiCfg     config.AppConfig
+	uiDataDir string
+	uiKDF     crypto.KDFParams
+
+	uiMasterKey []byte
 )
 
 func NewApp(c config.AppConfig) (*AppHandle, error) {

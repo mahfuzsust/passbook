@@ -13,6 +13,29 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var (
+	uiCurrentPath string
+	uiCurrentEnt  *Entry
+	uiEditingEnt  *Entry
+
+	uiPendingAttachments []*Attachment
+	uiPendingFilePaths   map[string]string
+	uiPendingSaveData    []byte
+	uiPendingPath        string
+	uiLastGeneratedPass  string
+
+	uiEditorForm          *tview.Form
+	uiEditorLayout        *tview.Flex
+	uiEditorTitleField    *tview.InputField
+	uiEditorSaveButton    *tview.Button
+	uiEditorPasswordField *tview.InputField
+	uiEditorCardNumber    *tview.InputField
+	uiEditorExpiry        *tview.InputField
+	uiEditorCVV           *tview.InputField
+	uiAttachFlex          *tview.Flex
+	uiAttachList          *tview.List
+)
+
 func setupEditor() {
 	setupCreateMenu()
 

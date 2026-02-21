@@ -5,6 +5,13 @@ import (
 	"github.com/rivo/tview"
 )
 
+var (
+	uiDeleteModal    *tview.Modal
+	uiCollisionModal *tview.Modal
+	uiErrorModal     *tview.Modal
+	uiHistoryList    *tview.List
+)
+
 func setupModals() {
 	uiDeleteModal = tview.NewModal().
 		AddButtons([]string{"Delete", "Cancel"}).

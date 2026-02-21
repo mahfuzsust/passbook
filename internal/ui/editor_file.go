@@ -11,6 +11,11 @@ import (
 	"github.com/rivo/tview"
 )
 
+var (
+	uiFileBrowser      *tview.TreeView
+	uiFileBrowserModal tview.Primitive
+)
+
 // addFileFields adds file-specific form fields to the editor.
 func addFileFields(_ *Entry) {
 	uiEditorLayout.AddItem(uiAttachFlex, 0, 0, false)
