@@ -54,6 +54,7 @@ Verify:
 
 ```bash
 passbook --help
+passbook --version
 ```
 
 Notes:
@@ -97,6 +98,18 @@ On first run, PassBook creates:
 - Default vault: `~/.passbook/data`
 - Vault secret: `<dataDir>/.secret`
 - Attachments: `<dataDir>/_attachments`
+
+## ☁️ iCloud sync
+
+PassBook stores the vault under `data_dir` from `~/.passbook/config.json`. To sync via iCloud Drive, set `data_dir` to something like:
+
+`~/Library/Mobile Documents/com~apple~CloudDocs/PassBook`
+
+```bash
+sed -i '' 's|"data_dir":[[:space:]]*"[^"]*"|"data_dir": "~/Library/Mobile Documents/com~apple~CloudDocs/PassBook"|' ~/.passbook/config.json
+```
+
+Paths starting with `~/` are expanded.
 
 ## 📥 Importing
 
@@ -233,13 +246,7 @@ All vault data is encrypted with the Stage 2 vault encryption key:
 2. **Defense in depth**: `.secret` is encrypted too; stealing it doesn't expose vault params without the password.
 3. **Portability**: Everything needed to unlock (except the password) lives under `<dataDir>`.
 
-## ☁️ Cloud syncing (example: iCloud Drive on macOS)
 
-PassBook stores the vault under `data_dir` from `~/.passbook/config.json`. To sync via iCloud Drive, set `data_dir` to something like:
-
-`~/Library/Mobile Documents/com~apple~CloudDocs/PassBook`
-
-Paths starting with `~/` are expanded.
 
 ## ⌨️ Keyboard shortcuts
 
