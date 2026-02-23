@@ -146,6 +146,6 @@ func setupLogin() {
 	uiLoginForm.SetBorder(true).SetTitle(" PassBook Login ").SetTitleAlign(tview.AlignCenter)
 	styleForm(uiLoginForm)
 
-	uiLoginModal = newResponsiveModal(uiLoginForm, 40, 10, 80, 15, 0.5, 0.4)
+	uiLoginModal = newResponsiveModal(uiLoginForm, 55, 10, 80, 15, 0.5, 0.4)
 	uiPages.AddPage("login", uiLoginModal, true, true)
 }

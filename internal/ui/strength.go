@@ -10,7 +10,7 @@ import (
 	"github.com/rivo/tview"
 )
 
-const strengthBarWidth = 20
+const strengthBarWidth = 15
 
 // strengthMeter keeps references to text views that display a password
 // strength bar.  It can drive both an inline form text-view (added via
@@ -27,9 +27,11 @@ func newStrengthMeter() *strengthMeter {
 // position.  The label is a single space so it does not widen the form's
 // label column.
 func (m *strengthMeter) AddTo(form *tview.Form) {
-	form.AddTextView(" ", "", 0, 1, true, false)
-	idx := form.GetFormItemCount() - 1
-	tv := form.GetFormItem(idx).(*tview.TextView)
+	tv := tview.NewTextView().SetDynamicColors(true)
+	tv.SetLabel(" ")
+	tv.SetSize(1, 0)
+	tv.SetScrollable(false)
+	form.AddFormItem(tv)
 	m.views = append(m.views, tv)
 }
 
