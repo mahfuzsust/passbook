@@ -28,6 +28,26 @@ func TestCardFieldsValidation(t *testing.T) {
 	if err := validateCardFields(); err != nil {
 		t.Fatalf("expected valid card fields, got: %v", err)
 	}
+
+	// Amex: 15-digit card number with 4-digit CVV
+	uiEditorCardNumber.SetText("371449635398431")
+	uiEditorCVV.SetText("1234")
+	if err := validateCardFields(); err != nil {
+		t.Fatalf("expected valid amex card fields, got: %v", err)
+	}
+
+	// 4-digit CVV alone with 16-digit card number should also be valid
+	uiEditorCardNumber.SetText("4111111111111111")
+	uiEditorCVV.SetText("1234")
+	if err := validateCardFields(); err != nil {
+		t.Fatalf("expected valid card fields with 4-digit CVV, got: %v", err)
+	}
+
+	// 5-digit CVV should fail
+	uiEditorCVV.SetText("12345")
+	if err := validateCardFields(); err == nil {
+		t.Fatalf("expected error for 5-digit CVV")
+	}
 }
 
 func TestCollectCardFieldsTrims(t *testing.T) {

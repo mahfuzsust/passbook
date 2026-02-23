@@ -15,9 +15,9 @@ func addCardFields(ent *Entry) {
 	cardNumberField := tview.NewInputField().SetLabel("Card Number").SetText(ent.CardNumber).SetFieldWidth(40)
 	cardNumberField.SetAcceptanceFunc(func(text string, last rune) bool {
 		if last == 0 {
-			return len(text) <= 16
+			return len(text) <= 19
 		}
-		if len(text) > 16 {
+		if len(text) > 19 {
 			return false
 		}
 		for _, r := range text {
@@ -59,9 +59,9 @@ func addCardFields(ent *Entry) {
 	cvvField := tview.NewInputField().SetLabel("CVV").SetText(ent.Cvv).SetFieldWidth(5)
 	cvvField.SetAcceptanceFunc(func(text string, last rune) bool {
 		if last == 0 {
-			return len(text) <= 3
+			return len(text) <= 4
 		}
-		if len(text) > 3 {
+		if len(text) > 4 {
 			return false
 		}
 		for _, r := range text {
@@ -100,8 +100,8 @@ func validateCardFields() error {
 	cvv := strings.TrimSpace(uiEditorCVV.GetText())
 
 	if number != "" {
-		if len(number) != 16 || !isDigits(number) {
-			return fmt.Errorf("card number must be 16 digits")
+		if len(number) < 13 || len(number) > 19 || !isDigits(number) {
+			return fmt.Errorf("card number must be 13-19 digits")
 		}
 	}
 
@@ -120,8 +120,8 @@ func validateCardFields() error {
 	}
 
 	if cvv != "" {
-		if len(cvv) != 3 || !isDigits(cvv) {
-			return fmt.Errorf("CVV must be 3 digits")
+		if (len(cvv) != 3 && len(cvv) != 4) || !isDigits(cvv) {
+			return fmt.Errorf("CVV must be 3 or 4 digits")
 		}
 	}
 

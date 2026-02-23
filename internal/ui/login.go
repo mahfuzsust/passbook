@@ -107,6 +107,14 @@ func goToMain(pwd string) {
 				return
 			}
 
+			// Save .vault_params first so EnsureSecret can build the
+			// correct AAD from the file on disk during verification.
+			if err := crypto.SaveVaultParams(dataDir, newParams); err != nil {
+				crypto.WipeBytes(masterKey)
+				crypto.WipeBytes(vaultKey)
+				return
+			}
+
 			// Create .secret with the vault params hash embedded.
 			if _, err := crypto.EnsureSecret(dataDir, masterKey, newParams); err != nil {
 				crypto.WipeBytes(masterKey)
@@ -114,10 +122,6 @@ func goToMain(pwd string) {
 				return
 			}
 			crypto.WipeBytes(masterKey)
-
-			if err := crypto.SaveVaultParams(dataDir, newParams); err != nil {
-				return
-			}
 
 			uiCfg.IsMigrated = true
 			_ = config.Save(uiCfg)
@@ -139,16 +143,20 @@ func goToMain(pwd string) {
 			return
 		}
 
+		// Save .vault_params first so EnsureSecret can build the
+		// correct AAD from the file on disk during verification.
+		if err := crypto.SaveVaultParams(dataDir, newParams); err != nil {
+			crypto.WipeBytes(masterKey)
+			crypto.WipeBytes(vaultKey)
+			return
+		}
+
 		if _, err := crypto.EnsureSecret(dataDir, masterKey, newParams); err != nil {
 			crypto.WipeBytes(masterKey)
 			crypto.WipeBytes(vaultKey)
 			return
 		}
 		crypto.WipeBytes(masterKey)
-
-		if err := crypto.SaveVaultParams(dataDir, newParams); err != nil {
-			return
-		}
 
 		uiCfg.IsMigrated = true
 		_ = config.Save(uiCfg)
