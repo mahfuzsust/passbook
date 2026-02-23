@@ -339,6 +339,33 @@ func TestHashVaultParams(t *testing.T) {
 	}
 }
 
+func TestHashMatchesDiskBytes(t *testing.T) {
+	dir := t.TempDir()
+	p := VaultParams{
+		Version: 1, Salt: bytes.Repeat([]byte{0x44}, 32),
+		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
+		KDF: "argon2id", Cipher: "aes-256-gcm",
+	}
+
+	// Write to disk.
+	if err := SaveVaultParams(dir, p); err != nil {
+		t.Fatalf("SaveVaultParams error: %v", err)
+	}
+
+	// Read raw bytes from disk.
+	diskBytes, err := os.ReadFile(filepath.Join(dir, ".vault_params"))
+	if err != nil {
+		t.Fatalf("ReadFile error: %v", err)
+	}
+
+	// Hash computed from struct must equal hash of disk bytes.
+	structHash, _ := HashVaultParams(p)
+	diskHash := HashVaultParamsBytes(diskBytes)
+	if structHash != diskHash {
+		t.Fatalf("hash mismatch: struct=%s disk=%s", structHash, diskHash)
+	}
+}
+
 func TestEnsureSecretStoresHash(t *testing.T) {
 	dir := t.TempDir()
 	key := bytes.Repeat([]byte{0x55}, 32)
@@ -348,21 +375,29 @@ func TestEnsureSecretStoresHash(t *testing.T) {
 		KDF: "argon2id", Cipher: "aes-256-gcm",
 	}
 
+	// Write .vault_params to disk first (VerifyVaultParamsHash reads it).
+	if err := SaveVaultParams(dir, vp); err != nil {
+		t.Fatalf("SaveVaultParams error: %v", err)
+	}
+
 	_, err := EnsureSecret(dir, key, vp)
 	if err != nil {
 		t.Fatalf("EnsureSecret error: %v", err)
 	}
 
-	// Verification should pass.
-	if err := VerifyVaultParamsHash(dir, key, vp); err != nil {
+	// Verification should pass — file on disk matches.
+	if err := VerifyVaultParamsHash(dir, key); err != nil {
 		t.Fatalf("VerifyVaultParamsHash should pass: %v", err)
 	}
 
-	// Tampering should fail.
+	// Tamper with the file on disk.
 	tampered := vp
 	tampered.Time = 999
-	if err := VerifyVaultParamsHash(dir, key, tampered); err == nil {
-		t.Fatalf("expected error for tampered vault params")
+	if err := SaveVaultParams(dir, tampered); err != nil {
+		t.Fatalf("SaveVaultParams (tampered) error: %v", err)
+	}
+	if err := VerifyVaultParamsHash(dir, key); err == nil {
+		t.Fatalf("expected error for tampered vault params file")
 	}
 }
 
@@ -381,8 +416,13 @@ func TestVerifyVaultParamsHashSkipsOldVaults(t *testing.T) {
 		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
 	}
 
+	// Write .vault_params so VerifyVaultParamsHash can read it.
+	if err := SaveVaultParams(dir, vp); err != nil {
+		t.Fatalf("SaveVaultParams error: %v", err)
+	}
+
 	// Should pass — no hash field in old vault.
-	if err := VerifyVaultParamsHash(dir, key, vp); err != nil {
+	if err := VerifyVaultParamsHash(dir, key); err != nil {
 		t.Fatalf("expected nil error for old vault without hash, got: %v", err)
 	}
 }

@@ -240,7 +240,7 @@ Located at `<dataDir>/.secret`.
   - metadata like `kdf` ("argon2id") and `key_len` (32)
 - The JSON is **encrypted at rest** using AES-256-GCM with the **master key**.
 - Serves as a password-correctness check: if decryption of `.secret` succeeds, the password is correct.
-- **Tamper detection**: After decryption, the stored `vault_params_hash` is compared against the current `.vault_params` file. A mismatch indicates the public parameters have been modified outside of PassBook.
+- **Tamper detection**: After decryption, the stored `vault_params_hash` is compared against the SHA-256 of the raw `.vault_params` bytes on disk. A mismatch indicates the public parameters have been modified outside of PassBook.
 
 ### The `.vault_params` file
 
@@ -252,7 +252,8 @@ Located at `<dataDir>/.vault_params`.
   - `kdf` — KDF identifier (e.g. `"argon2id"`)
   - `cipher` — cipher identifier (e.g. `"aes-256-gcm"`)
 - These values are **not secret** — they are public parameters needed to re-derive keys from the password.
-- A SHA-256 hash of this file's content is stored inside the encrypted `.secret` file for integrity verification.
+- **Deterministic serialization**: The file is written as compact JSON (no indentation) with keys sorted alphabetically (Go's `json.Marshal` guarantee). The same `VaultParams` value always produces identical bytes.
+- A SHA-256 hash of the **exact bytes written to disk** is stored inside the encrypted `.secret` file for integrity verification.
 
 **Portability**: The vault is fully self-contained—moving `<dataDir>` moves everything needed to unlock it (`.vault_params`, `.secret`, entries, and attachments). Only the master password is external.
 

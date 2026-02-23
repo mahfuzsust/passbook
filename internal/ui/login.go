@@ -35,7 +35,7 @@ func goToMain(pwd string) {
 			return
 		}
 		// Verify .vault_params hasn't been tampered with.
-		if err := crypto.VerifyVaultParamsHash(uiDataDir, masterKey, *vaultParams); err != nil {
+		if err := crypto.VerifyVaultParamsHash(uiDataDir, masterKey); err != nil {
 			crypto.WipeBytes(masterKey)
 			crypto.WipeBytes(vaultKey)
 			return

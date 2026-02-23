@@ -155,16 +155,47 @@ func (p VaultParams) NeedsRehash() bool {
 		p.Threads < RecommendedThreads
 }
 
-// HashVaultParams computes a SHA-256 hex digest of the canonical JSON
-// encoding of a VaultParams value.  This hash is stored inside the
-// encrypted .secret file so tampering with .vault_params can be detected.
-func HashVaultParams(p VaultParams) (string, error) {
+// marshalVaultParams produces the canonical byte representation of a
+// VaultParams value.  Every function that needs to serialise or hash
+// vault params MUST use this function so the bytes are always identical.
+//
+// We use json.Marshal (compact, keys sorted alphabetically by the Go
+// spec) — never MarshalIndent — to guarantee deterministic output.
+func marshalVaultParams(p VaultParams) ([]byte, error) {
+	// Normalise defaults before serialising so two logically-equal
+	// structs always produce the same bytes.
+	if p.Version == 0 {
+		p.Version = 1
+	}
+	if p.KDF == "" {
+		p.KDF = "argon2id"
+	}
+	if p.Cipher == "" {
+		p.Cipher = "aes-256-gcm"
+	}
 	data, err := json.Marshal(p)
 	if err != nil {
-		return "", fmt.Errorf("marshalling vault params for hash: %w", err)
+		return nil, fmt.Errorf("marshalling vault params: %w", err)
 	}
+	return data, nil
+}
+
+// HashVaultParamsBytes computes a SHA-256 hex digest of a raw byte slice.
+// Use this to hash the exact bytes written to (or read from) disk.
+func HashVaultParamsBytes(data []byte) string {
 	h := sha256.Sum256(data)
-	return hex.EncodeToString(h[:]), nil
+	return hex.EncodeToString(h[:])
+}
+
+// HashVaultParams computes a SHA-256 hex digest of the canonical JSON
+// encoding of a VaultParams value.  The bytes hashed are identical to
+// those written to disk by SaveVaultParams.
+func HashVaultParams(p VaultParams) (string, error) {
+	data, err := marshalVaultParams(p)
+	if err != nil {
+		return "", err
+	}
+	return HashVaultParamsBytes(data), nil
 }
 
 // vaultParamsPath returns the path to the vault params file.
@@ -183,22 +214,15 @@ func rootSaltPath(dataDir string) string {
 }
 
 // SaveVaultParams writes the vault parameters to <dataDir>/.vault_params.
+// The file content is the canonical compact JSON produced by
+// marshalVaultParams — the same bytes that HashVaultParams hashes.
 func SaveVaultParams(dataDir string, p VaultParams) error {
-	if p.Version == 0 {
-		p.Version = 1
-	}
-	if p.KDF == "" {
-		p.KDF = "argon2id"
-	}
-	if p.Cipher == "" {
-		p.Cipher = "aes-256-gcm"
-	}
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
-	data, err := json.MarshalIndent(p, "", "  ")
+	data, err := marshalVaultParams(p)
 	if err != nil {
-		return fmt.Errorf("marshalling vault params: %w", err)
+		return err
 	}
 	if err := os.WriteFile(vaultParamsPath(dataDir), data, 0600); err != nil {
 		return fmt.Errorf("writing vault params: %w", err)
@@ -553,9 +577,9 @@ func EnsureSecret(dataDir string, masterKey []byte, vp VaultParams) (KDFParams, 
 }
 
 // VerifyVaultParamsHash checks whether the vault params hash stored inside
-// the encrypted .secret matches the given VaultParams.  Returns nil if the
-// hash matches (or if the .secret pre-dates the hash field).
-func VerifyVaultParamsHash(dataDir string, masterKey []byte, vp VaultParams) error {
+// the encrypted .secret matches the actual bytes of .vault_params on disk.
+// Returns nil if the hash matches (or if the .secret pre-dates the hash field).
+func VerifyVaultParamsHash(dataDir string, masterKey []byte) error {
 	b, err := os.ReadFile(secretPath(dataDir))
 	if err != nil {
 		return fmt.Errorf("reading secret: %w", err)
@@ -572,11 +596,14 @@ func VerifyVaultParamsHash(dataDir string, masterKey []byte, vp VaultParams) err
 	if sf.VaultParamsHash == "" {
 		return nil
 	}
-	expected, err := HashVaultParams(vp)
+
+	// Hash the exact bytes sitting on disk, not a re-serialisation.
+	fileBytes, err := os.ReadFile(vaultParamsPath(dataDir))
 	if err != nil {
-		return err
+		return fmt.Errorf("reading vault params file: %w", err)
 	}
-	if sf.VaultParamsHash != expected {
+	actual := HashVaultParamsBytes(fileBytes)
+	if sf.VaultParamsHash != actual {
 		return fmt.Errorf("vault params hash mismatch: .vault_params may have been tampered with")
 	}
 	return nil
