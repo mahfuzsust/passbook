@@ -191,32 +191,39 @@ Notes:
 - **Format**: Nonce is prepended to ciphertext for storage.
 - **Key size**: 256-bit (32-byte) keys.
 
-### Two-stage key derivation
+### Key derivation (HKDF-based hierarchy)
 
-PassBook uses a two-stage key derivation process:
+PassBook derives all encryption keys from a single master password using a three-step hierarchy:
 
-#### Stage 1: Master Key
+```
+root_key   = Argon2id(password, random_salt)   ← stored in config
+master_key = HKDF-SHA256(root_key, "master")   ← encrypts .secret
+vault_key  = HKDF-SHA256(root_key, "vault")    ← encrypts entries & attachments
+```
 
-- **Purpose**: Encrypt/decrypt the vault-local `.secret` file.
-- **KDF**: Argon2id with fixed parameters (hard-coded).
+#### Step 1: Root Key
+
+- **KDF**: Argon2id
   - Time: 6
   - Memory: 256 MB
   - Threads: 4
-  - Salt: fixed UUID string 
-- **Input**: your master password
-- **Output**: 32-byte master key
+  - Salt: cryptographically random 32-byte salt (unique per vault, stored in `~/.passbook/config.json`)
+- **Input**: your master password + random salt
+- **Output**: 32-byte root key (ephemeral — never stored)
 
-#### Stage 2: Vault Encryption Key
+#### Step 2: Master Key
+
+- **Purpose**: Encrypt/decrypt the vault-local `.secret` file.
+- **KDF**: HKDF-SHA256 with info string `"master"`.
+- **Input**: root key
+- **Output**: 32-byte master key (ephemeral — never stored)
+
+#### Step 3: Vault Key
 
 - **Purpose**: Encrypt/decrypt all vault entry files (`*.pb`) and attachment blobs.
-- **KDF**: Argon2id with vault-specific parameters loaded from `.secret`.
-  - Defaults (used when `.secret` is first created, and enforced if fields are missing):
-    - Time: 6
-    - Memory: 256 MB
-    - Threads: 4
-  - Salt: 16-byte random salt (per vault)
-- **Input**: your master password + vault salt
-- **Output**: 32-byte vault encryption key
+- **KDF**: HKDF-SHA256 with info string `"vault"`.
+- **Input**: root key
+- **Output**: 32-byte vault key (ephemeral — never stored)
 
 ### The `.secret` file
 
@@ -226,25 +233,50 @@ Located at `<dataDir>/.secret`.
   - `salt` (16 bytes)
   - Argon2id parameters (`time`, `memory_kb`, `threads`)
   - metadata like `kdf` ("argon2id") and `key_len` (32)
-- The JSON is **encrypted at rest** using AES-256-GCM with the **Stage 1 master key**.
+- The JSON is **encrypted at rest** using AES-256-GCM with the **master key**.
+- Serves as a password-correctness check: if decryption of `.secret` succeeds, the password is correct.
 
-**Portability**: The vault is self-contained—moving `<dataDir>` also moves `.secret`, entries, and attachments.
+**Portability**: The vault is self-contained—moving `<dataDir>` also moves `.secret`, entries, and attachments. The only external dependency is `root_salt` in `~/.passbook/config.json`.
 
-**Important**: Don't delete `<dataDir>/.secret`. Without it, the vault salt/KDF params are lost and existing encrypted data becomes undecryptable.
+**Important**: Don't delete `<dataDir>/.secret` or the `root_salt` from your config. Without them, existing encrypted data becomes undecryptable.
+
+### Config file
+
+Located at `~/.passbook/config.json`.
+
+- `data_dir`: Path to the vault directory.
+- `is_migrated`: Whether the vault has been migrated to the new HKDF scheme (`true`/`false`).
+- `root_salt`: Base64-encoded 32-byte random salt used for root key derivation.
 
 ### Entries and attachments
 
-All vault data is encrypted with the Stage 2 vault encryption key:
+All vault data is encrypted with the vault key:
 
 - **Entry files** (`*.pb`): protobuf bytes encrypted with AES-256-GCM.
 - **Attachment files** (`_attachments/`): raw bytes encrypted with AES-256-GCM.
 - **Format**: `[nonce][ciphertext+tag]` where nonce is prepended.
 
-### Why two stages?
+### Automatic migration from legacy scheme
 
-1. **Vault-specific KDF**: You can store per-vault salt/parameters without baking them into code.
-2. **Defense in depth**: `.secret` is encrypted too; stealing it doesn't expose vault params without the password.
-3. **Portability**: Everything needed to unlock (except the password) lives under `<dataDir>`.
+Older versions of PassBook used a fixed UUID string as the Argon2id salt for master key derivation, with a separate per-vault Argon2id pass for the vault key. The current version automatically migrates existing vaults on first login:
+
+1. The legacy master key is derived using the old fixed salt to verify the password.
+2. A new random 32-byte salt is generated.
+3. New master and vault keys are derived using the HKDF hierarchy.
+4. The `.secret` file is re-encrypted with the new master key.
+5. All entries and attachments are re-encrypted with the new vault key.
+6. `is_migrated` and `root_salt` are saved to `config.json`.
+
+If migration fails (e.g. disk error), the vault falls back to the legacy scheme for that session and retries on the next login. Changing the master password also always uses the new scheme.
+
+Legacy support can be removed entirely by setting `supportLegacy = false` in `internal/crypto/crypto.go` and deleting all code blocks marked with `// --- BEGIN supportLegacy ---` / `// --- END supportLegacy ---`.
+
+### Why this design?
+
+1. **Random salt**: Each vault gets a unique random salt instead of a fixed one, preventing rainbow table attacks across vaults.
+2. **Key separation**: HKDF produces independent master and vault keys from a single Argon2id pass — one slow KDF call instead of two.
+3. **Defense in depth**: `.secret` is encrypted with a separate key from vault data; compromising one doesn't directly expose the other.
+4. **Portability**: Everything needed to unlock (except the password and `root_salt`) lives under `<dataDir>`.
 
 
 
@@ -327,3 +359,4 @@ go generate ./...
 - otp: https://github.com/pquerna/otp
 - clipboard: https://github.com/atotto/clipboard
 - argon2 (x/crypto): https://pkg.go.dev/golang.org/x/crypto/argon2
+- hkdf (x/crypto): https://pkg.go.dev/golang.org/x/crypto/hkdf

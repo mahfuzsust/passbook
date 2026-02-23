@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 
 	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/hkdf"
 )
 
 type KDFParams struct {
@@ -35,11 +37,29 @@ type secretFile struct {
 	Reserved01 string `json:"reserved01,omitempty"`
 }
 
+// supportLegacy enables backward compatibility with vaults created before the
+// HKDF-based key hierarchy. Set to false and remove all code blocks marked
+// "--- BEGIN supportLegacy" / "--- END supportLegacy" once every user has migrated.
+var supportLegacy = true
+
+// SupportLegacy returns whether legacy fixed-salt key derivation is enabled.
+func SupportLegacy() bool { return supportLegacy }
+
 func DeriveKey(password string, p KDFParams) []byte {
 	return argon2.IDKey([]byte(password), p.Salt, p.Time, p.MemoryKB, p.Threads, 32)
 }
 
+// --- BEGIN supportLegacy ---
+
+// DeriveMasterKey delegates to the legacy fixed-salt derivation.
+// Deprecated: only used when supportLegacy is true.
 func DeriveMasterKey(masterPassword string) []byte {
+	return DeriveLegacyMasterKey(masterPassword)
+}
+
+// DeriveLegacyMasterKey derives a master key using the old fixed-salt scheme.
+// Kept for backward compatibility with existing vaults (IsMigrated == false).
+func DeriveLegacyMasterKey(masterPassword string) []byte {
 	salt := []byte("768250f1-214a-4b8d-89b4-5edf1e85f65e")
 
 	return argon2.IDKey(
@@ -50,6 +70,125 @@ func DeriveMasterKey(masterPassword string) []byte {
 		4,
 		32,
 	)
+}
+
+// --- END supportLegacy ---
+
+// GenerateRootSalt creates a cryptographically random 32-byte salt.
+func GenerateRootSalt() ([]byte, error) {
+	salt := make([]byte, 32)
+	if _, err := rand.Read(salt); err != nil {
+		return nil, fmt.Errorf("generating root salt: %w", err)
+	}
+	return salt, nil
+}
+
+// DeriveRootKey derives a root key from the password and a random salt using Argon2id.
+func DeriveRootKey(password string, salt []byte) []byte {
+	return argon2.IDKey(
+		[]byte(password),
+		salt,
+		6,
+		256*1024,
+		4,
+		32,
+	)
+}
+
+// DeriveHKDFKey derives a purpose-specific 32-byte sub-key from a root key
+// using HKDF-SHA256. Purpose should be "master" or "vault".
+func DeriveHKDFKey(rootKey []byte, purpose string) ([]byte, error) {
+	r := hkdf.New(sha256.New, rootKey, nil, []byte(purpose))
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(r, key); err != nil {
+		return nil, fmt.Errorf("HKDF expand for %q: %w", purpose, err)
+	}
+	return key, nil
+}
+
+// DeriveKeys derives both the master key (for .secret encryption) and the
+// vault key (for entry encryption) from a password and random salt using
+// the new HKDF-based scheme:
+//
+//	root_key   = Argon2id(password, random_salt)
+//	master_key = HKDF(root_key, "master")
+//	vault_key  = HKDF(root_key, "vault")
+func DeriveKeys(password string, salt []byte) (masterKey, vaultKey []byte, err error) {
+	rootKey := DeriveRootKey(password, salt)
+	masterKey, err = DeriveHKDFKey(rootKey, "master")
+	if err != nil {
+		return nil, nil, err
+	}
+	vaultKey, err = DeriveHKDFKey(rootKey, "vault")
+	if err != nil {
+		return nil, nil, err
+	}
+	return masterKey, vaultKey, nil
+}
+
+// --- BEGIN supportLegacy ---
+
+// MigrateVault migrates a vault from the legacy fixed-salt scheme to the new
+// HKDF-based scheme. It:
+//  1. Derives the old keys using the legacy scheme
+//  2. Generates a new random salt
+//  3. Derives new keys using the HKDF scheme
+//  4. Re-encrypts the .secret file with the new master key
+//  5. Re-encrypts all entries with the new vault key
+//
+// Returns the new salt so the caller can persist it in config.
+func MigrateVault(dataDir string, password string) (newSalt []byte, err error) {
+	// Derive old keys using legacy scheme.
+	oldMasterKey := DeriveLegacyMasterKey(password)
+	oldKDF, err := loadKDFSecret(dataDir, oldMasterKey)
+	if err != nil {
+		return nil, fmt.Errorf("loading legacy secret (wrong password?): %w", err)
+	}
+	oldVaultKey := DeriveKey(password, oldKDF)
+
+	// Generate new random salt.
+	newSalt, err = GenerateRootSalt()
+	if err != nil {
+		return nil, err
+	}
+
+	// Derive new keys using HKDF scheme.
+	newMasterKey, newVaultKey, err := DeriveKeys(password, newSalt)
+	if err != nil {
+		return nil, fmt.Errorf("deriving new keys: %w", err)
+	}
+
+	// Re-encrypt .secret with the new master key.
+	if err := ReKeyVault(dataDir, newMasterKey); err != nil {
+		return nil, fmt.Errorf("re-keying vault secret: %w", err)
+	}
+
+	// Re-encrypt all entries and attachments.
+	if err := ReKeyEntries(dataDir, oldVaultKey, newVaultKey); err != nil {
+		return nil, fmt.Errorf("re-keying entries: %w", err)
+	}
+
+	return newSalt, nil
+}
+
+// --- END supportLegacy ---
+
+// VaultHasEntries checks if the vault directory contains any .pb entry files.
+func VaultHasEntries(dataDir string) bool {
+	categories := []string{"logins", "cards", "notes", "files"}
+	for _, cat := range categories {
+		dir := filepath.Join(dataDir, cat)
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, f := range files {
+			if !f.IsDir() && filepath.Ext(f.Name()) == ".pb" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func Encrypt(key []byte, plaintext []byte) ([]byte, error) {

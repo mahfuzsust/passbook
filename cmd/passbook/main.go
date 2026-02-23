@@ -13,7 +13,7 @@ import (
 	"golang.org/x/term"
 )
 
-var version = "dev"
+var version = "3.0.9"
 
 func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")

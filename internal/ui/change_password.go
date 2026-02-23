@@ -69,43 +69,74 @@ func doChangePassword() {
 		return
 	}
 
-	// Verify the current password by trying to load the KDF secret.
-	oldMasterKey := crypto.DeriveMasterKey(currentPwd)
-	oldKDF, err := crypto.EnsureKDFSecret(uiDataDir, oldMasterKey)
-	if err != nil {
+	dataDir := config.ExpandPath(uiDataDir)
+
+	// Verify the current password and derive the old vault key.
+	var oldVaultKey []byte
+	if uiCfg.IsMigrated && len(uiCfg.RootSalt) > 0 {
+		oldMasterKey, vk, err := crypto.DeriveKeys(currentPwd, uiCfg.RootSalt)
+		if err != nil {
+			showChangePwdError("Key derivation error: " + err.Error())
+			return
+		}
+		if _, err := crypto.EnsureKDFSecret(dataDir, oldMasterKey); err != nil {
+			showChangePwdError("Current password is incorrect.")
+			return
+		}
+		oldVaultKey = vk
+
+		// --- BEGIN supportLegacy ---
+	} else if crypto.SupportLegacy() {
+		// Legacy scheme.
+		oldMasterKey := crypto.DeriveLegacyMasterKey(currentPwd)
+		oldKDF, err := crypto.EnsureKDFSecret(dataDir, oldMasterKey)
+		if err != nil {
+			showChangePwdError("Current password is incorrect.")
+			return
+		}
+		oldVaultKey = crypto.DeriveKey(currentPwd, oldKDF)
+		// --- END supportLegacy ---
+
+	} else {
 		showChangePwdError("Current password is incorrect.")
 		return
 	}
-	oldKey := crypto.DeriveKey(currentPwd, oldKDF)
 
-	// Derive the new master key (used to encrypt the .secret file).
-	newMasterKey := crypto.DeriveMasterKey(newPwd)
+	// Always use new HKDF scheme for the new password.
+	newSalt, err := crypto.GenerateRootSalt()
+	if err != nil {
+		showChangePwdError("Failed to generate salt: " + err.Error())
+		return
+	}
 
-	dataDir := config.ExpandPath(uiDataDir)
+	newMasterKey, newVaultKey, err := crypto.DeriveKeys(newPwd, newSalt)
+	if err != nil {
+		showChangePwdError("Key derivation error: " + err.Error())
+		return
+	}
 
-	// Write a new .secret with a fresh salt, encrypted with the new master key.
+	// Re-encrypt .secret with the new master key.
 	if err := crypto.ReKeyVault(dataDir, newMasterKey); err != nil {
 		showChangePwdError("Failed to write new secret: " + err.Error())
 		return
 	}
 
-	// Load the freshly written secret (new salt) and derive the new data key.
-	newKDF, err := crypto.EnsureKDFSecret(dataDir, newMasterKey)
-	if err != nil {
-		showChangePwdError("Failed to load new secret: " + err.Error())
-		return
-	}
-	newKey := crypto.DeriveKey(newPwd, newKDF)
-
-	// Re-encrypt all entries and attachments: old data key → new data key.
-	if err := crypto.ReKeyEntries(dataDir, oldKey, newKey); err != nil {
+	// Re-encrypt all entries and attachments.
+	if err := crypto.ReKeyEntries(dataDir, oldVaultKey, newVaultKey); err != nil {
 		showChangePwdError("Re-encrypt failed: " + err.Error())
 		return
 	}
 
-	// Update the in-memory state.
-	uiKDF = newKDF
-	uiMasterKey = newKey
+	// Persist the new salt and migration state.
+	uiCfg.IsMigrated = true
+	uiCfg.RootSalt = newSalt
+	if err := config.Save(uiCfg); err != nil {
+		showChangePwdError("Failed to save config: " + err.Error())
+		return
+	}
+
+	// Update in-memory state.
+	uiMasterKey = newVaultKey
 
 	clearChangePwdForm()
 	refreshTree("")

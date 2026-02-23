@@ -40,6 +40,135 @@ func TestDeriveMasterKeyDeterministic(t *testing.T) {
 	}
 }
 
+func TestSupportLegacy(t *testing.T) {
+	if !SupportLegacy() {
+		t.Fatalf("expected supportLegacy to be true by default")
+	}
+}
+
+func TestDeriveLegacyMasterKeyMatchesDeriveMasterKey(t *testing.T) {
+	k1 := DeriveMasterKey("testpass")
+	k2 := DeriveLegacyMasterKey("testpass")
+	if !bytes.Equal(k1, k2) {
+		t.Fatalf("DeriveMasterKey and DeriveLegacyMasterKey should produce identical output")
+	}
+}
+
+func TestGenerateRootSalt(t *testing.T) {
+	s1, err := GenerateRootSalt()
+	if err != nil {
+		t.Fatalf("GenerateRootSalt error: %v", err)
+	}
+	if len(s1) != 32 {
+		t.Fatalf("expected 32-byte salt, got %d", len(s1))
+	}
+
+	s2, err := GenerateRootSalt()
+	if err != nil {
+		t.Fatalf("GenerateRootSalt error: %v", err)
+	}
+	if bytes.Equal(s1, s2) {
+		t.Fatalf("expected unique salts")
+	}
+}
+
+func TestDeriveRootKeyDeterministic(t *testing.T) {
+	salt := bytes.Repeat([]byte{0xAB}, 32)
+	k1 := DeriveRootKey("password", salt)
+	k2 := DeriveRootKey("password", salt)
+	if !bytes.Equal(k1, k2) {
+		t.Fatalf("expected deterministic root key derivation")
+	}
+	if len(k1) != 32 {
+		t.Fatalf("expected 32-byte key, got %d", len(k1))
+	}
+
+	k3 := DeriveRootKey("password2", salt)
+	if bytes.Equal(k1, k3) {
+		t.Fatalf("expected different key for different password")
+	}
+
+	salt2 := bytes.Repeat([]byte{0xCD}, 32)
+	k4 := DeriveRootKey("password", salt2)
+	if bytes.Equal(k1, k4) {
+		t.Fatalf("expected different key for different salt")
+	}
+}
+
+func TestDeriveHKDFKey(t *testing.T) {
+	rootKey := bytes.Repeat([]byte{0x42}, 32)
+
+	mk, err := DeriveHKDFKey(rootKey, "master")
+	if err != nil {
+		t.Fatalf("DeriveHKDFKey master error: %v", err)
+	}
+	if len(mk) != 32 {
+		t.Fatalf("expected 32-byte key, got %d", len(mk))
+	}
+
+	vk, err := DeriveHKDFKey(rootKey, "vault")
+	if err != nil {
+		t.Fatalf("DeriveHKDFKey vault error: %v", err)
+	}
+	if bytes.Equal(mk, vk) {
+		t.Fatalf("expected different keys for different purposes")
+	}
+
+	// Deterministic.
+	mk2, _ := DeriveHKDFKey(rootKey, "master")
+	if !bytes.Equal(mk, mk2) {
+		t.Fatalf("expected deterministic HKDF output")
+	}
+}
+
+func TestDeriveKeys(t *testing.T) {
+	salt := bytes.Repeat([]byte{0x99}, 32)
+	mk, vk, err := DeriveKeys("password", salt)
+	if err != nil {
+		t.Fatalf("DeriveKeys error: %v", err)
+	}
+	if len(mk) != 32 || len(vk) != 32 {
+		t.Fatalf("expected 32-byte keys")
+	}
+	if bytes.Equal(mk, vk) {
+		t.Fatalf("master and vault keys should differ")
+	}
+
+	// Deterministic.
+	mk2, vk2, _ := DeriveKeys("password", salt)
+	if !bytes.Equal(mk, mk2) || !bytes.Equal(vk, vk2) {
+		t.Fatalf("expected deterministic key derivation")
+	}
+
+	// Different password → different keys.
+	mk3, _, _ := DeriveKeys("other", salt)
+	if bytes.Equal(mk, mk3) {
+		t.Fatalf("expected different keys for different password")
+	}
+}
+
+func TestVaultHasEntries(t *testing.T) {
+	dir := t.TempDir()
+	if VaultHasEntries(dir) {
+		t.Fatalf("expected no entries in empty dir")
+	}
+
+	loginsDir := filepath.Join(dir, "logins")
+	if err := os.MkdirAll(loginsDir, 0700); err != nil {
+		t.Fatalf("MkdirAll error: %v", err)
+	}
+	if VaultHasEntries(dir) {
+		t.Fatalf("expected no entries with empty logins dir")
+	}
+
+	if err := os.WriteFile(filepath.Join(loginsDir, "test.pb"), []byte("data"), 0600); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+	if !VaultHasEntries(dir) {
+		t.Fatalf("expected entries after adding .pb file")
+	}
+}
+
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	key := bytes.Repeat([]byte{0x11}, 32)
 	plaintext := []byte("hello world")

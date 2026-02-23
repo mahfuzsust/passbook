@@ -21,12 +21,30 @@ func saveEntries(entries []*pb.Entry, subDirs []string, names []string, masterPa
 		return fmt.Errorf("creating data dir: %w", err)
 	}
 
-	masterKey := crypto.DeriveMasterKey(masterPassword)
-	kdfParams, err := crypto.EnsureKDFSecret(dataDir, masterKey)
-	if err != nil {
-		return fmt.Errorf("wrong master password or vault error: %w", err)
+	var encKey []byte
+	if cfg.IsMigrated && len(cfg.RootSalt) > 0 {
+		masterKey, vaultKey, err := crypto.DeriveKeys(masterPassword, cfg.RootSalt)
+		if err != nil {
+			return fmt.Errorf("key derivation error: %w", err)
+		}
+		if _, err := crypto.EnsureKDFSecret(dataDir, masterKey); err != nil {
+			return fmt.Errorf("wrong master password or vault error: %w", err)
+		}
+		encKey = vaultKey
+
+		// --- BEGIN supportLegacy ---
+	} else if crypto.SupportLegacy() {
+		masterKey := crypto.DeriveMasterKey(masterPassword)
+		kdfParams, err := crypto.EnsureKDFSecret(dataDir, masterKey)
+		if err != nil {
+			return fmt.Errorf("wrong master password or vault error: %w", err)
+		}
+		encKey = crypto.DeriveKey(masterPassword, kdfParams)
+		// --- END supportLegacy ---
+
+	} else {
+		return fmt.Errorf("vault not migrated and legacy support is disabled")
 	}
-	encKey := crypto.DeriveKey(masterPassword, kdfParams)
 
 	var imported, skipped int
 	for i, entry := range entries {
