@@ -11,13 +11,22 @@ import (
 	"passbook/internal/platform"
 )
 
+var uiEditorLoginStrength *strengthMeter
+
 // addLoginFields adds login-specific form fields to the editor.
 func addLoginFields(ent *Entry) {
 	ent.Attachments = nil
 	uiEditorForm.AddInputField("Username", ent.Username, 40, nil, nil)
 
+	uiEditorLoginStrength = newStrengthMeter()
+	uiEditorLoginStrength.Update(ent.Password)
+
 	uiEditorPasswordField = tview.NewInputField().SetLabel("Password").SetText(ent.Password).SetFieldWidth(40)
+	uiEditorPasswordField.SetChangedFunc(func(text string) {
+		uiEditorLoginStrength.Update(text)
+	})
 	uiEditorForm.AddFormItem(uiEditorPasswordField)
+	uiEditorLoginStrength.AddTo(uiEditorForm)
 	uiEditorForm.AddButton("generate", func() {
 		updatePassPreview()
 		uiPages.SwitchToPage("passgen")

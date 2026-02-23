@@ -82,3 +82,74 @@ func TestGeneratePasswordZeroLength(t *testing.T) {
 		t.Fatalf("expected empty password for zero length")
 	}
 }
+
+func TestPasswordStrengthEmpty(t *testing.T) {
+	score, level, label := PasswordStrength("")
+	if score != 0 || level != StrengthEmpty || label != "" {
+		t.Fatalf("expected empty result, got score=%d level=%d label=%q", score, level, label)
+	}
+}
+
+func TestPasswordStrengthWeak(t *testing.T) {
+	score, level, _ := PasswordStrength("abc")
+	if level != StrengthWeak {
+		t.Fatalf("expected Weak for 'abc', got level=%d score=%d", level, score)
+	}
+}
+
+func TestPasswordStrengthFair(t *testing.T) {
+	score, level, _ := PasswordStrength("Hello123")
+	if level != StrengthFair {
+		t.Fatalf("expected Fair for 'Hello123', got level=%d score=%d", level, score)
+	}
+}
+
+func TestPasswordStrengthGood(t *testing.T) {
+	score, level, _ := PasswordStrength("Hello123!world")
+	if level < StrengthGood {
+		t.Fatalf("expected at least Good for 'Hello123!world', got level=%d score=%d", level, score)
+	}
+}
+
+func TestPasswordStrengthStrong(t *testing.T) {
+	score, level, _ := PasswordStrength("C0mpl3x!P@ssw0rd#2025xyz")
+	if level != StrengthStrong {
+		t.Fatalf("expected Strong, got level=%d score=%d", level, score)
+	}
+}
+
+func TestPasswordStrengthCommonWordPenalty(t *testing.T) {
+	s1, _, _ := PasswordStrength("password123!")
+	s2, _, _ := PasswordStrength("xkfj8m3q12!!")
+	if s1 >= s2 {
+		t.Fatalf("expected common word 'password' to score lower: %d >= %d", s1, s2)
+	}
+}
+
+func TestPasswordStrengthScoreBounds(t *testing.T) {
+	for _, pw := range []string{"a", "aB3!", "VeryL0ng&Str0ng!Pass#2025xyzABC"} {
+		score, _, _ := PasswordStrength(pw)
+		if score < 0 || score > 100 {
+			t.Fatalf("score out of bounds for %q: %d", pw, score)
+		}
+	}
+}
+
+func TestPasswordStrengthLevels(t *testing.T) {
+	tests := []struct {
+		password string
+		minLevel StrengthLevel
+	}{
+		{"", StrengthEmpty},
+		{"ab", StrengthWeak},
+		{"Abcdef1!", StrengthFair},
+		{"MyP@ss2025abcdef", StrengthGood},
+		{"X#9kLp!mZ@4wQr7&vN2yB", StrengthStrong},
+	}
+	for _, tt := range tests {
+		_, level, _ := PasswordStrength(tt.password)
+		if level < tt.minLevel {
+			t.Errorf("PasswordStrength(%q): level=%d, want >= %d", tt.password, level, tt.minLevel)
+		}
+	}
+}

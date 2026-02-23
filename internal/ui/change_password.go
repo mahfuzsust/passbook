@@ -9,14 +9,20 @@ import (
 )
 
 var (
-	uiChangePwdForm  *tview.Form
-	uiChangePwdModal tview.Primitive
+	uiChangePwdForm     *tview.Form
+	uiChangePwdModal    tview.Primitive
+	uiChangePwdStrength *strengthMeter
 )
 
 func setupChangePassword() {
+	uiChangePwdStrength = newStrengthMeter()
+
 	uiChangePwdForm = tview.NewForm()
 	uiChangePwdForm.AddPasswordField("Current Password", "", 0, '*', nil)
-	uiChangePwdForm.AddPasswordField("New Password", "", 0, '*', nil)
+	uiChangePwdForm.AddPasswordField("New Password", "", 0, '*', func(text string) {
+		uiChangePwdStrength.Update(text)
+	})
+	uiChangePwdStrength.AddTo(uiChangePwdForm)
 	uiChangePwdForm.AddPasswordField("Confirm Password", "", 0, '*', nil)
 
 	uiChangePwdForm.AddButton("Change", doChangePassword)
@@ -39,7 +45,7 @@ func setupChangePassword() {
 		return event
 	})
 
-	uiChangePwdModal = newResponsiveModal(uiChangePwdForm, 50, 13, 80, 18, 0.5, 0.4)
+	uiChangePwdModal = newResponsiveModal(uiChangePwdForm, 50, 14, 80, 18, 0.5, 0.4)
 	uiPages.AddPage("changepwd", uiChangePwdModal, true, false)
 }
 
@@ -159,5 +165,8 @@ func clearChangePwdForm() {
 		if input, ok := uiChangePwdForm.GetFormItem(i).(*tview.InputField); ok {
 			input.SetText("")
 		}
+	}
+	if uiChangePwdStrength != nil {
+		uiChangePwdStrength.Update("")
 	}
 }

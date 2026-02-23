@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	uiLoginForm  *tview.Form
-	uiLoginModal tview.Primitive
+	uiLoginForm     *tview.Form
+	uiLoginModal    tview.Primitive
+	uiLoginStrength *strengthMeter
 )
 
 func goToMain(pwd string) {
@@ -122,8 +123,13 @@ func goToMain(pwd string) {
 }
 
 func setupLogin() {
+	uiLoginStrength = newStrengthMeter()
+
 	uiLoginForm = tview.NewForm()
-	uiLoginForm.AddPasswordField("Master Password", "", 0, '*', nil)
+	uiLoginForm.AddPasswordField("Master Password", "", 0, '*', func(text string) {
+		uiLoginStrength.Update(text)
+	})
+	uiLoginStrength.AddTo(uiLoginForm)
 	uiLoginForm.AddButton("Login", func() {
 		pwd := uiLoginForm.GetFormItem(0).(*tview.InputField).GetText()
 		goToMain(pwd)
@@ -140,6 +146,6 @@ func setupLogin() {
 	uiLoginForm.SetBorder(true).SetTitle(" PassBook Login ").SetTitleAlign(tview.AlignCenter)
 	styleForm(uiLoginForm)
 
-	uiLoginModal = newResponsiveModal(uiLoginForm, 40, 9, 80, 15, 0.5, 0.4)
+	uiLoginModal = newResponsiveModal(uiLoginForm, 40, 10, 80, 15, 0.5, 0.4)
 	uiPages.AddPage("login", uiLoginModal, true, true)
 }

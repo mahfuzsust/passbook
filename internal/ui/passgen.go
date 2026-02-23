@@ -9,14 +9,17 @@ import (
 )
 
 var (
-	uiPassGenForm    *tview.Form
-	uiPassGenLayout  *tview.Flex
-	uiPassGenPreview *tview.TextView
+	uiPassGenForm     *tview.Form
+	uiPassGenLayout   *tview.Flex
+	uiPassGenPreview  *tview.TextView
+	uiPassGenStrength *strengthMeter
 )
 
 // setupPassGen configures the password generator modal.
 func setupPassGen() {
 	uiPassGenPreview = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
+	uiPassGenStrength = newStrengthMeter()
+
 	uiPassGenForm = tview.NewForm()
 	uiPassGenForm.AddInputField("Length", "28", 10, tview.InputFieldInteger, nil)
 	uiPassGenForm.AddCheckbox("A-Z", true, nil)
@@ -52,6 +55,7 @@ func setupPassGen() {
 	uiPassGenLayout = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tview.NewTextView().SetText("Generated:").SetTextColor(tcell.ColorYellow), 1, 0, false).
 		AddItem(uiPassGenPreview, 1, 0, false).
+		AddItem(makeStrengthDisplayRow(uiPassGenStrength), 1, 0, false).
 		AddItem(tview.NewTextView().SetText(""), 1, 0, false).
 		AddItem(uiPassGenForm, 0, 1, true)
 	uiPassGenLayout.SetBorder(true).SetTitle(" Generator ")
@@ -67,4 +71,5 @@ func updatePassPreview() {
 	special := uiPassGenForm.GetFormItemByLabel("Special").(*tview.Checkbox).IsChecked()
 	uiLastGeneratedPass = utils.GeneratePassword(l, upper, lower, special)
 	uiPassGenPreview.SetText("[green]" + uiLastGeneratedPass)
+	uiPassGenStrength.Update(uiLastGeneratedPass)
 }
