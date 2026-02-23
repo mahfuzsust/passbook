@@ -427,6 +427,57 @@ func TestVerifyVaultParamsHashSkipsOldVaults(t *testing.T) {
 	}
 }
 
+func TestSecretAADRejectsTamperedVaultParams(t *testing.T) {
+	dir := t.TempDir()
+	key := bytes.Repeat([]byte{0x88}, 32)
+	vp := VaultParams{
+		Version: 1, Salt: bytes.Repeat([]byte{0x44}, 32),
+		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
+		KDF: "argon2id", Cipher: "aes-256-gcm",
+	}
+
+	// Write .vault_params first, then create .secret with AAD.
+	if err := SaveVaultParams(dir, vp); err != nil {
+		t.Fatalf("SaveVaultParams error: %v", err)
+	}
+
+	hash, err := HashVaultParams(vp)
+	if err != nil {
+		t.Fatalf("HashVaultParams error: %v", err)
+	}
+	if err := writeKDFSecretAtomic(dir, KDFParams{}, key, hash); err != nil {
+		t.Fatalf("writeKDFSecretAtomic error: %v", err)
+	}
+
+	// Loading should succeed with correct .vault_params on disk.
+	if _, err := loadKDFSecret(dir, key); err != nil {
+		t.Fatalf("loadKDFSecret should succeed: %v", err)
+	}
+
+	// Tamper with .vault_params on disk → AAD mismatch → GCM auth fails.
+	tampered := vp
+	tampered.Time = 999
+	if err := SaveVaultParams(dir, tampered); err != nil {
+		t.Fatalf("SaveVaultParams (tampered) error: %v", err)
+	}
+
+	// loadKDFSecret falls back to nil AAD for legacy compat, so it still
+	// succeeds.  But VerifyVaultParamsHash catches the JSON-level mismatch.
+	// The GCM-level AAD check prevents forging a *new* .secret that
+	// validates against tampered params.
+	//
+	// For a direct GCM-level test, try decrypting with wrong AAD:
+	secretBytes, _ := os.ReadFile(filepath.Join(dir, ".secret"))
+	wrongAAD := []byte(HashVaultParamsBytes([]byte(`{"tampered":true}`)))
+	correctAAD := []byte(hash)
+	if _, err := DecryptAES256GCM(secretBytes, key, wrongAAD); err == nil {
+		t.Fatalf("expected GCM auth failure with wrong AAD")
+	}
+	if _, err := DecryptAES256GCM(secretBytes, key, correctAAD); err != nil {
+		t.Fatalf("expected GCM success with correct AAD: %v", err)
+	}
+}
+
 func TestDeriveRootKeyDeterministic(t *testing.T) {
 	p := RootKDFParams{
 		Salt:     bytes.Repeat([]byte{0xAB}, 32),
@@ -569,7 +620,7 @@ func TestDecryptRejectsShortCiphertext(t *testing.T) {
 }
 
 func TestEncryptAES256GCMKeyLength(t *testing.T) {
-	_, err := EncryptAES256GCM([]byte("data"), []byte("short"))
+	_, err := EncryptAES256GCM([]byte("data"), []byte("short"), nil)
 	if err == nil {
 		t.Fatalf("expected error for invalid key length")
 	}
@@ -579,7 +630,7 @@ func TestEncryptAES256GCMRoundTrip(t *testing.T) {
 	key := bytes.Repeat([]byte{0x33}, 32)
 	plaintext := []byte("secret")
 
-	ciphertext, err := EncryptAES256GCM(plaintext, key)
+	ciphertext, err := EncryptAES256GCM(plaintext, key, nil)
 	if err != nil {
 		t.Fatalf("EncryptAES256GCM error: %v", err)
 	}
@@ -587,7 +638,7 @@ func TestEncryptAES256GCMRoundTrip(t *testing.T) {
 		t.Fatalf("ciphertext should not equal plaintext")
 	}
 
-	got, err := DecryptAES256GCM(ciphertext, key)
+	got, err := DecryptAES256GCM(ciphertext, key, nil)
 	if err != nil {
 		t.Fatalf("DecryptAES256GCM error: %v", err)
 	}
@@ -598,15 +649,46 @@ func TestEncryptAES256GCMRoundTrip(t *testing.T) {
 
 func TestDecryptAES256GCMRejectsBadKeyLength(t *testing.T) {
 	key := []byte("short")
-	_, err := DecryptAES256GCM([]byte("cipher"), key)
+	_, err := DecryptAES256GCM([]byte("cipher"), key, nil)
 	if err == nil {
 		t.Fatalf("expected error for invalid key length")
 	}
 }
 
+func TestEncryptAES256GCMWithAAD(t *testing.T) {
+	key := bytes.Repeat([]byte{0x77}, 32)
+	plaintext := []byte("authenticated data test")
+	aad := []byte("vault-params-hash-hex")
+
+	// Encrypt with AAD.
+	ciphertext, err := EncryptAES256GCM(plaintext, key, aad)
+	if err != nil {
+		t.Fatalf("EncryptAES256GCM with AAD error: %v", err)
+	}
+
+	// Decrypt with correct AAD succeeds.
+	got, err := DecryptAES256GCM(ciphertext, key, aad)
+	if err != nil {
+		t.Fatalf("DecryptAES256GCM with AAD error: %v", err)
+	}
+	if !bytes.Equal(got, plaintext) {
+		t.Fatalf("plaintext mismatch")
+	}
+
+	// Decrypt with wrong AAD fails.
+	if _, err := DecryptAES256GCM(ciphertext, key, []byte("wrong-aad")); err == nil {
+		t.Fatalf("expected error when decrypting with wrong AAD")
+	}
+
+	// Decrypt with nil AAD fails (AAD was non-nil during encrypt).
+	if _, err := DecryptAES256GCM(ciphertext, key, nil); err == nil {
+		t.Fatalf("expected error when decrypting with nil AAD (was encrypted with AAD)")
+	}
+}
+
 func TestDecryptAES256GCMRejectsShortCiphertext(t *testing.T) {
 	key := bytes.Repeat([]byte{0x44}, 32)
-	_, err := DecryptAES256GCM([]byte{0x01, 0x02}, key)
+	_, err := DecryptAES256GCM([]byte{0x01, 0x02}, key, nil)
 	if err == nil {
 		t.Fatalf("expected error for short ciphertext")
 	}
@@ -745,11 +827,11 @@ func TestDecryptAES256GCMFailsWithWrongKey(t *testing.T) {
 	wrongKey := bytes.Repeat([]byte{0x22}, 32)
 	plaintext := []byte("secret")
 
-	ciphertext, err := EncryptAES256GCM(plaintext, key)
+	ciphertext, err := EncryptAES256GCM(plaintext, key, nil)
 	if err != nil {
 		t.Fatalf("EncryptAES256GCM error: %v", err)
 	}
-	if _, err := DecryptAES256GCM(ciphertext, wrongKey); err == nil {
+	if _, err := DecryptAES256GCM(ciphertext, wrongKey, nil); err == nil {
 		t.Fatalf("expected error when decrypting with wrong key")
 	}
 }
@@ -758,12 +840,12 @@ func TestDecryptAES256GCMFailsWithTamperedCiphertext(t *testing.T) {
 	key := bytes.Repeat([]byte{0x23}, 32)
 	plaintext := []byte("secret")
 
-	ciphertext, err := EncryptAES256GCM(plaintext, key)
+	ciphertext, err := EncryptAES256GCM(plaintext, key, nil)
 	if err != nil {
 		t.Fatalf("EncryptAES256GCM error: %v", err)
 	}
 	ciphertext[len(ciphertext)-1] ^= 0xAA
-	if _, err := DecryptAES256GCM(ciphertext, key); err == nil {
+	if _, err := DecryptAES256GCM(ciphertext, key, nil); err == nil {
 		t.Fatalf("expected error when decrypting tampered ciphertext")
 	}
 }

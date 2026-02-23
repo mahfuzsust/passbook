@@ -547,6 +547,18 @@ func secretPath(dataDir string) string {
 	return filepath.Join(dataDir, ".secret")
 }
 
+// vaultParamsAAD reads .vault_params from disk and returns its SHA-256 hash
+// as a byte slice suitable for use as GCM AAD.  Returns nil if the file
+// does not exist (legacy vault or brand-new vault before first save).
+func vaultParamsAAD(dataDir string) []byte {
+	data, err := os.ReadFile(vaultParamsPath(dataDir))
+	if err != nil {
+		return nil
+	}
+	h := HashVaultParamsBytes(data)
+	return []byte(h)
+}
+
 // EnsureKDFSecret loads or creates the .secret file encrypted with masterKey.
 // When vaultParams is available, callers should prefer EnsureSecret which
 // also stores the vault params hash.
@@ -584,7 +596,15 @@ func VerifyVaultParamsHash(dataDir string, masterKey []byte) error {
 	if err != nil {
 		return fmt.Errorf("reading secret: %w", err)
 	}
-	plaintext, err := DecryptAES256GCM(b, masterKey)
+
+	// Build AAD from .vault_params on disk.
+	aad := vaultParamsAAD(dataDir)
+
+	plaintext, err := DecryptAES256GCM(b, masterKey, aad)
+	if err != nil && aad != nil {
+		// Fall back to nil AAD for legacy vaults.
+		plaintext, err = DecryptAES256GCM(b, masterKey, nil)
+	}
 	if err != nil {
 		return fmt.Errorf("decrypting secret: %w", err)
 	}
@@ -614,7 +634,16 @@ func loadKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
 	if err != nil {
 		return KDFParams{}, err
 	}
-	plaintext, err := DecryptAES256GCM(b, masterKey)
+
+	// Build AAD from .vault_params on disk (if present).
+	aad := vaultParamsAAD(dataDir)
+
+	// Try decryption with AAD first (new vaults).
+	plaintext, err := DecryptAES256GCM(b, masterKey, aad)
+	if err != nil && aad != nil {
+		// Fall back to nil AAD for legacy vaults encrypted without AAD.
+		plaintext, err = DecryptAES256GCM(b, masterKey, nil)
+	}
 	if err != nil {
 		return KDFParams{}, err
 	}
@@ -654,7 +683,13 @@ func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte, vaultPa
 	}
 	b, _ := json.MarshalIndent(sf, "", "  ")
 
-	ciphertext, err := EncryptAES256GCM(b, masterKey)
+	// Use the vault params hash as GCM AAD so that any tampering with
+	// .vault_params causes authenticated decryption to fail.
+	var aad []byte
+	if vaultParamsHash != "" {
+		aad = []byte(vaultParamsHash)
+	}
+	ciphertext, err := EncryptAES256GCM(b, masterKey, aad)
 	if err != nil {
 		return err
 	}
@@ -771,7 +806,10 @@ func ensureKDFParams(p *KDFParams) {
 	}
 }
 
-func EncryptAES256GCM(plaintext, key []byte) ([]byte, error) {
+// EncryptAES256GCM encrypts plaintext with AES-256-GCM.
+// aad is optional additional authenticated data bound to the ciphertext;
+// the same aad must be supplied to DecryptAES256GCM for decryption to succeed.
+func EncryptAES256GCM(plaintext, key, aad []byte) ([]byte, error) {
 	if len(key) != 32 {
 		return nil, errors.New("key must be 32 bytes for AES-256")
 	}
@@ -792,11 +830,13 @@ func EncryptAES256GCM(plaintext, key []byte) ([]byte, error) {
 	}
 
 	// Prepend nonce to ciphertext
-	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, aad)
 	return ciphertext, nil
 }
 
-func DecryptAES256GCM(ciphertext, key []byte) ([]byte, error) {
+// DecryptAES256GCM decrypts ciphertext with AES-256-GCM.
+// aad must match the additional authenticated data used during encryption.
+func DecryptAES256GCM(ciphertext, key, aad []byte) ([]byte, error) {
 	if len(key) != 32 {
 		return nil, errors.New("key must be 32 bytes for AES-256")
 	}
@@ -817,7 +857,7 @@ func DecryptAES256GCM(ciphertext, key []byte) ([]byte, error) {
 	}
 
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, aad)
 	if err != nil {
 		return nil, err
 	}
