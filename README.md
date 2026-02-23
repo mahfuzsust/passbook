@@ -189,8 +189,12 @@ Notes:
 ### Encryption
 
 - **Algorithm**: AES-256-GCM (Galois/Counter Mode) providing authenticated encryption.
-- **Nonce**: Random nonce generated per encryption operation (12 bytes with Go's `cipher.NewGCM`).
-- **Format**: Nonce is prepended to ciphertext for storage.
+- **Nonce**: 12-byte (96-bit) random nonce generated per encryption via a dedicated `generateNonce` function that:
+  1. Reads exactly 12 bytes from Go's `crypto/rand` using `io.ReadFull` — a short read returns an error, never a truncated nonce.
+  2. Rejects all-zero output as a sign of a catastrophic CSPRNG failure.
+- **Collision bound**: With 96-bit random nonces, collision probability stays below 2⁻³² for up to ~2³² encryptions per key. PassBook issues a fresh vault key on every password change, keeping the per-key encryption count far below that threshold.
+- **AAD (Additional Authenticated Data)**: The `.secret` file is encrypted with the SHA-256 hash of `.vault_params` as GCM AAD, cryptographically binding the two files together. Any modification to `.vault_params` causes GCM authentication to fail before the ciphertext is even decrypted.
+- **Format**: `[12-byte nonce][ciphertext + GCM tag]` — nonce is prepended to ciphertext for storage.
 - **Key size**: 256-bit (32-byte) keys.
 
 ### Key derivation (HKDF-based hierarchy)
@@ -238,9 +242,10 @@ Located at `<dataDir>/.secret`.
   - Argon2id parameters (`time`, `memory_kb`, `threads`)
   - `vault_params_hash` — SHA-256 of `.vault_params` for tamper detection
   - metadata like `kdf` ("argon2id") and `key_len` (32)
-- The JSON is **encrypted at rest** using AES-256-GCM with the **master key**.
+- The JSON is **encrypted at rest** using AES-256-GCM with the **master key** and the SHA-256 hash of `.vault_params` as **GCM AAD** (Additional Authenticated Data).
 - Serves as a password-correctness check: if decryption of `.secret` succeeds, the password is correct.
-- **Tamper detection**: After decryption, the stored `vault_params_hash` is compared against the SHA-256 of the raw `.vault_params` bytes on disk. A mismatch indicates the public parameters have been modified outside of PassBook.
+- **GCM AAD binding**: The `.vault_params` hash is included as AAD during encryption. If an attacker modifies `.vault_params` (e.g. to weaken Argon2id parameters), GCM authentication fails immediately — decryption is rejected before any plaintext is produced.
+- **Tamper detection (defense in depth)**: The `vault_params_hash` field inside the decrypted JSON is also compared against the SHA-256 of the raw `.vault_params` bytes on disk. This provides a secondary check for vaults migrated from older versions that were encrypted without AAD.
 
 ### The `.vault_params` file
 
@@ -310,7 +315,8 @@ If rehash fails (e.g. disk error), the vault continues working with the old para
 4. **Portability**: Everything needed to unlock (except the password) lives under `<dataDir>`. Copy the directory to a new machine and it just works.
 5. **Auto-rehash**: Argon2id parameters are stored per-vault in `.vault_params`. When the recommended parameters increase in a future release, PassBook automatically re-derives keys with the stronger settings and re-encrypts the vault on next login — no user intervention needed.
 6. **Key zeroization**: All ephemeral key material is wiped from memory as soon as it is no longer needed.
-7. **Tamper detection**: A SHA-256 hash of `.vault_params` is stored inside the encrypted `.secret`. Any modification to the public parameters is detected on next login.
+7. **Tamper detection (two layers)**: The SHA-256 hash of `.vault_params` is used as GCM AAD when encrypting `.secret`, so any modification to the public parameters causes authenticated decryption to fail at the cryptographic level. A secondary JSON-level hash comparison provides defense in depth for vaults migrated from older versions.
+8. **Nonce uniqueness**: Every AES-256-GCM encryption uses a fresh 12-byte nonce from `crypto/rand`, validated for full read and non-zero output. A new vault key is issued on every password change, resetting the per-key nonce counter well within the birthday bound (~2³² encryptions).
 
 ### Key zeroization
 

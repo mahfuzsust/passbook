@@ -17,10 +17,6 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-// WipeBytes overwrites a byte slice with zeroes.  Call this to remove
-// sensitive key material from memory as soon as it is no longer needed.
-// This is a best-effort defence — the Go GC may have already copied the
-// data, but zeroing the authoritative slice limits the exposure window.
 func WipeBytes(b []byte) {
 	for i := range b {
 		b[i] = 0
@@ -86,7 +82,6 @@ func DeriveLegacyMasterKey(masterPassword string) []byte {
 
 // --- END supportLegacy ---
 
-// GenerateRootSalt creates a cryptographically random 32-byte salt.
 func GenerateRootSalt() ([]byte, error) {
 	salt := make([]byte, 32)
 	if _, err := rand.Read(salt); err != nil {
@@ -95,22 +90,12 @@ func GenerateRootSalt() ([]byte, error) {
 	return salt, nil
 }
 
-// ---------------------------------------------------------------------------
-// Recommended Argon2id parameters for root key derivation.
-// Bump these to strengthen new vaults / trigger automatic rehash on login.
-// ---------------------------------------------------------------------------
-
 const (
 	RecommendedTime    uint32 = 6
 	RecommendedMemory  uint32 = 256 * 1024 // 256 MB in KiB
 	RecommendedThreads uint8  = 4
 )
 
-// VaultParams holds all public vault parameters stored alongside the
-// encrypted data.  The struct is versioned so new fields can be added
-// without breaking existing vaults.
-//
-// Stored as JSON in <dataDir>/.vault_params.
 type VaultParams struct {
 	Version  int    `json:"version"`          // schema version (currently 1)
 	Salt     []byte `json:"salt"`             // 32-byte random Argon2id salt
@@ -121,12 +106,8 @@ type VaultParams struct {
 	Cipher   string `json:"cipher,omitempty"` // identifier, e.g. "aes-256-gcm"
 }
 
-// RootKDFParams is a backward-compatible alias for VaultParams.
-// Deprecated: use VaultParams directly.
 type RootKDFParams = VaultParams
 
-// DefaultVaultParams returns a new VaultParams with a fresh random salt
-// and the current recommended Argon2id parameters.
 func DefaultVaultParams() (VaultParams, error) {
 	salt, err := GenerateRootSalt()
 	if err != nil {
@@ -155,15 +136,7 @@ func (p VaultParams) NeedsRehash() bool {
 		p.Threads < RecommendedThreads
 }
 
-// marshalVaultParams produces the canonical byte representation of a
-// VaultParams value.  Every function that needs to serialise or hash
-// vault params MUST use this function so the bytes are always identical.
-//
-// We use json.Marshal (compact, keys sorted alphabetically by the Go
-// spec) — never MarshalIndent — to guarantee deterministic output.
 func marshalVaultParams(p VaultParams) ([]byte, error) {
-	// Normalise defaults before serialising so two logically-equal
-	// structs always produce the same bytes.
 	if p.Version == 0 {
 		p.Version = 1
 	}
@@ -180,16 +153,11 @@ func marshalVaultParams(p VaultParams) ([]byte, error) {
 	return data, nil
 }
 
-// HashVaultParamsBytes computes a SHA-256 hex digest of a raw byte slice.
-// Use this to hash the exact bytes written to (or read from) disk.
 func HashVaultParamsBytes(data []byte) string {
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
 }
 
-// HashVaultParams computes a SHA-256 hex digest of the canonical JSON
-// encoding of a VaultParams value.  The bytes hashed are identical to
-// those written to disk by SaveVaultParams.
 func HashVaultParams(p VaultParams) (string, error) {
 	data, err := marshalVaultParams(p)
 	if err != nil {
@@ -198,24 +166,18 @@ func HashVaultParams(p VaultParams) (string, error) {
 	return HashVaultParamsBytes(data), nil
 }
 
-// vaultParamsPath returns the path to the vault params file.
 func vaultParamsPath(dataDir string) string {
 	return filepath.Join(dataDir, ".vault_params")
 }
 
-// legacyKdfParamsPath returns the old .kdf_params path (kept for migration).
 func legacyKdfParamsPath(dataDir string) string {
 	return filepath.Join(dataDir, ".kdf_params")
 }
 
-// rootSaltPath returns the legacy .root_salt path (kept for migration).
 func rootSaltPath(dataDir string) string {
 	return filepath.Join(dataDir, ".root_salt")
 }
 
-// SaveVaultParams writes the vault parameters to <dataDir>/.vault_params.
-// The file content is the canonical compact JSON produced by
-// marshalVaultParams — the same bytes that HashVaultParams hashes.
 func SaveVaultParams(dataDir string, p VaultParams) error {
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return fmt.Errorf("creating data dir: %w", err)
@@ -230,22 +192,15 @@ func SaveVaultParams(dataDir string, p VaultParams) error {
 	return nil
 }
 
-// SaveRootKDFParams is a backward-compatible alias.
-// Deprecated: use SaveVaultParams.
 var SaveRootKDFParams = SaveVaultParams
 
-// LoadVaultParams reads the vault parameters from <dataDir>/.vault_params.
-// Falls back to legacy .kdf_params and .root_salt if the new file is absent.
-// Returns nil, nil if no params file exists at all.
 func LoadVaultParams(dataDir string) (*VaultParams, error) {
-	// 1. Try .vault_params (current).
 	if p, err := loadVaultParamsFrom(vaultParamsPath(dataDir)); err == nil {
 		return p, nil
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
 
-	// 2. Try legacy .kdf_params → migrate to .vault_params.
 	if p, err := loadVaultParamsFrom(legacyKdfParamsPath(dataDir)); err == nil {
 		if err := SaveVaultParams(dataDir, *p); err != nil {
 			return nil, fmt.Errorf("migrating .kdf_params: %w", err)
@@ -256,7 +211,6 @@ func LoadVaultParams(dataDir string) (*VaultParams, error) {
 		return nil, err
 	}
 
-	// 3. Try legacy .root_salt → migrate to .vault_params.
 	saltData, err := os.ReadFile(rootSaltPath(dataDir))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -283,8 +237,6 @@ func LoadVaultParams(dataDir string) (*VaultParams, error) {
 	return p, nil
 }
 
-// loadVaultParamsFrom reads and validates a VaultParams JSON file at the
-// given path.  Returns os.ErrNotExist-wrapping error when file is absent.
 func loadVaultParamsFrom(path string) (*VaultParams, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -297,7 +249,6 @@ func loadVaultParamsFrom(path string) (*VaultParams, error) {
 	if len(p.Salt) != 32 {
 		return nil, fmt.Errorf("invalid vault params: expected 32-byte salt, got %d", len(p.Salt))
 	}
-	// Back-fill defaults.
 	if p.Version == 0 {
 		p.Version = 1
 	}
@@ -319,20 +270,14 @@ func loadVaultParamsFrom(path string) (*VaultParams, error) {
 	return &p, nil
 }
 
-// LoadRootKDFParams is a backward-compatible alias.
-// Deprecated: use LoadVaultParams.
 var LoadRootKDFParams = LoadVaultParams
 
-// SaveRootSalt is a convenience wrapper that writes a VaultParams with
-// recommended parameters.
 func SaveRootSalt(dataDir string, salt []byte) error {
 	p, _ := DefaultVaultParams()
 	p.Salt = salt
 	return SaveVaultParams(dataDir, p)
 }
 
-// LoadRootSalt is a convenience wrapper that returns only the salt.
-// Returns nil, nil if no params file exists.
 func LoadRootSalt(dataDir string) ([]byte, error) {
 	p, err := LoadVaultParams(dataDir)
 	if err != nil {
@@ -344,8 +289,6 @@ func LoadRootSalt(dataDir string) ([]byte, error) {
 	return p.Salt, nil
 }
 
-// DeriveRootKey derives a root key from the password using the given
-// VaultParams (salt + Argon2id parameters).
 func DeriveRootKey(password string, p VaultParams) []byte {
 	return argon2.IDKey(
 		[]byte(password),
@@ -357,8 +300,6 @@ func DeriveRootKey(password string, p VaultParams) []byte {
 	)
 }
 
-// DeriveHKDFKey derives a purpose-specific 32-byte sub-key from a root key
-// using HKDF-SHA256. Purpose should be "master" or "vault".
 func DeriveHKDFKey(rootKey []byte, purpose string) ([]byte, error) {
 	r := hkdf.New(sha256.New, rootKey, nil, []byte(purpose))
 	key := make([]byte, 32)
@@ -368,13 +309,6 @@ func DeriveHKDFKey(rootKey []byte, purpose string) ([]byte, error) {
 	return key, nil
 }
 
-// DeriveKeys derives both the master key (for .secret encryption) and the
-// vault key (for entry encryption) from a password and VaultParams using
-// the HKDF-based scheme:
-//
-//	root_key   = Argon2id(password, salt, time, memory, threads)
-//	master_key = HKDF(root_key, "master")
-//	vault_key  = HKDF(root_key, "vault")
 func DeriveKeys(password string, p VaultParams) (masterKey, vaultKey []byte, err error) {
 	rootKey := DeriveRootKey(password, p)
 	defer WipeBytes(rootKey)
@@ -389,9 +323,6 @@ func DeriveKeys(password string, p VaultParams) (masterKey, vaultKey []byte, err
 	return masterKey, vaultKey, nil
 }
 
-// RehashVault upgrades a vault's Argon2id parameters to the current
-// recommended values.  It re-derives keys with the stronger parameters and
-// re-encrypts the .secret file and all entries/attachments in place.
 func RehashVault(dataDir string, password string, oldParams VaultParams) (*VaultParams, error) {
 	// Derive old keys.
 	oldMasterKey, oldVaultKey, err := DeriveKeys(password, oldParams)
@@ -492,7 +423,6 @@ func MigrateVault(dataDir string, password string) (*VaultParams, error) {
 
 // --- END supportLegacy ---
 
-// VaultHasEntries checks if the vault directory contains any .pb entry files.
 func VaultHasEntries(dataDir string) bool {
 	categories := []string{"logins", "cards", "notes", "files"}
 	for _, cat := range categories {
@@ -510,6 +440,24 @@ func VaultHasEntries(dataDir string) bool {
 	return false
 }
 
+func generateNonce(size int) ([]byte, error) {
+	nonce := make([]byte, size)
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, fmt.Errorf("generating nonce: %w", err)
+	}
+	allZero := true
+	for _, b := range nonce {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		return nil, errors.New("generating nonce: CSPRNG returned all-zero bytes")
+	}
+	return nonce, nil
+}
+
 func Encrypt(key []byte, plaintext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -519,8 +467,8 @@ func Encrypt(key []byte, plaintext []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+	nonce, err := generateNonce(gcm.NonceSize())
+	if err != nil {
 		return nil, err
 	}
 	return gcm.Seal(nonce, nonce, plaintext, nil), nil
@@ -547,9 +495,6 @@ func secretPath(dataDir string) string {
 	return filepath.Join(dataDir, ".secret")
 }
 
-// vaultParamsAAD reads .vault_params from disk and returns its SHA-256 hash
-// as a byte slice suitable for use as GCM AAD.  Returns nil if the file
-// does not exist (legacy vault or brand-new vault before first save).
 func vaultParamsAAD(dataDir string) []byte {
 	data, err := os.ReadFile(vaultParamsPath(dataDir))
 	if err != nil {
@@ -559,9 +504,6 @@ func vaultParamsAAD(dataDir string) []byte {
 	return []byte(h)
 }
 
-// EnsureKDFSecret loads or creates the .secret file encrypted with masterKey.
-// When vaultParams is available, callers should prefer EnsureSecret which
-// also stores the vault params hash.
 func EnsureKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
 	if p, err := loadKDFSecret(dataDir, masterKey); err == nil {
 		return p, nil
@@ -572,8 +514,6 @@ func EnsureKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
 	return loadKDFSecret(dataDir, masterKey)
 }
 
-// EnsureSecret loads the .secret file or creates it with the vault params
-// hash embedded.  Returns the KDF params and an error.
 func EnsureSecret(dataDir string, masterKey []byte, vp VaultParams) (KDFParams, error) {
 	if p, err := loadKDFSecret(dataDir, masterKey); err == nil {
 		return p, nil
@@ -588,9 +528,6 @@ func EnsureSecret(dataDir string, masterKey []byte, vp VaultParams) (KDFParams, 
 	return loadKDFSecret(dataDir, masterKey)
 }
 
-// VerifyVaultParamsHash checks whether the vault params hash stored inside
-// the encrypted .secret matches the actual bytes of .vault_params on disk.
-// Returns nil if the hash matches (or if the .secret pre-dates the hash field).
 func VerifyVaultParamsHash(dataDir string, masterKey []byte) error {
 	b, err := os.ReadFile(secretPath(dataDir))
 	if err != nil {
@@ -710,9 +647,6 @@ func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte, vaultPa
 	return nil
 }
 
-// WriteSecretWithParams writes a new .secret file that includes the
-// SHA-256 hash of the given VaultParams.  Use this when changing the
-// master password or re-keying the vault.
 func WriteSecretWithParams(dataDir string, vp VaultParams, masterKey []byte) error {
 	hash, err := HashVaultParams(vp)
 	if err != nil {
@@ -721,12 +655,8 @@ func WriteSecretWithParams(dataDir string, vp VaultParams, masterKey []byte) err
 	return writeKDFSecretAtomic(dataDir, KDFParams{}, masterKey, hash)
 }
 
-// writeSecretWithParams is the internal alias.
 var writeSecretWithParams = WriteSecretWithParams
 
-// ReKeyVault writes a new .secret file with a fresh salt, encrypted with the
-// new master key. Call ReKeyEntries separately to re-encrypt vault data.
-// Deprecated: prefer writeSecretWithParams which also embeds the hash.
 func ReKeyVault(dataDir string, newMasterKey []byte) error {
 	if err := writeKDFSecretAtomic(dataDir, KDFParams{}, newMasterKey, ""); err != nil {
 		return fmt.Errorf("writing new secret: %w", err)
@@ -734,8 +664,6 @@ func ReKeyVault(dataDir string, newMasterKey []byte) error {
 	return nil
 }
 
-// ReKeyEntries decrypts all .pb entries and attachments with oldKey, then
-// re-encrypts them in place with newKey.
 func ReKeyEntries(dataDir string, oldKey, newKey []byte) error {
 	// 1. Re-encrypt all .pb entry files in category sub-directories.
 	categories := []string{"logins", "cards", "notes", "files"}
@@ -806,9 +734,6 @@ func ensureKDFParams(p *KDFParams) {
 	}
 }
 
-// EncryptAES256GCM encrypts plaintext with AES-256-GCM.
-// aad is optional additional authenticated data bound to the ciphertext;
-// the same aad must be supplied to DecryptAES256GCM for decryption to succeed.
 func EncryptAES256GCM(plaintext, key, aad []byte) ([]byte, error) {
 	if len(key) != 32 {
 		return nil, errors.New("key must be 32 bytes for AES-256")
@@ -824,8 +749,8 @@ func EncryptAES256GCM(plaintext, key, aad []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
+	nonce, err := generateNonce(gcm.NonceSize())
+	if err != nil {
 		return nil, err
 	}
 
@@ -834,8 +759,6 @@ func EncryptAES256GCM(plaintext, key, aad []byte) ([]byte, error) {
 	return ciphertext, nil
 }
 
-// DecryptAES256GCM decrypts ciphertext with AES-256-GCM.
-// aad must match the additional authenticated data used during encryption.
 func DecryptAES256GCM(ciphertext, key, aad []byte) ([]byte, error) {
 	if len(key) != 32 {
 		return nil, errors.New("key must be 32 bytes for AES-256")
