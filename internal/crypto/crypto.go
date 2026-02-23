@@ -83,6 +83,39 @@ func GenerateRootSalt() ([]byte, error) {
 	return salt, nil
 }
 
+// rootSaltPath returns the path to the root salt file inside the vault.
+func rootSaltPath(dataDir string) string {
+	return filepath.Join(dataDir, ".root_salt")
+}
+
+// SaveRootSalt writes the root salt to <dataDir>/.root_salt.
+// The salt is a public Argon2id parameter and safe to store in plaintext.
+func SaveRootSalt(dataDir string, salt []byte) error {
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		return fmt.Errorf("creating data dir: %w", err)
+	}
+	if err := os.WriteFile(rootSaltPath(dataDir), salt, 0600); err != nil {
+		return fmt.Errorf("writing root salt: %w", err)
+	}
+	return nil
+}
+
+// LoadRootSalt reads the root salt from <dataDir>/.root_salt.
+// Returns nil, nil if the file does not exist (vault not yet migrated).
+func LoadRootSalt(dataDir string) ([]byte, error) {
+	data, err := os.ReadFile(rootSaltPath(dataDir))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading root salt: %w", err)
+	}
+	if len(data) != 32 {
+		return nil, fmt.Errorf("invalid root salt: expected 32 bytes, got %d", len(data))
+	}
+	return data, nil
+}
+
 // DeriveRootKey derives a root key from the password and a random salt using Argon2id.
 func DeriveRootKey(password string, salt []byte) []byte {
 	return argon2.IDKey(
@@ -166,6 +199,11 @@ func MigrateVault(dataDir string, password string) (newSalt []byte, err error) {
 	// Re-encrypt all entries and attachments.
 	if err := ReKeyEntries(dataDir, oldVaultKey, newVaultKey); err != nil {
 		return nil, fmt.Errorf("re-keying entries: %w", err)
+	}
+
+	// Persist the new root salt inside the vault directory.
+	if err := SaveRootSalt(dataDir, newSalt); err != nil {
+		return nil, fmt.Errorf("saving root salt: %w", err)
 	}
 
 	return newSalt, nil

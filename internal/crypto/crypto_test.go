@@ -72,6 +72,47 @@ func TestGenerateRootSalt(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadRootSalt(t *testing.T) {
+	dir := t.TempDir()
+	salt := bytes.Repeat([]byte{0xAB}, 32)
+
+	if err := SaveRootSalt(dir, salt); err != nil {
+		t.Fatalf("SaveRootSalt error: %v", err)
+	}
+
+	loaded, err := LoadRootSalt(dir)
+	if err != nil {
+		t.Fatalf("LoadRootSalt error: %v", err)
+	}
+	if !bytes.Equal(salt, loaded) {
+		t.Fatalf("loaded salt does not match saved salt")
+	}
+}
+
+func TestLoadRootSaltMissing(t *testing.T) {
+	dir := t.TempDir()
+
+	loaded, err := LoadRootSalt(dir)
+	if err != nil {
+		t.Fatalf("expected no error for missing salt, got: %v", err)
+	}
+	if loaded != nil {
+		t.Fatalf("expected nil salt for missing file, got %d bytes", len(loaded))
+	}
+}
+
+func TestLoadRootSaltInvalidLength(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".root_salt"), []byte("short"), 0600); err != nil {
+		t.Fatalf("setup error: %v", err)
+	}
+
+	_, err := LoadRootSalt(dir)
+	if err == nil {
+		t.Fatalf("expected error for invalid salt length")
+	}
+}
+
 func TestDeriveRootKeyDeterministic(t *testing.T) {
 	salt := bytes.Repeat([]byte{0xAB}, 32)
 	k1 := DeriveRootKey("password", salt)

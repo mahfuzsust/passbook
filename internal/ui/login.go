@@ -19,9 +19,13 @@ func goToMain(pwd string) {
 		return
 	}
 
-	if uiCfg.IsMigrated && len(uiCfg.RootSalt) > 0 {
-		// Already migrated — use new HKDF scheme.
-		masterKey, vaultKey, err := crypto.DeriveKeys(pwd, uiCfg.RootSalt)
+	if uiCfg.IsMigrated {
+		// Already migrated — load salt from vault and use HKDF scheme.
+		rootSalt, err := crypto.LoadRootSalt(uiDataDir)
+		if err != nil || len(rootSalt) == 0 {
+			return
+		}
+		masterKey, vaultKey, err := crypto.DeriveKeys(pwd, rootSalt)
 		if err != nil {
 			return
 		}
@@ -58,7 +62,6 @@ func goToMain(pwd string) {
 
 			// Persist migration state.
 			uiCfg.IsMigrated = true
-			uiCfg.RootSalt = newSalt
 			_ = config.Save(uiCfg)
 
 			// Derive keys using new scheme.
@@ -84,8 +87,11 @@ func goToMain(pwd string) {
 				return
 			}
 
+			if err := crypto.SaveRootSalt(dataDir, newSalt); err != nil {
+				return
+			}
+
 			uiCfg.IsMigrated = true
-			uiCfg.RootSalt = newSalt
 			_ = config.Save(uiCfg)
 
 			uiMasterKey = vaultKey
@@ -109,8 +115,11 @@ func goToMain(pwd string) {
 			return
 		}
 
+		if err := crypto.SaveRootSalt(dataDir, newSalt); err != nil {
+			return
+		}
+
 		uiCfg.IsMigrated = true
-		uiCfg.RootSalt = newSalt
 		_ = config.Save(uiCfg)
 
 		uiMasterKey = vaultKey

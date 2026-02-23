@@ -97,6 +97,7 @@ On first run, PassBook creates:
 - Config: `~/.passbook/config.json` (stores your `data_dir`)
 - Default vault: `~/.passbook/data`
 - Vault secret: `<dataDir>/.secret`
+- Root salt: `<dataDir>/.root_salt`
 - Attachments: `<dataDir>/_attachments`
 
 ## ☁️ iCloud sync
@@ -175,6 +176,7 @@ Inside `<dataDir>` you'll see:
 - `files/` — encrypted protobuf entries stored as `*.pb` (plus attachment metadata)
 - `_attachments/` — encrypted attachment blobs keyed by attachment ID
 - `.secret` — vault-local KDF configuration (salt + Argon2id parameters)
+- `.root_salt` — 32-byte random salt for Argon2id root key derivation (plaintext)
 
 Notes:
 
@@ -196,7 +198,7 @@ Notes:
 PassBook derives all encryption keys from a single master password using a three-step hierarchy:
 
 ```
-root_key   = Argon2id(password, random_salt)   ← stored in config
+root_key   = Argon2id(password, random_salt)   ← stored in <dataDir>/.root_salt
 master_key = HKDF-SHA256(root_key, "master")   ← encrypts .secret
 vault_key  = HKDF-SHA256(root_key, "vault")    ← encrypts entries & attachments
 ```
@@ -207,7 +209,7 @@ vault_key  = HKDF-SHA256(root_key, "vault")    ← encrypts entries & attachment
   - Time: 6
   - Memory: 256 MB
   - Threads: 4
-  - Salt: cryptographically random 32-byte salt (unique per vault, stored in `~/.passbook/config.json`)
+  - Salt: cryptographically random 32-byte salt (unique per vault, stored in `<dataDir>/.root_salt`)
 - **Input**: your master password + random salt
 - **Output**: 32-byte root key (ephemeral — never stored)
 
@@ -236,9 +238,9 @@ Located at `<dataDir>/.secret`.
 - The JSON is **encrypted at rest** using AES-256-GCM with the **master key**.
 - Serves as a password-correctness check: if decryption of `.secret` succeeds, the password is correct.
 
-**Portability**: The vault is self-contained—moving `<dataDir>` also moves `.secret`, entries, and attachments. The only external dependency is `root_salt` in `~/.passbook/config.json`.
+**Portability**: The vault is fully self-contained—moving `<dataDir>` moves everything needed to unlock it (`.root_salt`, `.secret`, entries, and attachments). Only the master password is external.
 
-**Important**: Don't delete `<dataDir>/.secret` or the `root_salt` from your config. Without them, existing encrypted data becomes undecryptable.
+**Important**: Don't delete `<dataDir>/.secret` or `<dataDir>/.root_salt`. Without them, existing encrypted data becomes undecryptable.
 
 ### Config file
 
@@ -246,7 +248,6 @@ Located at `~/.passbook/config.json`.
 
 - `data_dir`: Path to the vault directory.
 - `is_migrated`: Whether the vault has been migrated to the new HKDF scheme (`true`/`false`).
-- `root_salt`: Base64-encoded 32-byte random salt used for root key derivation.
 
 ### Entries and attachments
 
@@ -265,7 +266,7 @@ Older versions of PassBook used a fixed UUID string as the Argon2id salt for mas
 3. New master and vault keys are derived using the HKDF hierarchy.
 4. The `.secret` file is re-encrypted with the new master key.
 5. All entries and attachments are re-encrypted with the new vault key.
-6. `is_migrated` and `root_salt` are saved to `config.json`.
+6. The new salt is saved to `<dataDir>/.root_salt` and `is_migrated` is set in `config.json`.
 
 If migration fails (e.g. disk error), the vault falls back to the legacy scheme for that session and retries on the next login. Changing the master password also always uses the new scheme.
 
@@ -276,7 +277,7 @@ Legacy support can be removed entirely by setting `supportLegacy = false` in `in
 1. **Random salt**: Each vault gets a unique random salt instead of a fixed one, preventing rainbow table attacks across vaults.
 2. **Key separation**: HKDF produces independent master and vault keys from a single Argon2id pass — one slow KDF call instead of two.
 3. **Defense in depth**: `.secret` is encrypted with a separate key from vault data; compromising one doesn't directly expose the other.
-4. **Portability**: Everything needed to unlock (except the password and `root_salt`) lives under `<dataDir>`.
+4. **Portability**: Everything needed to unlock (except the password) lives under `<dataDir>`. Copy the directory to a new machine and it just works.
 
 
 

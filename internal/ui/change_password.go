@@ -79,8 +79,13 @@ func doChangePassword() {
 
 	// Verify the current password and derive the old vault key.
 	var oldVaultKey []byte
-	if uiCfg.IsMigrated && len(uiCfg.RootSalt) > 0 {
-		oldMasterKey, vk, err := crypto.DeriveKeys(currentPwd, uiCfg.RootSalt)
+	if uiCfg.IsMigrated {
+		rootSalt, err := crypto.LoadRootSalt(dataDir)
+		if err != nil || len(rootSalt) == 0 {
+			showChangePwdError("Failed to load root salt.")
+			return
+		}
+		oldMasterKey, vk, err := crypto.DeriveKeys(currentPwd, rootSalt)
 		if err != nil {
 			showChangePwdError("Key derivation error: " + err.Error())
 			return
@@ -133,9 +138,12 @@ func doChangePassword() {
 		return
 	}
 
-	// Persist the new salt and migration state.
+	// Persist the new salt to the vault directory and migration state to config.
+	if err := crypto.SaveRootSalt(dataDir, newSalt); err != nil {
+		showChangePwdError("Failed to save salt: " + err.Error())
+		return
+	}
 	uiCfg.IsMigrated = true
-	uiCfg.RootSalt = newSalt
 	if err := config.Save(uiCfg); err != nil {
 		showChangePwdError("Failed to save config: " + err.Error())
 		return
