@@ -83,47 +83,165 @@ func GenerateRootSalt() ([]byte, error) {
 	return salt, nil
 }
 
-// rootSaltPath returns the path to the root salt file inside the vault.
+// ---------------------------------------------------------------------------
+// Recommended Argon2id parameters for root key derivation.
+// Bump these to strengthen new vaults / trigger automatic rehash on login.
+// ---------------------------------------------------------------------------
+
+const (
+	RecommendedTime    uint32 = 6
+	RecommendedMemory  uint32 = 256 * 1024 // 256 MB in KiB
+	RecommendedThreads uint8  = 4
+)
+
+// RootKDFParams holds the Argon2id parameters and salt used to derive the
+// root key.  Stored as JSON in <dataDir>/.kdf_params.
+type RootKDFParams struct {
+	Salt     []byte `json:"salt"`      // 32-byte random salt
+	Time     uint32 `json:"time"`      // Argon2id time/iterations
+	MemoryKB uint32 `json:"memory_kb"` // Argon2id memory in KiB
+	Threads  uint8  `json:"threads"`   // Argon2id parallelism
+}
+
+// DefaultRootKDFParams returns a new RootKDFParams with a fresh random salt
+// and the current recommended Argon2id parameters.
+func DefaultRootKDFParams() (RootKDFParams, error) {
+	salt, err := GenerateRootSalt()
+	if err != nil {
+		return RootKDFParams{}, err
+	}
+	return RootKDFParams{
+		Salt:     salt,
+		Time:     RecommendedTime,
+		MemoryKB: RecommendedMemory,
+		Threads:  RecommendedThreads,
+	}, nil
+}
+
+// NeedsRehash returns true when any stored parameter is strictly weaker
+// (lower) than the current recommended values.
+func (p RootKDFParams) NeedsRehash() bool {
+	return p.Time < RecommendedTime ||
+		p.MemoryKB < RecommendedMemory ||
+		p.Threads < RecommendedThreads
+}
+
+// kdfParamsPath returns the path to the KDF params file inside the vault.
+func kdfParamsPath(dataDir string) string {
+	return filepath.Join(dataDir, ".kdf_params")
+}
+
+// rootSaltPath returns the legacy path (kept for migration).
 func rootSaltPath(dataDir string) string {
 	return filepath.Join(dataDir, ".root_salt")
 }
 
-// SaveRootSalt writes the root salt to <dataDir>/.root_salt.
-// The salt is a public Argon2id parameter and safe to store in plaintext.
-func SaveRootSalt(dataDir string, salt []byte) error {
+// SaveRootKDFParams writes the root KDF parameters to <dataDir>/.kdf_params.
+func SaveRootKDFParams(dataDir string, p RootKDFParams) error {
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
-	if err := os.WriteFile(rootSaltPath(dataDir), salt, 0600); err != nil {
-		return fmt.Errorf("writing root salt: %w", err)
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshalling kdf params: %w", err)
+	}
+	if err := os.WriteFile(kdfParamsPath(dataDir), data, 0600); err != nil {
+		return fmt.Errorf("writing kdf params: %w", err)
 	}
 	return nil
 }
 
-// LoadRootSalt reads the root salt from <dataDir>/.root_salt.
-// Returns nil, nil if the file does not exist (vault not yet migrated).
-func LoadRootSalt(dataDir string) ([]byte, error) {
-	data, err := os.ReadFile(rootSaltPath(dataDir))
+// LoadRootKDFParams reads the root KDF parameters from <dataDir>/.kdf_params.
+// If the new file doesn't exist but the legacy .root_salt does, it migrates
+// automatically.  Returns nil, nil if neither file exists.
+func LoadRootKDFParams(dataDir string) (*RootKDFParams, error) {
+	// Try new format first.
+	data, err := os.ReadFile(kdfParamsPath(dataDir))
+	if err == nil {
+		var p RootKDFParams
+		if err := json.Unmarshal(data, &p); err != nil {
+			return nil, fmt.Errorf("parsing kdf params: %w", err)
+		}
+		if len(p.Salt) != 32 {
+			return nil, fmt.Errorf("invalid kdf params: expected 32-byte salt, got %d", len(p.Salt))
+		}
+		// Back-fill zeroed params with recommended values so old files
+		// written before a field existed still work.
+		if p.Time == 0 {
+			p.Time = RecommendedTime
+		}
+		if p.MemoryKB == 0 {
+			p.MemoryKB = RecommendedMemory
+		}
+		if p.Threads == 0 {
+			p.Threads = RecommendedThreads
+		}
+		return &p, nil
+	}
+	if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("reading kdf params: %w", err)
+	}
+
+	// Fall back to legacy .root_salt (raw 32-byte file).
+	saltData, err := os.ReadFile(rootSaltPath(dataDir))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, nil // neither file exists
 		}
-		return nil, fmt.Errorf("reading root salt: %w", err)
+		return nil, fmt.Errorf("reading legacy root salt: %w", err)
 	}
-	if len(data) != 32 {
-		return nil, fmt.Errorf("invalid root salt: expected 32 bytes, got %d", len(data))
+	if len(saltData) != 32 {
+		return nil, fmt.Errorf("invalid legacy root salt: expected 32 bytes, got %d", len(saltData))
 	}
-	return data, nil
+
+	// Migrate: write .kdf_params and remove .root_salt.
+	p := RootKDFParams{
+		Salt:     saltData,
+		Time:     RecommendedTime,
+		MemoryKB: RecommendedMemory,
+		Threads:  RecommendedThreads,
+	}
+	if err := SaveRootKDFParams(dataDir, p); err != nil {
+		return nil, fmt.Errorf("migrating legacy root salt: %w", err)
+	}
+	_ = os.Remove(rootSaltPath(dataDir))
+	return &p, nil
 }
 
-// DeriveRootKey derives a root key from the password and a random salt using Argon2id.
-func DeriveRootKey(password string, salt []byte) []byte {
+// SaveRootSalt is a convenience wrapper that writes a RootKDFParams with
+// recommended parameters.  Callers that need custom params should use
+// SaveRootKDFParams directly.
+func SaveRootSalt(dataDir string, salt []byte) error {
+	return SaveRootKDFParams(dataDir, RootKDFParams{
+		Salt:     salt,
+		Time:     RecommendedTime,
+		MemoryKB: RecommendedMemory,
+		Threads:  RecommendedThreads,
+	})
+}
+
+// LoadRootSalt is a convenience wrapper that returns only the salt.
+// Returns nil, nil if no params file exists.
+func LoadRootSalt(dataDir string) ([]byte, error) {
+	p, err := LoadRootKDFParams(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil {
+		return nil, nil
+	}
+	return p.Salt, nil
+}
+
+// DeriveRootKey derives a root key from the password using the given
+// RootKDFParams (salt + Argon2id parameters).
+func DeriveRootKey(password string, p RootKDFParams) []byte {
 	return argon2.IDKey(
 		[]byte(password),
-		salt,
-		6,
-		256*1024,
-		4,
+		p.Salt,
+		p.Time,
+		p.MemoryKB,
+		p.Threads,
 		32,
 	)
 }
@@ -140,14 +258,14 @@ func DeriveHKDFKey(rootKey []byte, purpose string) ([]byte, error) {
 }
 
 // DeriveKeys derives both the master key (for .secret encryption) and the
-// vault key (for entry encryption) from a password and random salt using
-// the new HKDF-based scheme:
+// vault key (for entry encryption) from a password and RootKDFParams using
+// the HKDF-based scheme:
 //
-//	root_key   = Argon2id(password, random_salt)
+//	root_key   = Argon2id(password, salt, time, memory, threads)
 //	master_key = HKDF(root_key, "master")
 //	vault_key  = HKDF(root_key, "vault")
-func DeriveKeys(password string, salt []byte) (masterKey, vaultKey []byte, err error) {
-	rootKey := DeriveRootKey(password, salt)
+func DeriveKeys(password string, p RootKDFParams) (masterKey, vaultKey []byte, err error) {
+	rootKey := DeriveRootKey(password, p)
 	masterKey, err = DeriveHKDFKey(rootKey, "master")
 	if err != nil {
 		return nil, nil, err
@@ -157,6 +275,54 @@ func DeriveKeys(password string, salt []byte) (masterKey, vaultKey []byte, err e
 		return nil, nil, err
 	}
 	return masterKey, vaultKey, nil
+}
+
+// RehashVault upgrades a vault's Argon2id parameters to the current
+// recommended values.  It re-derives keys with the stronger parameters and
+// re-encrypts the .secret file and all entries/attachments in place.
+// The new RootKDFParams are saved to <dataDir>/.kdf_params.
+func RehashVault(dataDir string, password string, oldParams RootKDFParams) (*RootKDFParams, error) {
+	// Derive old keys.
+	oldMasterKey, oldVaultKey, err := DeriveKeys(password, oldParams)
+	if err != nil {
+		return nil, fmt.Errorf("deriving old keys: %w", err)
+	}
+
+	// Verify old keys work.
+	if _, err := loadKDFSecret(dataDir, oldMasterKey); err != nil {
+		return nil, fmt.Errorf("old keys invalid (wrong password?): %w", err)
+	}
+
+	// Build new params: keep the same salt, bump the Argon2id cost.
+	newParams := RootKDFParams{
+		Salt:     oldParams.Salt,
+		Time:     RecommendedTime,
+		MemoryKB: RecommendedMemory,
+		Threads:  RecommendedThreads,
+	}
+
+	// Derive new keys with stronger params.
+	newMasterKey, newVaultKey, err := DeriveKeys(password, newParams)
+	if err != nil {
+		return nil, fmt.Errorf("deriving new keys: %w", err)
+	}
+
+	// Re-encrypt .secret.
+	if err := ReKeyVault(dataDir, newMasterKey); err != nil {
+		return nil, fmt.Errorf("re-keying vault secret: %w", err)
+	}
+
+	// Re-encrypt all entries and attachments.
+	if err := ReKeyEntries(dataDir, oldVaultKey, newVaultKey); err != nil {
+		return nil, fmt.Errorf("re-keying entries: %w", err)
+	}
+
+	// Persist the new parameters.
+	if err := SaveRootKDFParams(dataDir, newParams); err != nil {
+		return nil, fmt.Errorf("saving new kdf params: %w", err)
+	}
+
+	return &newParams, nil
 }
 
 // --- BEGIN supportLegacy ---
@@ -170,7 +336,7 @@ func DeriveKeys(password string, salt []byte) (masterKey, vaultKey []byte, err e
 //  5. Re-encrypts all entries with the new vault key
 //
 // Returns the new salt so the caller can persist it in config.
-func MigrateVault(dataDir string, password string) (newSalt []byte, err error) {
+func MigrateVault(dataDir string, password string) (*RootKDFParams, error) {
 	// Derive old keys using legacy scheme.
 	oldMasterKey := DeriveLegacyMasterKey(password)
 	oldKDF, err := loadKDFSecret(dataDir, oldMasterKey)
@@ -179,14 +345,14 @@ func MigrateVault(dataDir string, password string) (newSalt []byte, err error) {
 	}
 	oldVaultKey := DeriveKey(password, oldKDF)
 
-	// Generate new random salt.
-	newSalt, err = GenerateRootSalt()
+	// Generate new params with fresh salt and recommended Argon2id cost.
+	newParams, err := DefaultRootKDFParams()
 	if err != nil {
 		return nil, err
 	}
 
 	// Derive new keys using HKDF scheme.
-	newMasterKey, newVaultKey, err := DeriveKeys(password, newSalt)
+	newMasterKey, newVaultKey, err := DeriveKeys(password, newParams)
 	if err != nil {
 		return nil, fmt.Errorf("deriving new keys: %w", err)
 	}
@@ -201,12 +367,12 @@ func MigrateVault(dataDir string, password string) (newSalt []byte, err error) {
 		return nil, fmt.Errorf("re-keying entries: %w", err)
 	}
 
-	// Persist the new root salt inside the vault directory.
-	if err := SaveRootSalt(dataDir, newSalt); err != nil {
-		return nil, fmt.Errorf("saving root salt: %w", err)
+	// Persist the new KDF params inside the vault directory.
+	if err := SaveRootKDFParams(dataDir, newParams); err != nil {
+		return nil, fmt.Errorf("saving kdf params: %w", err)
 	}
 
-	return newSalt, nil
+	return &newParams, nil
 }
 
 // --- END supportLegacy ---

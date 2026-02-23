@@ -103,7 +103,8 @@ func TestLoadRootSaltMissing(t *testing.T) {
 
 func TestLoadRootSaltInvalidLength(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ".root_salt"), []byte("short"), 0600); err != nil {
+	// Write a .kdf_params with bad salt length.
+	if err := os.WriteFile(filepath.Join(dir, ".kdf_params"), []byte(`{"salt":"c2hvcnQ=","time":6,"memory_kb":262144,"threads":4}`), 0600); err != nil {
 		t.Fatalf("setup error: %v", err)
 	}
 
@@ -113,10 +114,147 @@ func TestLoadRootSaltInvalidLength(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadRootKDFParams(t *testing.T) {
+	dir := t.TempDir()
+	p := RootKDFParams{
+		Salt:     bytes.Repeat([]byte{0xBB}, 32),
+		Time:     8,
+		MemoryKB: 512 * 1024,
+		Threads:  8,
+	}
+
+	if err := SaveRootKDFParams(dir, p); err != nil {
+		t.Fatalf("SaveRootKDFParams error: %v", err)
+	}
+
+	loaded, err := LoadRootKDFParams(dir)
+	if err != nil {
+		t.Fatalf("LoadRootKDFParams error: %v", err)
+	}
+	if loaded == nil {
+		t.Fatalf("expected non-nil params")
+	}
+	if !bytes.Equal(p.Salt, loaded.Salt) {
+		t.Fatalf("salt mismatch")
+	}
+	if loaded.Time != 8 || loaded.MemoryKB != 512*1024 || loaded.Threads != 8 {
+		t.Fatalf("params mismatch: got time=%d memory=%d threads=%d", loaded.Time, loaded.MemoryKB, loaded.Threads)
+	}
+}
+
+func TestLoadRootKDFParamsBackfillsZeroes(t *testing.T) {
+	dir := t.TempDir()
+	// Write params with zero time/memory/threads — should back-fill.
+	salt := bytes.Repeat([]byte{0xCC}, 32)
+	p := RootKDFParams{Salt: salt}
+	if err := SaveRootKDFParams(dir, p); err != nil {
+		t.Fatalf("SaveRootKDFParams error: %v", err)
+	}
+
+	loaded, err := LoadRootKDFParams(dir)
+	if err != nil {
+		t.Fatalf("LoadRootKDFParams error: %v", err)
+	}
+	if loaded == nil {
+		t.Fatalf("expected non-nil params")
+	}
+	if loaded.Time != RecommendedTime || loaded.MemoryKB != RecommendedMemory || loaded.Threads != RecommendedThreads {
+		t.Fatalf("expected zeroed params to be back-filled with recommended values")
+	}
+}
+
+func TestLoadRootKDFParamsMigratesLegacyRootSalt(t *testing.T) {
+	dir := t.TempDir()
+	salt := bytes.Repeat([]byte{0xDD}, 32)
+
+	// Write legacy .root_salt file.
+	if err := os.WriteFile(filepath.Join(dir, ".root_salt"), salt, 0600); err != nil {
+		t.Fatalf("setup error: %v", err)
+	}
+
+	loaded, err := LoadRootKDFParams(dir)
+	if err != nil {
+		t.Fatalf("LoadRootKDFParams error: %v", err)
+	}
+	if loaded == nil {
+		t.Fatalf("expected non-nil params")
+	}
+	if !bytes.Equal(salt, loaded.Salt) {
+		t.Fatalf("salt mismatch after legacy migration")
+	}
+	if loaded.Time != RecommendedTime || loaded.MemoryKB != RecommendedMemory || loaded.Threads != RecommendedThreads {
+		t.Fatalf("expected recommended params after legacy migration")
+	}
+
+	// .root_salt should be removed.
+	if _, err := os.Stat(filepath.Join(dir, ".root_salt")); !os.IsNotExist(err) {
+		t.Fatalf("expected .root_salt to be removed after migration")
+	}
+
+	// .kdf_params should exist.
+	if _, err := os.Stat(filepath.Join(dir, ".kdf_params")); err != nil {
+		t.Fatalf("expected .kdf_params to exist after migration")
+	}
+}
+
+func TestNeedsRehash(t *testing.T) {
+	current := RootKDFParams{
+		Salt:     bytes.Repeat([]byte{0x01}, 32),
+		Time:     RecommendedTime,
+		MemoryKB: RecommendedMemory,
+		Threads:  RecommendedThreads,
+	}
+	if current.NeedsRehash() {
+		t.Fatalf("should not need rehash at recommended values")
+	}
+
+	weaker := current
+	weaker.Time = RecommendedTime - 1
+	if !weaker.NeedsRehash() {
+		t.Fatalf("should need rehash when time is below recommended")
+	}
+
+	weaker = current
+	weaker.MemoryKB = RecommendedMemory - 1
+	if !weaker.NeedsRehash() {
+		t.Fatalf("should need rehash when memory is below recommended")
+	}
+
+	weaker = current
+	weaker.Threads = RecommendedThreads - 1
+	if !weaker.NeedsRehash() {
+		t.Fatalf("should need rehash when threads is below recommended")
+	}
+
+	stronger := current
+	stronger.Time = RecommendedTime + 2
+	if stronger.NeedsRehash() {
+		t.Fatalf("should not need rehash when params are stronger")
+	}
+}
+
+func TestDefaultRootKDFParams(t *testing.T) {
+	p, err := DefaultRootKDFParams()
+	if err != nil {
+		t.Fatalf("DefaultRootKDFParams error: %v", err)
+	}
+	if len(p.Salt) != 32 {
+		t.Fatalf("expected 32-byte salt, got %d", len(p.Salt))
+	}
+	if p.Time != RecommendedTime || p.MemoryKB != RecommendedMemory || p.Threads != RecommendedThreads {
+		t.Fatalf("expected recommended params")
+	}
+}
+
 func TestDeriveRootKeyDeterministic(t *testing.T) {
-	salt := bytes.Repeat([]byte{0xAB}, 32)
-	k1 := DeriveRootKey("password", salt)
-	k2 := DeriveRootKey("password", salt)
+	p := RootKDFParams{
+		Salt:     bytes.Repeat([]byte{0xAB}, 32),
+		Time:     RecommendedTime,
+		MemoryKB: RecommendedMemory,
+		Threads:  RecommendedThreads,
+	}
+	k1 := DeriveRootKey("password", p)
+	k2 := DeriveRootKey("password", p)
 	if !bytes.Equal(k1, k2) {
 		t.Fatalf("expected deterministic root key derivation")
 	}
@@ -124,13 +262,18 @@ func TestDeriveRootKeyDeterministic(t *testing.T) {
 		t.Fatalf("expected 32-byte key, got %d", len(k1))
 	}
 
-	k3 := DeriveRootKey("password2", salt)
+	k3 := DeriveRootKey("password2", p)
 	if bytes.Equal(k1, k3) {
 		t.Fatalf("expected different key for different password")
 	}
 
-	salt2 := bytes.Repeat([]byte{0xCD}, 32)
-	k4 := DeriveRootKey("password", salt2)
+	p2 := RootKDFParams{
+		Salt:     bytes.Repeat([]byte{0xCD}, 32),
+		Time:     RecommendedTime,
+		MemoryKB: RecommendedMemory,
+		Threads:  RecommendedThreads,
+	}
+	k4 := DeriveRootKey("password", p2)
 	if bytes.Equal(k1, k4) {
 		t.Fatalf("expected different key for different salt")
 	}
@@ -163,8 +306,13 @@ func TestDeriveHKDFKey(t *testing.T) {
 }
 
 func TestDeriveKeys(t *testing.T) {
-	salt := bytes.Repeat([]byte{0x99}, 32)
-	mk, vk, err := DeriveKeys("password", salt)
+	p := RootKDFParams{
+		Salt:     bytes.Repeat([]byte{0x99}, 32),
+		Time:     RecommendedTime,
+		MemoryKB: RecommendedMemory,
+		Threads:  RecommendedThreads,
+	}
+	mk, vk, err := DeriveKeys("password", p)
 	if err != nil {
 		t.Fatalf("DeriveKeys error: %v", err)
 	}
@@ -176,13 +324,13 @@ func TestDeriveKeys(t *testing.T) {
 	}
 
 	// Deterministic.
-	mk2, vk2, _ := DeriveKeys("password", salt)
+	mk2, vk2, _ := DeriveKeys("password", p)
 	if !bytes.Equal(mk, mk2) || !bytes.Equal(vk, vk2) {
 		t.Fatalf("expected deterministic key derivation")
 	}
 
 	// Different password → different keys.
-	mk3, _, _ := DeriveKeys("other", salt)
+	mk3, _, _ := DeriveKeys("other", p)
 	if bytes.Equal(mk, mk3) {
 		t.Fatalf("expected different keys for different password")
 	}

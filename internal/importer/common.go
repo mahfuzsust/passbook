@@ -23,11 +23,11 @@ func saveEntries(entries []*pb.Entry, subDirs []string, names []string, masterPa
 
 	var encKey []byte
 	if cfg.IsMigrated {
-		rootSalt, err := crypto.LoadRootSalt(dataDir)
-		if err != nil || len(rootSalt) == 0 {
-			return fmt.Errorf("failed to load root salt: vault may not be migrated")
+		kdfParams, err := crypto.LoadRootKDFParams(dataDir)
+		if err != nil || kdfParams == nil {
+			return fmt.Errorf("failed to load KDF params: vault may not be migrated")
 		}
-		masterKey, vaultKey, err := crypto.DeriveKeys(masterPassword, rootSalt)
+		masterKey, vaultKey, err := crypto.DeriveKeys(masterPassword, *kdfParams)
 		if err != nil {
 			return fmt.Errorf("key derivation error: %w", err)
 		}

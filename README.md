@@ -97,7 +97,7 @@ On first run, PassBook creates:
 - Config: `~/.passbook/config.json` (stores your `data_dir`)
 - Default vault: `~/.passbook/data`
 - Vault secret: `<dataDir>/.secret`
-- Root salt: `<dataDir>/.root_salt`
+- KDF params: `<dataDir>/.kdf_params`
 - Attachments: `<dataDir>/_attachments`
 
 ## ☁️ iCloud sync
@@ -176,7 +176,7 @@ Inside `<dataDir>` you'll see:
 - `files/` — encrypted protobuf entries stored as `*.pb` (plus attachment metadata)
 - `_attachments/` — encrypted attachment blobs keyed by attachment ID
 - `.secret` — vault-local KDF configuration (salt + Argon2id parameters)
-- `.root_salt` — 32-byte random salt for Argon2id root key derivation (plaintext)
+- `.kdf_params` — JSON file storing root salt and Argon2id parameters (time, memory, threads)
 
 Notes:
 
@@ -198,20 +198,22 @@ Notes:
 PassBook derives all encryption keys from a single master password using a three-step hierarchy:
 
 ```
-root_key   = Argon2id(password, random_salt)   ← stored in <dataDir>/.root_salt
-master_key = HKDF-SHA256(root_key, "master")   ← encrypts .secret
-vault_key  = HKDF-SHA256(root_key, "vault")    ← encrypts entries & attachments
+root_key   = Argon2id(password, salt, time, memory, threads)  ← params in <dataDir>/.kdf_params
+master_key = HKDF-SHA256(root_key, "master")                  ← encrypts .secret
+vault_key  = HKDF-SHA256(root_key, "vault")                   ← encrypts entries & attachments
 ```
 
 #### Step 1: Root Key
 
 - **KDF**: Argon2id
-  - Time: 6
-  - Memory: 256 MB
-  - Threads: 4
-  - Salt: cryptographically random 32-byte salt (unique per vault, stored in `<dataDir>/.root_salt`)
-- **Input**: your master password + random salt
+  - Time: 6 (recommended default, stored per-vault)
+  - Memory: 256 MB (recommended default, stored per-vault)
+  - Threads: 4 (recommended default, stored per-vault)
+  - Salt: cryptographically random 32-byte salt (unique per vault)
+- **Parameters file**: `<dataDir>/.kdf_params` (JSON) stores the salt and Argon2id cost parameters.
+- **Input**: your master password + stored parameters
 - **Output**: 32-byte root key (ephemeral — never stored)
+- **Auto-rehash**: If the recommended parameters increase in a future version, PassBook automatically re-derives keys and re-encrypts the vault on next login — no user action required.
 
 #### Step 2: Master Key
 
@@ -238,9 +240,9 @@ Located at `<dataDir>/.secret`.
 - The JSON is **encrypted at rest** using AES-256-GCM with the **master key**.
 - Serves as a password-correctness check: if decryption of `.secret` succeeds, the password is correct.
 
-**Portability**: The vault is fully self-contained—moving `<dataDir>` moves everything needed to unlock it (`.root_salt`, `.secret`, entries, and attachments). Only the master password is external.
+**Portability**: The vault is fully self-contained—moving `<dataDir>` moves everything needed to unlock it (`.kdf_params`, `.secret`, entries, and attachments). Only the master password is external.
 
-**Important**: Don't delete `<dataDir>/.secret` or `<dataDir>/.root_salt`. Without them, existing encrypted data becomes undecryptable.
+**Important**: Don't delete `<dataDir>/.secret` or `<dataDir>/.kdf_params`. Without them, existing encrypted data becomes undecryptable.
 
 ### Config file
 
@@ -266,11 +268,24 @@ Older versions of PassBook used a fixed UUID string as the Argon2id salt for mas
 3. New master and vault keys are derived using the HKDF hierarchy.
 4. The `.secret` file is re-encrypted with the new master key.
 5. All entries and attachments are re-encrypted with the new vault key.
-6. The new salt is saved to `<dataDir>/.root_salt` and `is_migrated` is set in `config.json`.
+6. The new salt and Argon2id parameters are saved to `<dataDir>/.kdf_params` and `is_migrated` is set in `config.json`.
 
 If migration fails (e.g. disk error), the vault falls back to the legacy scheme for that session and retries on the next login. Changing the master password also always uses the new scheme.
 
 Legacy support can be removed entirely by setting `supportLegacy = false` in `internal/crypto/crypto.go` and deleting all code blocks marked with `// --- BEGIN supportLegacy ---` / `// --- END supportLegacy ---`.
+
+### Automatic parameter rehash
+
+Argon2id parameters (time, memory, threads) are stored per-vault in `<dataDir>/.kdf_params`. When the recommended constants in `internal/crypto/crypto.go` are increased:
+
+1. On login, PassBook compares stored parameters against recommended values.
+2. If any stored parameter is strictly weaker, a rehash is triggered automatically.
+3. Old keys are derived with the stored (weaker) parameters.
+4. New keys are derived with the recommended (stronger) parameters, keeping the same salt.
+5. `.secret`, all entries, and attachments are re-encrypted with the new keys.
+6. Updated parameters are saved to `.kdf_params`.
+
+If rehash fails (e.g. disk error), the vault continues working with the old parameters for that session.
 
 ### Why this design?
 
@@ -278,6 +293,7 @@ Legacy support can be removed entirely by setting `supportLegacy = false` in `in
 2. **Key separation**: HKDF produces independent master and vault keys from a single Argon2id pass — one slow KDF call instead of two.
 3. **Defense in depth**: `.secret` is encrypted with a separate key from vault data; compromising one doesn't directly expose the other.
 4. **Portability**: Everything needed to unlock (except the password) lives under `<dataDir>`. Copy the directory to a new machine and it just works.
+5. **Auto-rehash**: Argon2id parameters are stored per-vault in `.kdf_params`. When the recommended parameters increase in a future release, PassBook automatically re-derives keys with the stronger settings and re-encrypts the vault on next login — no user intervention needed.
 
 
 

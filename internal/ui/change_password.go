@@ -80,12 +80,12 @@ func doChangePassword() {
 	// Verify the current password and derive the old vault key.
 	var oldVaultKey []byte
 	if uiCfg.IsMigrated {
-		rootSalt, err := crypto.LoadRootSalt(dataDir)
-		if err != nil || len(rootSalt) == 0 {
-			showChangePwdError("Failed to load root salt.")
+		kdfParams, err := crypto.LoadRootKDFParams(dataDir)
+		if err != nil || kdfParams == nil {
+			showChangePwdError("Failed to load KDF params.")
 			return
 		}
-		oldMasterKey, vk, err := crypto.DeriveKeys(currentPwd, rootSalt)
+		oldMasterKey, vk, err := crypto.DeriveKeys(currentPwd, *kdfParams)
 		if err != nil {
 			showChangePwdError("Key derivation error: " + err.Error())
 			return
@@ -114,13 +114,13 @@ func doChangePassword() {
 	}
 
 	// Always use new HKDF scheme for the new password.
-	newSalt, err := crypto.GenerateRootSalt()
+	newParams, err := crypto.DefaultRootKDFParams()
 	if err != nil {
-		showChangePwdError("Failed to generate salt: " + err.Error())
+		showChangePwdError("Failed to generate params: " + err.Error())
 		return
 	}
 
-	newMasterKey, newVaultKey, err := crypto.DeriveKeys(newPwd, newSalt)
+	newMasterKey, newVaultKey, err := crypto.DeriveKeys(newPwd, newParams)
 	if err != nil {
 		showChangePwdError("Key derivation error: " + err.Error())
 		return
@@ -138,9 +138,9 @@ func doChangePassword() {
 		return
 	}
 
-	// Persist the new salt to the vault directory and migration state to config.
-	if err := crypto.SaveRootSalt(dataDir, newSalt); err != nil {
-		showChangePwdError("Failed to save salt: " + err.Error())
+	// Persist the new KDF params and migration state.
+	if err := crypto.SaveRootKDFParams(dataDir, newParams); err != nil {
+		showChangePwdError("Failed to save KDF params: " + err.Error())
 		return
 	}
 	uiCfg.IsMigrated = true
