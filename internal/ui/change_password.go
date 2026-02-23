@@ -91,9 +91,12 @@ func doChangePassword() {
 			return
 		}
 		if _, err := crypto.EnsureKDFSecret(dataDir, oldMasterKey); err != nil {
+			crypto.WipeBytes(oldMasterKey)
+			crypto.WipeBytes(vk)
 			showChangePwdError("Current password is incorrect.")
 			return
 		}
+		crypto.WipeBytes(oldMasterKey)
 		oldVaultKey = vk
 
 		// --- BEGIN supportLegacy ---
@@ -101,6 +104,7 @@ func doChangePassword() {
 		// Legacy scheme.
 		oldMasterKey := crypto.DeriveLegacyMasterKey(currentPwd)
 		oldKDF, err := crypto.EnsureKDFSecret(dataDir, oldMasterKey)
+		crypto.WipeBytes(oldMasterKey)
 		if err != nil {
 			showChangePwdError("Current password is incorrect.")
 			return
@@ -128,15 +132,22 @@ func doChangePassword() {
 
 	// Re-encrypt .secret with the new master key.
 	if err := crypto.ReKeyVault(dataDir, newMasterKey); err != nil {
+		crypto.WipeBytes(newMasterKey)
+		crypto.WipeBytes(newVaultKey)
+		crypto.WipeBytes(oldVaultKey)
 		showChangePwdError("Failed to write new secret: " + err.Error())
 		return
 	}
+	crypto.WipeBytes(newMasterKey)
 
 	// Re-encrypt all entries and attachments.
 	if err := crypto.ReKeyEntries(dataDir, oldVaultKey, newVaultKey); err != nil {
+		crypto.WipeBytes(newVaultKey)
+		crypto.WipeBytes(oldVaultKey)
 		showChangePwdError("Re-encrypt failed: " + err.Error())
 		return
 	}
+	crypto.WipeBytes(oldVaultKey)
 
 	// Persist the new KDF params and migration state.
 	if err := crypto.SaveRootKDFParams(dataDir, newParams); err != nil {
@@ -150,6 +161,7 @@ func doChangePassword() {
 	}
 
 	// Update in-memory state.
+	crypto.WipeBytes(uiMasterKey)
 	uiMasterKey = newVaultKey
 
 	clearChangePwdForm()

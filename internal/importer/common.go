@@ -32,14 +32,18 @@ func saveEntries(entries []*pb.Entry, subDirs []string, names []string, masterPa
 			return fmt.Errorf("key derivation error: %w", err)
 		}
 		if _, err := crypto.EnsureKDFSecret(dataDir, masterKey); err != nil {
+			crypto.WipeBytes(masterKey)
+			crypto.WipeBytes(vaultKey)
 			return fmt.Errorf("wrong master password or vault error: %w", err)
 		}
+		crypto.WipeBytes(masterKey)
 		encKey = vaultKey
 
 		// --- BEGIN supportLegacy ---
 	} else if crypto.SupportLegacy() {
 		masterKey := crypto.DeriveMasterKey(masterPassword)
 		kdfParams, err := crypto.EnsureKDFSecret(dataDir, masterKey)
+		crypto.WipeBytes(masterKey)
 		if err != nil {
 			return fmt.Errorf("wrong master password or vault error: %w", err)
 		}
@@ -49,6 +53,7 @@ func saveEntries(entries []*pb.Entry, subDirs []string, names []string, masterPa
 	} else {
 		return fmt.Errorf("vault not migrated and legacy support is disabled")
 	}
+	defer crypto.WipeBytes(encKey)
 
 	var imported, skipped int
 	for i, entry := range entries {

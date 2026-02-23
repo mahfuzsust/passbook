@@ -16,6 +16,16 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
+// WipeBytes overwrites a byte slice with zeroes.  Call this to remove
+// sensitive key material from memory as soon as it is no longer needed.
+// This is a best-effort defence — the Go GC may have already copied the
+// data, but zeroing the authoritative slice limits the exposure window.
+func WipeBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
 type KDFParams struct {
 	Salt     []byte
 	Time     uint32
@@ -266,6 +276,7 @@ func DeriveHKDFKey(rootKey []byte, purpose string) ([]byte, error) {
 //	vault_key  = HKDF(root_key, "vault")
 func DeriveKeys(password string, p RootKDFParams) (masterKey, vaultKey []byte, err error) {
 	rootKey := DeriveRootKey(password, p)
+	defer WipeBytes(rootKey)
 	masterKey, err = DeriveHKDFKey(rootKey, "master")
 	if err != nil {
 		return nil, nil, err
@@ -287,6 +298,8 @@ func RehashVault(dataDir string, password string, oldParams RootKDFParams) (*Roo
 	if err != nil {
 		return nil, fmt.Errorf("deriving old keys: %w", err)
 	}
+	defer WipeBytes(oldMasterKey)
+	defer WipeBytes(oldVaultKey)
 
 	// Verify old keys work.
 	if _, err := loadKDFSecret(dataDir, oldMasterKey); err != nil {
@@ -306,6 +319,8 @@ func RehashVault(dataDir string, password string, oldParams RootKDFParams) (*Roo
 	if err != nil {
 		return nil, fmt.Errorf("deriving new keys: %w", err)
 	}
+	defer WipeBytes(newMasterKey)
+	defer WipeBytes(newVaultKey)
 
 	// Re-encrypt .secret.
 	if err := ReKeyVault(dataDir, newMasterKey); err != nil {
@@ -339,11 +354,13 @@ func RehashVault(dataDir string, password string, oldParams RootKDFParams) (*Roo
 func MigrateVault(dataDir string, password string) (*RootKDFParams, error) {
 	// Derive old keys using legacy scheme.
 	oldMasterKey := DeriveLegacyMasterKey(password)
+	defer WipeBytes(oldMasterKey)
 	oldKDF, err := loadKDFSecret(dataDir, oldMasterKey)
 	if err != nil {
 		return nil, fmt.Errorf("loading legacy secret (wrong password?): %w", err)
 	}
 	oldVaultKey := DeriveKey(password, oldKDF)
+	defer WipeBytes(oldVaultKey)
 
 	// Generate new params with fresh salt and recommended Argon2id cost.
 	newParams, err := DefaultRootKDFParams()
@@ -356,6 +373,8 @@ func MigrateVault(dataDir string, password string) (*RootKDFParams, error) {
 	if err != nil {
 		return nil, fmt.Errorf("deriving new keys: %w", err)
 	}
+	defer WipeBytes(newMasterKey)
+	defer WipeBytes(newVaultKey)
 
 	// Re-encrypt .secret with the new master key.
 	if err := ReKeyVault(dataDir, newMasterKey); err != nil {
@@ -570,6 +589,7 @@ func reEncryptFile(path string, oldKey, newKey []byte) error {
 	if err != nil {
 		return err
 	}
+	defer WipeBytes(plain)
 	enc, err := Encrypt(newKey, plain)
 	if err != nil {
 		return err

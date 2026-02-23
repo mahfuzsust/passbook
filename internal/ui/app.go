@@ -52,7 +52,14 @@ func unmarshalEntry(data []byte) (*pb.Entry, error) {
 }
 
 func (a *AppHandle) Run() error {
+	defer a.wipeKeys()
 	return uiApp.SetRoot(uiPages, true).EnableMouse(true).Run()
+}
+
+// wipeKeys zeroes all in-memory key material.
+func (a *AppHandle) wipeKeys() {
+	crypto.WipeBytes(uiMasterKey)
+	uiMasterKey = nil
 }
 
 func (a *AppHandle) QueueUpdateDraw(f func()) {

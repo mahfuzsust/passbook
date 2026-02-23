@@ -30,8 +30,11 @@ func goToMain(pwd string) {
 			return
 		}
 		if _, err := crypto.EnsureKDFSecret(uiDataDir, masterKey); err != nil {
+			crypto.WipeBytes(masterKey)
+			crypto.WipeBytes(vaultKey)
 			return
 		}
+		crypto.WipeBytes(masterKey)
 
 		// Auto-rehash if Argon2id parameters are weaker than recommended.
 		if kdfParams.NeedsRehash() {
@@ -54,6 +57,7 @@ func goToMain(pwd string) {
 		// Legacy scheme — verify password first.
 		legacyKey := crypto.DeriveLegacyMasterKey(pwd)
 		secret, err := crypto.EnsureKDFSecret(uiDataDir, legacyKey)
+		crypto.WipeBytes(legacyKey)
 		if err != nil {
 			return
 		}
@@ -99,8 +103,11 @@ func goToMain(pwd string) {
 
 			// Re-write the .secret with the new master key.
 			if err := crypto.ReKeyVault(dataDir, masterKey); err != nil {
+				crypto.WipeBytes(masterKey)
+				crypto.WipeBytes(vaultKey)
 				return
 			}
+			crypto.WipeBytes(masterKey)
 
 			if err := crypto.SaveRootKDFParams(dataDir, newParams); err != nil {
 				return
@@ -127,8 +134,11 @@ func goToMain(pwd string) {
 		}
 
 		if _, err := crypto.EnsureKDFSecret(dataDir, masterKey); err != nil {
+			crypto.WipeBytes(masterKey)
+			crypto.WipeBytes(vaultKey)
 			return
 		}
+		crypto.WipeBytes(masterKey)
 
 		if err := crypto.SaveRootKDFParams(dataDir, newParams); err != nil {
 			return

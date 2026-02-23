@@ -294,7 +294,19 @@ If rehash fails (e.g. disk error), the vault continues working with the old para
 3. **Defense in depth**: `.secret` is encrypted with a separate key from vault data; compromising one doesn't directly expose the other.
 4. **Portability**: Everything needed to unlock (except the password) lives under `<dataDir>`. Copy the directory to a new machine and it just works.
 5. **Auto-rehash**: Argon2id parameters are stored per-vault in `.kdf_params`. When the recommended parameters increase in a future release, PassBook automatically re-derives keys with the stronger settings and re-encrypts the vault on next login — no user intervention needed.
+6. **Key zeroization**: All ephemeral key material is wiped from memory as soon as it is no longer needed.
 
+### Key zeroization
+
+All derived keys are ephemeral and zeroed from memory as soon as they are no longer needed:
+
+- **Root key**: Wiped immediately after HKDF expansion produces the master and vault keys (inside `DeriveKeys()`).
+- **Master key**: Wiped after it is used to encrypt/verify `.secret`. It is never stored in a long-lived variable.
+- **Vault key**: Held in memory only while the application is running (`uiMasterKey`). Wiped when the application exits (`Run()` returns) and when the master password is changed (old key wiped before the new key replaces it).
+- **Intermediate keys during migration/rehash/re-key**: All old and new master/vault keys are wiped via `defer` after the re-encryption operations complete.
+- **Decrypted plaintext during re-encryption**: Wiped immediately after the data is re-encrypted with the new key.
+
+Zeroization uses `crypto.WipeBytes()`, which overwrites every byte with `0x00`. This is a best-effort defence — Go's garbage collector may have copied the backing array, but zeroing the authoritative slice limits the exposure window.
 
 
 ## ⌨️ Keyboard shortcuts

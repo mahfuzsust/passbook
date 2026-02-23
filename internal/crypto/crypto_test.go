@@ -7,6 +7,22 @@ import (
 	"testing"
 )
 
+func TestWipeBytes(t *testing.T) {
+	key := []byte{0x01, 0x02, 0x03, 0x04, 0x05}
+	WipeBytes(key)
+	for i, b := range key {
+		if b != 0 {
+			t.Fatalf("byte %d not zeroed: got %x", i, b)
+		}
+	}
+}
+
+func TestWipeBytesNil(t *testing.T) {
+	// Should not panic on nil or empty slices.
+	WipeBytes(nil)
+	WipeBytes([]byte{})
+}
+
 func TestDeriveKeyDeterministic(t *testing.T) {
 	p := KDFParams{
 		Salt:     []byte("0123456789abcdef"),
