@@ -2,6 +2,7 @@ package crypto
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -119,8 +120,8 @@ func TestLoadRootSaltMissing(t *testing.T) {
 
 func TestLoadRootSaltInvalidLength(t *testing.T) {
 	dir := t.TempDir()
-	// Write a .kdf_params with bad salt length.
-	if err := os.WriteFile(filepath.Join(dir, ".kdf_params"), []byte(`{"salt":"c2hvcnQ=","time":6,"memory_kb":262144,"threads":4}`), 0600); err != nil {
+	// Write a .vault_params with bad salt length.
+	if err := os.WriteFile(filepath.Join(dir, ".vault_params"), []byte(`{"version":1,"salt":"c2hvcnQ=","time":6,"memory_kb":262144,"threads":4}`), 0600); err != nil {
 		t.Fatalf("setup error: %v", err)
 	}
 
@@ -130,22 +131,25 @@ func TestLoadRootSaltInvalidLength(t *testing.T) {
 	}
 }
 
-func TestSaveAndLoadRootKDFParams(t *testing.T) {
+func TestSaveAndLoadVaultParams(t *testing.T) {
 	dir := t.TempDir()
-	p := RootKDFParams{
+	p := VaultParams{
+		Version:  1,
 		Salt:     bytes.Repeat([]byte{0xBB}, 32),
 		Time:     8,
 		MemoryKB: 512 * 1024,
 		Threads:  8,
+		KDF:      "argon2id",
+		Cipher:   "aes-256-gcm",
 	}
 
-	if err := SaveRootKDFParams(dir, p); err != nil {
-		t.Fatalf("SaveRootKDFParams error: %v", err)
+	if err := SaveVaultParams(dir, p); err != nil {
+		t.Fatalf("SaveVaultParams error: %v", err)
 	}
 
-	loaded, err := LoadRootKDFParams(dir)
+	loaded, err := LoadVaultParams(dir)
 	if err != nil {
-		t.Fatalf("LoadRootKDFParams error: %v", err)
+		t.Fatalf("LoadVaultParams error: %v", err)
 	}
 	if loaded == nil {
 		t.Fatalf("expected non-nil params")
@@ -156,20 +160,23 @@ func TestSaveAndLoadRootKDFParams(t *testing.T) {
 	if loaded.Time != 8 || loaded.MemoryKB != 512*1024 || loaded.Threads != 8 {
 		t.Fatalf("params mismatch: got time=%d memory=%d threads=%d", loaded.Time, loaded.MemoryKB, loaded.Threads)
 	}
+	if loaded.Version != 1 || loaded.KDF != "argon2id" || loaded.Cipher != "aes-256-gcm" {
+		t.Fatalf("metadata mismatch: version=%d kdf=%s cipher=%s", loaded.Version, loaded.KDF, loaded.Cipher)
+	}
 }
 
-func TestLoadRootKDFParamsBackfillsZeroes(t *testing.T) {
+func TestLoadVaultParamsBackfillsZeroes(t *testing.T) {
 	dir := t.TempDir()
 	// Write params with zero time/memory/threads — should back-fill.
 	salt := bytes.Repeat([]byte{0xCC}, 32)
-	p := RootKDFParams{Salt: salt}
-	if err := SaveRootKDFParams(dir, p); err != nil {
-		t.Fatalf("SaveRootKDFParams error: %v", err)
+	p := VaultParams{Salt: salt}
+	if err := SaveVaultParams(dir, p); err != nil {
+		t.Fatalf("SaveVaultParams error: %v", err)
 	}
 
-	loaded, err := LoadRootKDFParams(dir)
+	loaded, err := LoadVaultParams(dir)
 	if err != nil {
-		t.Fatalf("LoadRootKDFParams error: %v", err)
+		t.Fatalf("LoadVaultParams error: %v", err)
 	}
 	if loaded == nil {
 		t.Fatalf("expected non-nil params")
@@ -177,9 +184,12 @@ func TestLoadRootKDFParamsBackfillsZeroes(t *testing.T) {
 	if loaded.Time != RecommendedTime || loaded.MemoryKB != RecommendedMemory || loaded.Threads != RecommendedThreads {
 		t.Fatalf("expected zeroed params to be back-filled with recommended values")
 	}
+	if loaded.Version != 1 || loaded.KDF != "argon2id" || loaded.Cipher != "aes-256-gcm" {
+		t.Fatalf("expected defaults to be back-filled")
+	}
 }
 
-func TestLoadRootKDFParamsMigratesLegacyRootSalt(t *testing.T) {
+func TestLoadVaultParamsMigratesLegacyRootSalt(t *testing.T) {
 	dir := t.TempDir()
 	salt := bytes.Repeat([]byte{0xDD}, 32)
 
@@ -188,9 +198,9 @@ func TestLoadRootKDFParamsMigratesLegacyRootSalt(t *testing.T) {
 		t.Fatalf("setup error: %v", err)
 	}
 
-	loaded, err := LoadRootKDFParams(dir)
+	loaded, err := LoadVaultParams(dir)
 	if err != nil {
-		t.Fatalf("LoadRootKDFParams error: %v", err)
+		t.Fatalf("LoadVaultParams error: %v", err)
 	}
 	if loaded == nil {
 		t.Fatalf("expected non-nil params")
@@ -207,9 +217,42 @@ func TestLoadRootKDFParamsMigratesLegacyRootSalt(t *testing.T) {
 		t.Fatalf("expected .root_salt to be removed after migration")
 	}
 
-	// .kdf_params should exist.
-	if _, err := os.Stat(filepath.Join(dir, ".kdf_params")); err != nil {
-		t.Fatalf("expected .kdf_params to exist after migration")
+	// .vault_params should exist.
+	if _, err := os.Stat(filepath.Join(dir, ".vault_params")); err != nil {
+		t.Fatalf("expected .vault_params to exist after migration")
+	}
+}
+
+func TestLoadVaultParamsMigratesLegacyKdfParams(t *testing.T) {
+	dir := t.TempDir()
+	salt := bytes.Repeat([]byte{0xEE}, 32)
+
+	// Write legacy .kdf_params file.
+	p := VaultParams{Salt: salt, Time: 6, MemoryKB: 256 * 1024, Threads: 4}
+	data, _ := json.Marshal(p)
+	if err := os.WriteFile(filepath.Join(dir, ".kdf_params"), data, 0600); err != nil {
+		t.Fatalf("setup error: %v", err)
+	}
+
+	loaded, err := LoadVaultParams(dir)
+	if err != nil {
+		t.Fatalf("LoadVaultParams error: %v", err)
+	}
+	if loaded == nil {
+		t.Fatalf("expected non-nil params")
+	}
+	if !bytes.Equal(salt, loaded.Salt) {
+		t.Fatalf("salt mismatch after .kdf_params migration")
+	}
+
+	// .kdf_params should be removed.
+	if _, err := os.Stat(filepath.Join(dir, ".kdf_params")); !os.IsNotExist(err) {
+		t.Fatalf("expected .kdf_params to be removed after migration")
+	}
+
+	// .vault_params should exist.
+	if _, err := os.Stat(filepath.Join(dir, ".vault_params")); err != nil {
+		t.Fatalf("expected .vault_params to exist after migration")
 	}
 }
 
@@ -249,16 +292,98 @@ func TestNeedsRehash(t *testing.T) {
 	}
 }
 
-func TestDefaultRootKDFParams(t *testing.T) {
-	p, err := DefaultRootKDFParams()
+func TestDefaultVaultParams(t *testing.T) {
+	p, err := DefaultVaultParams()
 	if err != nil {
-		t.Fatalf("DefaultRootKDFParams error: %v", err)
+		t.Fatalf("DefaultVaultParams error: %v", err)
 	}
 	if len(p.Salt) != 32 {
 		t.Fatalf("expected 32-byte salt, got %d", len(p.Salt))
 	}
 	if p.Time != RecommendedTime || p.MemoryKB != RecommendedMemory || p.Threads != RecommendedThreads {
 		t.Fatalf("expected recommended params")
+	}
+	if p.Version != 1 {
+		t.Fatalf("expected version 1, got %d", p.Version)
+	}
+	if p.KDF != "argon2id" || p.Cipher != "aes-256-gcm" {
+		t.Fatalf("expected kdf=argon2id cipher=aes-256-gcm, got kdf=%s cipher=%s", p.KDF, p.Cipher)
+	}
+}
+
+func TestHashVaultParams(t *testing.T) {
+	p := VaultParams{
+		Version: 1, Salt: bytes.Repeat([]byte{0x11}, 32),
+		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
+		KDF: "argon2id", Cipher: "aes-256-gcm",
+	}
+	h1, err := HashVaultParams(p)
+	if err != nil {
+		t.Fatalf("HashVaultParams error: %v", err)
+	}
+	if len(h1) != 64 { // hex-encoded SHA-256 = 64 chars
+		t.Fatalf("expected 64-char hex hash, got %d", len(h1))
+	}
+
+	// Deterministic.
+	h2, _ := HashVaultParams(p)
+	if h1 != h2 {
+		t.Fatalf("expected deterministic hash")
+	}
+
+	// Different params → different hash.
+	p.Time = 8
+	h3, _ := HashVaultParams(p)
+	if h1 == h3 {
+		t.Fatalf("expected different hash for different params")
+	}
+}
+
+func TestEnsureSecretStoresHash(t *testing.T) {
+	dir := t.TempDir()
+	key := bytes.Repeat([]byte{0x55}, 32)
+	vp := VaultParams{
+		Version: 1, Salt: bytes.Repeat([]byte{0x22}, 32),
+		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
+		KDF: "argon2id", Cipher: "aes-256-gcm",
+	}
+
+	_, err := EnsureSecret(dir, key, vp)
+	if err != nil {
+		t.Fatalf("EnsureSecret error: %v", err)
+	}
+
+	// Verification should pass.
+	if err := VerifyVaultParamsHash(dir, key, vp); err != nil {
+		t.Fatalf("VerifyVaultParamsHash should pass: %v", err)
+	}
+
+	// Tampering should fail.
+	tampered := vp
+	tampered.Time = 999
+	if err := VerifyVaultParamsHash(dir, key, tampered); err == nil {
+		t.Fatalf("expected error for tampered vault params")
+	}
+}
+
+func TestVerifyVaultParamsHashSkipsOldVaults(t *testing.T) {
+	dir := t.TempDir()
+	key := bytes.Repeat([]byte{0x66}, 32)
+
+	// Create a .secret without a hash (simulates old vault).
+	_, err := EnsureKDFSecret(dir, key)
+	if err != nil {
+		t.Fatalf("EnsureKDFSecret error: %v", err)
+	}
+
+	vp := VaultParams{
+		Version: 1, Salt: bytes.Repeat([]byte{0x33}, 32),
+		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
+	}
+
+	// Should pass — no hash field in old vault.
+	if err := VerifyVaultParamsHash(dir, key, vp); err != nil {
+		t.Fatalf("expected nil error for old vault without hash, got: %v", err)
 	}
 }
 
@@ -526,7 +651,7 @@ func TestWriteKDFSecretAtomicCreatesValidSecret(t *testing.T) {
 	key := bytes.Repeat([]byte{0x77}, 32)
 
 	p := KDFParams{Salt: bytes.Repeat([]byte{0x01}, 16), Time: 1, MemoryKB: 64, Threads: 1}
-	if err := writeKDFSecretAtomic(dir, p, key); err != nil {
+	if err := writeKDFSecretAtomic(dir, p, key, ""); err != nil {
 		t.Fatalf("writeKDFSecretAtomic error: %v", err)
 	}
 

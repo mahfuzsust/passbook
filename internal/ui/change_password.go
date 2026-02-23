@@ -80,17 +80,17 @@ func doChangePassword() {
 	// Verify the current password and derive the old vault key.
 	var oldVaultKey []byte
 	if uiCfg.IsMigrated {
-		kdfParams, err := crypto.LoadRootKDFParams(dataDir)
-		if err != nil || kdfParams == nil {
-			showChangePwdError("Failed to load KDF params.")
+		vaultParams, err := crypto.LoadVaultParams(dataDir)
+		if err != nil || vaultParams == nil {
+			showChangePwdError("Failed to load vault params.")
 			return
 		}
-		oldMasterKey, vk, err := crypto.DeriveKeys(currentPwd, *kdfParams)
+		oldMasterKey, vk, err := crypto.DeriveKeys(currentPwd, *vaultParams)
 		if err != nil {
 			showChangePwdError("Key derivation error: " + err.Error())
 			return
 		}
-		if _, err := crypto.EnsureKDFSecret(dataDir, oldMasterKey); err != nil {
+		if _, err := crypto.EnsureSecret(dataDir, oldMasterKey, *vaultParams); err != nil {
 			crypto.WipeBytes(oldMasterKey)
 			crypto.WipeBytes(vk)
 			showChangePwdError("Current password is incorrect.")
@@ -118,7 +118,7 @@ func doChangePassword() {
 	}
 
 	// Always use new HKDF scheme for the new password.
-	newParams, err := crypto.DefaultRootKDFParams()
+	newParams, err := crypto.DefaultVaultParams()
 	if err != nil {
 		showChangePwdError("Failed to generate params: " + err.Error())
 		return
@@ -130,8 +130,8 @@ func doChangePassword() {
 		return
 	}
 
-	// Re-encrypt .secret with the new master key.
-	if err := crypto.ReKeyVault(dataDir, newMasterKey); err != nil {
+	// Re-encrypt .secret with the new master key (includes vault params hash).
+	if err := crypto.WriteSecretWithParams(dataDir, newParams, newMasterKey); err != nil {
 		crypto.WipeBytes(newMasterKey)
 		crypto.WipeBytes(newVaultKey)
 		crypto.WipeBytes(oldVaultKey)
@@ -149,9 +149,9 @@ func doChangePassword() {
 	}
 	crypto.WipeBytes(oldVaultKey)
 
-	// Persist the new KDF params and migration state.
-	if err := crypto.SaveRootKDFParams(dataDir, newParams); err != nil {
-		showChangePwdError("Failed to save KDF params: " + err.Error())
+	// Persist the new vault params and migration state.
+	if err := crypto.SaveVaultParams(dataDir, newParams); err != nil {
+		showChangePwdError("Failed to save vault params: " + err.Error())
 		return
 	}
 	uiCfg.IsMigrated = true

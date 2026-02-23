@@ -20,16 +20,22 @@ func goToMain(pwd string) {
 	}
 
 	if uiCfg.IsMigrated {
-		// Already migrated — load KDF params from vault and use HKDF scheme.
-		kdfParams, err := crypto.LoadRootKDFParams(uiDataDir)
-		if err != nil || kdfParams == nil {
+		// Already migrated — load vault params and use HKDF scheme.
+		vaultParams, err := crypto.LoadVaultParams(uiDataDir)
+		if err != nil || vaultParams == nil {
 			return
 		}
-		masterKey, vaultKey, err := crypto.DeriveKeys(pwd, *kdfParams)
+		masterKey, vaultKey, err := crypto.DeriveKeys(pwd, *vaultParams)
 		if err != nil {
 			return
 		}
-		if _, err := crypto.EnsureKDFSecret(uiDataDir, masterKey); err != nil {
+		if _, err := crypto.EnsureSecret(uiDataDir, masterKey, *vaultParams); err != nil {
+			crypto.WipeBytes(masterKey)
+			crypto.WipeBytes(vaultKey)
+			return
+		}
+		// Verify .vault_params hasn't been tampered with.
+		if err := crypto.VerifyVaultParamsHash(uiDataDir, masterKey, *vaultParams); err != nil {
 			crypto.WipeBytes(masterKey)
 			crypto.WipeBytes(vaultKey)
 			return
@@ -37,9 +43,9 @@ func goToMain(pwd string) {
 		crypto.WipeBytes(masterKey)
 
 		// Auto-rehash if Argon2id parameters are weaker than recommended.
-		if kdfParams.NeedsRehash() {
+		if vaultParams.NeedsRehash() {
 			dataDir := config.ExpandPath(uiDataDir)
-			newParams, err := crypto.RehashVault(dataDir, pwd, *kdfParams)
+			newParams, err := crypto.RehashVault(dataDir, pwd, *vaultParams)
 			if err == nil {
 				// Re-derive keys with the upgraded params.
 				_, vaultKey, err = crypto.DeriveKeys(pwd, *newParams)
@@ -91,7 +97,7 @@ func goToMain(pwd string) {
 			uiMasterKey = vaultKey
 		} else {
 			// Brand new vault — set up with new scheme directly.
-			newParams, err := crypto.DefaultRootKDFParams()
+			newParams, err := crypto.DefaultVaultParams()
 			if err != nil {
 				return
 			}
@@ -101,15 +107,15 @@ func goToMain(pwd string) {
 				return
 			}
 
-			// Re-write the .secret with the new master key.
-			if err := crypto.ReKeyVault(dataDir, masterKey); err != nil {
+			// Create .secret with the vault params hash embedded.
+			if _, err := crypto.EnsureSecret(dataDir, masterKey, newParams); err != nil {
 				crypto.WipeBytes(masterKey)
 				crypto.WipeBytes(vaultKey)
 				return
 			}
 			crypto.WipeBytes(masterKey)
 
-			if err := crypto.SaveRootKDFParams(dataDir, newParams); err != nil {
+			if err := crypto.SaveVaultParams(dataDir, newParams); err != nil {
 				return
 			}
 
@@ -122,7 +128,7 @@ func goToMain(pwd string) {
 
 	} else {
 		// New vault (legacy removed) — generate params and set up HKDF scheme.
-		newParams, err := crypto.DefaultRootKDFParams()
+		newParams, err := crypto.DefaultVaultParams()
 		if err != nil {
 			return
 		}
@@ -133,14 +139,14 @@ func goToMain(pwd string) {
 			return
 		}
 
-		if _, err := crypto.EnsureKDFSecret(dataDir, masterKey); err != nil {
+		if _, err := crypto.EnsureSecret(dataDir, masterKey, newParams); err != nil {
 			crypto.WipeBytes(masterKey)
 			crypto.WipeBytes(vaultKey)
 			return
 		}
 		crypto.WipeBytes(masterKey)
 
-		if err := crypto.SaveRootKDFParams(dataDir, newParams); err != nil {
+		if err := crypto.SaveVaultParams(dataDir, newParams); err != nil {
 			return
 		}
 

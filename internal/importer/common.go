@@ -23,15 +23,15 @@ func saveEntries(entries []*pb.Entry, subDirs []string, names []string, masterPa
 
 	var encKey []byte
 	if cfg.IsMigrated {
-		kdfParams, err := crypto.LoadRootKDFParams(dataDir)
-		if err != nil || kdfParams == nil {
-			return fmt.Errorf("failed to load KDF params: vault may not be migrated")
+		vaultParams, err := crypto.LoadVaultParams(dataDir)
+		if err != nil || vaultParams == nil {
+			return fmt.Errorf("failed to load vault params: vault may not be migrated")
 		}
-		masterKey, vaultKey, err := crypto.DeriveKeys(masterPassword, *kdfParams)
+		masterKey, vaultKey, err := crypto.DeriveKeys(masterPassword, *vaultParams)
 		if err != nil {
 			return fmt.Errorf("key derivation error: %w", err)
 		}
-		if _, err := crypto.EnsureKDFSecret(dataDir, masterKey); err != nil {
+		if _, err := crypto.EnsureSecret(dataDir, masterKey, *vaultParams); err != nil {
 			crypto.WipeBytes(masterKey)
 			crypto.WipeBytes(vaultKey)
 			return fmt.Errorf("wrong master password or vault error: %w", err)

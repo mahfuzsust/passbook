@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,17 +35,18 @@ type KDFParams struct {
 }
 
 type secretFile struct {
-	Version    int    `json:"version"`
-	Salt       []byte `json:"salt"`
-	Time       uint32 `json:"time"`
-	MemoryKB   uint32 `json:"memory_kb"`
-	Threads    uint8  `json:"threads"`
-	KeyLen     uint32 `json:"key_len"`
-	KDF        string `json:"kdf"`
-	CreatedAt  string `json:"created_at,omitempty"`
-	UpdatedAt  string `json:"updated_at,omitempty"`
-	VaultID    string `json:"vault_id,omitempty"`
-	Reserved01 string `json:"reserved01,omitempty"`
+	Version         int    `json:"version"`
+	Salt            []byte `json:"salt"`
+	Time            uint32 `json:"time"`
+	MemoryKB        uint32 `json:"memory_kb"`
+	Threads         uint8  `json:"threads"`
+	KeyLen          uint32 `json:"key_len"`
+	KDF             string `json:"kdf"`
+	VaultParamsHash string `json:"vault_params_hash,omitempty"` // SHA-256 of .vault_params
+	CreatedAt       string `json:"created_at,omitempty"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
+	VaultID         string `json:"vault_id,omitempty"`
+	Reserved01      string `json:"reserved01,omitempty"`
 }
 
 // supportLegacy enables backward compatibility with vaults created before the
@@ -104,136 +106,211 @@ const (
 	RecommendedThreads uint8  = 4
 )
 
-// RootKDFParams holds the Argon2id parameters and salt used to derive the
-// root key.  Stored as JSON in <dataDir>/.kdf_params.
-type RootKDFParams struct {
-	Salt     []byte `json:"salt"`      // 32-byte random salt
-	Time     uint32 `json:"time"`      // Argon2id time/iterations
-	MemoryKB uint32 `json:"memory_kb"` // Argon2id memory in KiB
-	Threads  uint8  `json:"threads"`   // Argon2id parallelism
+// VaultParams holds all public vault parameters stored alongside the
+// encrypted data.  The struct is versioned so new fields can be added
+// without breaking existing vaults.
+//
+// Stored as JSON in <dataDir>/.vault_params.
+type VaultParams struct {
+	Version  int    `json:"version"`          // schema version (currently 1)
+	Salt     []byte `json:"salt"`             // 32-byte random Argon2id salt
+	Time     uint32 `json:"time"`             // Argon2id time/iterations
+	MemoryKB uint32 `json:"memory_kb"`        // Argon2id memory in KiB
+	Threads  uint8  `json:"threads"`          // Argon2id parallelism
+	KDF      string `json:"kdf,omitempty"`    // identifier, e.g. "argon2id"
+	Cipher   string `json:"cipher,omitempty"` // identifier, e.g. "aes-256-gcm"
 }
 
-// DefaultRootKDFParams returns a new RootKDFParams with a fresh random salt
+// RootKDFParams is a backward-compatible alias for VaultParams.
+// Deprecated: use VaultParams directly.
+type RootKDFParams = VaultParams
+
+// DefaultVaultParams returns a new VaultParams with a fresh random salt
 // and the current recommended Argon2id parameters.
-func DefaultRootKDFParams() (RootKDFParams, error) {
+func DefaultVaultParams() (VaultParams, error) {
 	salt, err := GenerateRootSalt()
 	if err != nil {
-		return RootKDFParams{}, err
+		return VaultParams{}, err
 	}
-	return RootKDFParams{
+	return VaultParams{
+		Version:  1,
 		Salt:     salt,
 		Time:     RecommendedTime,
 		MemoryKB: RecommendedMemory,
 		Threads:  RecommendedThreads,
+		KDF:      "argon2id",
+		Cipher:   "aes-256-gcm",
 	}, nil
 }
 
+// DefaultRootKDFParams is a backward-compatible alias.
+// Deprecated: use DefaultVaultParams.
+var DefaultRootKDFParams = DefaultVaultParams
+
 // NeedsRehash returns true when any stored parameter is strictly weaker
 // (lower) than the current recommended values.
-func (p RootKDFParams) NeedsRehash() bool {
+func (p VaultParams) NeedsRehash() bool {
 	return p.Time < RecommendedTime ||
 		p.MemoryKB < RecommendedMemory ||
 		p.Threads < RecommendedThreads
 }
 
-// kdfParamsPath returns the path to the KDF params file inside the vault.
-func kdfParamsPath(dataDir string) string {
+// HashVaultParams computes a SHA-256 hex digest of the canonical JSON
+// encoding of a VaultParams value.  This hash is stored inside the
+// encrypted .secret file so tampering with .vault_params can be detected.
+func HashVaultParams(p VaultParams) (string, error) {
+	data, err := json.Marshal(p)
+	if err != nil {
+		return "", fmt.Errorf("marshalling vault params for hash: %w", err)
+	}
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:]), nil
+}
+
+// vaultParamsPath returns the path to the vault params file.
+func vaultParamsPath(dataDir string) string {
+	return filepath.Join(dataDir, ".vault_params")
+}
+
+// legacyKdfParamsPath returns the old .kdf_params path (kept for migration).
+func legacyKdfParamsPath(dataDir string) string {
 	return filepath.Join(dataDir, ".kdf_params")
 }
 
-// rootSaltPath returns the legacy path (kept for migration).
+// rootSaltPath returns the legacy .root_salt path (kept for migration).
 func rootSaltPath(dataDir string) string {
 	return filepath.Join(dataDir, ".root_salt")
 }
 
-// SaveRootKDFParams writes the root KDF parameters to <dataDir>/.kdf_params.
-func SaveRootKDFParams(dataDir string, p RootKDFParams) error {
+// SaveVaultParams writes the vault parameters to <dataDir>/.vault_params.
+func SaveVaultParams(dataDir string, p VaultParams) error {
+	if p.Version == 0 {
+		p.Version = 1
+	}
+	if p.KDF == "" {
+		p.KDF = "argon2id"
+	}
+	if p.Cipher == "" {
+		p.Cipher = "aes-256-gcm"
+	}
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshalling kdf params: %w", err)
+		return fmt.Errorf("marshalling vault params: %w", err)
 	}
-	if err := os.WriteFile(kdfParamsPath(dataDir), data, 0600); err != nil {
-		return fmt.Errorf("writing kdf params: %w", err)
+	if err := os.WriteFile(vaultParamsPath(dataDir), data, 0600); err != nil {
+		return fmt.Errorf("writing vault params: %w", err)
 	}
 	return nil
 }
 
-// LoadRootKDFParams reads the root KDF parameters from <dataDir>/.kdf_params.
-// If the new file doesn't exist but the legacy .root_salt does, it migrates
-// automatically.  Returns nil, nil if neither file exists.
-func LoadRootKDFParams(dataDir string) (*RootKDFParams, error) {
-	// Try new format first.
-	data, err := os.ReadFile(kdfParamsPath(dataDir))
-	if err == nil {
-		var p RootKDFParams
-		if err := json.Unmarshal(data, &p); err != nil {
-			return nil, fmt.Errorf("parsing kdf params: %w", err)
-		}
-		if len(p.Salt) != 32 {
-			return nil, fmt.Errorf("invalid kdf params: expected 32-byte salt, got %d", len(p.Salt))
-		}
-		// Back-fill zeroed params with recommended values so old files
-		// written before a field existed still work.
-		if p.Time == 0 {
-			p.Time = RecommendedTime
-		}
-		if p.MemoryKB == 0 {
-			p.MemoryKB = RecommendedMemory
-		}
-		if p.Threads == 0 {
-			p.Threads = RecommendedThreads
-		}
-		return &p, nil
-	}
-	if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("reading kdf params: %w", err)
+// SaveRootKDFParams is a backward-compatible alias.
+// Deprecated: use SaveVaultParams.
+var SaveRootKDFParams = SaveVaultParams
+
+// LoadVaultParams reads the vault parameters from <dataDir>/.vault_params.
+// Falls back to legacy .kdf_params and .root_salt if the new file is absent.
+// Returns nil, nil if no params file exists at all.
+func LoadVaultParams(dataDir string) (*VaultParams, error) {
+	// 1. Try .vault_params (current).
+	if p, err := loadVaultParamsFrom(vaultParamsPath(dataDir)); err == nil {
+		return p, nil
+	} else if !os.IsNotExist(err) {
+		return nil, err
 	}
 
-	// Fall back to legacy .root_salt (raw 32-byte file).
+	// 2. Try legacy .kdf_params → migrate to .vault_params.
+	if p, err := loadVaultParamsFrom(legacyKdfParamsPath(dataDir)); err == nil {
+		if err := SaveVaultParams(dataDir, *p); err != nil {
+			return nil, fmt.Errorf("migrating .kdf_params: %w", err)
+		}
+		_ = os.Remove(legacyKdfParamsPath(dataDir))
+		return p, nil
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	// 3. Try legacy .root_salt → migrate to .vault_params.
 	saltData, err := os.ReadFile(rootSaltPath(dataDir))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil // neither file exists
+			return nil, nil // nothing found
 		}
 		return nil, fmt.Errorf("reading legacy root salt: %w", err)
 	}
 	if len(saltData) != 32 {
 		return nil, fmt.Errorf("invalid legacy root salt: expected 32 bytes, got %d", len(saltData))
 	}
-
-	// Migrate: write .kdf_params and remove .root_salt.
-	p := RootKDFParams{
+	p := &VaultParams{
+		Version:  1,
 		Salt:     saltData,
 		Time:     RecommendedTime,
 		MemoryKB: RecommendedMemory,
 		Threads:  RecommendedThreads,
+		KDF:      "argon2id",
+		Cipher:   "aes-256-gcm",
 	}
-	if err := SaveRootKDFParams(dataDir, p); err != nil {
+	if err := SaveVaultParams(dataDir, *p); err != nil {
 		return nil, fmt.Errorf("migrating legacy root salt: %w", err)
 	}
 	_ = os.Remove(rootSaltPath(dataDir))
+	return p, nil
+}
+
+// loadVaultParamsFrom reads and validates a VaultParams JSON file at the
+// given path.  Returns os.ErrNotExist-wrapping error when file is absent.
+func loadVaultParamsFrom(path string) (*VaultParams, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var p VaultParams
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, fmt.Errorf("parsing vault params: %w", err)
+	}
+	if len(p.Salt) != 32 {
+		return nil, fmt.Errorf("invalid vault params: expected 32-byte salt, got %d", len(p.Salt))
+	}
+	// Back-fill defaults.
+	if p.Version == 0 {
+		p.Version = 1
+	}
+	if p.Time == 0 {
+		p.Time = RecommendedTime
+	}
+	if p.MemoryKB == 0 {
+		p.MemoryKB = RecommendedMemory
+	}
+	if p.Threads == 0 {
+		p.Threads = RecommendedThreads
+	}
+	if p.KDF == "" {
+		p.KDF = "argon2id"
+	}
+	if p.Cipher == "" {
+		p.Cipher = "aes-256-gcm"
+	}
 	return &p, nil
 }
 
-// SaveRootSalt is a convenience wrapper that writes a RootKDFParams with
-// recommended parameters.  Callers that need custom params should use
-// SaveRootKDFParams directly.
+// LoadRootKDFParams is a backward-compatible alias.
+// Deprecated: use LoadVaultParams.
+var LoadRootKDFParams = LoadVaultParams
+
+// SaveRootSalt is a convenience wrapper that writes a VaultParams with
+// recommended parameters.
 func SaveRootSalt(dataDir string, salt []byte) error {
-	return SaveRootKDFParams(dataDir, RootKDFParams{
-		Salt:     salt,
-		Time:     RecommendedTime,
-		MemoryKB: RecommendedMemory,
-		Threads:  RecommendedThreads,
-	})
+	p, _ := DefaultVaultParams()
+	p.Salt = salt
+	return SaveVaultParams(dataDir, p)
 }
 
 // LoadRootSalt is a convenience wrapper that returns only the salt.
 // Returns nil, nil if no params file exists.
 func LoadRootSalt(dataDir string) ([]byte, error) {
-	p, err := LoadRootKDFParams(dataDir)
+	p, err := LoadVaultParams(dataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -244,8 +321,8 @@ func LoadRootSalt(dataDir string) ([]byte, error) {
 }
 
 // DeriveRootKey derives a root key from the password using the given
-// RootKDFParams (salt + Argon2id parameters).
-func DeriveRootKey(password string, p RootKDFParams) []byte {
+// VaultParams (salt + Argon2id parameters).
+func DeriveRootKey(password string, p VaultParams) []byte {
 	return argon2.IDKey(
 		[]byte(password),
 		p.Salt,
@@ -268,13 +345,13 @@ func DeriveHKDFKey(rootKey []byte, purpose string) ([]byte, error) {
 }
 
 // DeriveKeys derives both the master key (for .secret encryption) and the
-// vault key (for entry encryption) from a password and RootKDFParams using
+// vault key (for entry encryption) from a password and VaultParams using
 // the HKDF-based scheme:
 //
 //	root_key   = Argon2id(password, salt, time, memory, threads)
 //	master_key = HKDF(root_key, "master")
 //	vault_key  = HKDF(root_key, "vault")
-func DeriveKeys(password string, p RootKDFParams) (masterKey, vaultKey []byte, err error) {
+func DeriveKeys(password string, p VaultParams) (masterKey, vaultKey []byte, err error) {
 	rootKey := DeriveRootKey(password, p)
 	defer WipeBytes(rootKey)
 	masterKey, err = DeriveHKDFKey(rootKey, "master")
@@ -291,8 +368,7 @@ func DeriveKeys(password string, p RootKDFParams) (masterKey, vaultKey []byte, e
 // RehashVault upgrades a vault's Argon2id parameters to the current
 // recommended values.  It re-derives keys with the stronger parameters and
 // re-encrypts the .secret file and all entries/attachments in place.
-// The new RootKDFParams are saved to <dataDir>/.kdf_params.
-func RehashVault(dataDir string, password string, oldParams RootKDFParams) (*RootKDFParams, error) {
+func RehashVault(dataDir string, password string, oldParams VaultParams) (*VaultParams, error) {
 	// Derive old keys.
 	oldMasterKey, oldVaultKey, err := DeriveKeys(password, oldParams)
 	if err != nil {
@@ -307,11 +383,14 @@ func RehashVault(dataDir string, password string, oldParams RootKDFParams) (*Roo
 	}
 
 	// Build new params: keep the same salt, bump the Argon2id cost.
-	newParams := RootKDFParams{
+	newParams := VaultParams{
+		Version:  1,
 		Salt:     oldParams.Salt,
 		Time:     RecommendedTime,
 		MemoryKB: RecommendedMemory,
 		Threads:  RecommendedThreads,
+		KDF:      "argon2id",
+		Cipher:   "aes-256-gcm",
 	}
 
 	// Derive new keys with stronger params.
@@ -322,8 +401,8 @@ func RehashVault(dataDir string, password string, oldParams RootKDFParams) (*Roo
 	defer WipeBytes(newMasterKey)
 	defer WipeBytes(newVaultKey)
 
-	// Re-encrypt .secret.
-	if err := ReKeyVault(dataDir, newMasterKey); err != nil {
+	// Re-encrypt .secret (includes vault params hash).
+	if err := writeSecretWithParams(dataDir, newParams, newMasterKey); err != nil {
 		return nil, fmt.Errorf("re-keying vault secret: %w", err)
 	}
 
@@ -333,8 +412,8 @@ func RehashVault(dataDir string, password string, oldParams RootKDFParams) (*Roo
 	}
 
 	// Persist the new parameters.
-	if err := SaveRootKDFParams(dataDir, newParams); err != nil {
-		return nil, fmt.Errorf("saving new kdf params: %w", err)
+	if err := SaveVaultParams(dataDir, newParams); err != nil {
+		return nil, fmt.Errorf("saving vault params: %w", err)
 	}
 
 	return &newParams, nil
@@ -343,15 +422,8 @@ func RehashVault(dataDir string, password string, oldParams RootKDFParams) (*Roo
 // --- BEGIN supportLegacy ---
 
 // MigrateVault migrates a vault from the legacy fixed-salt scheme to the new
-// HKDF-based scheme. It:
-//  1. Derives the old keys using the legacy scheme
-//  2. Generates a new random salt
-//  3. Derives new keys using the HKDF scheme
-//  4. Re-encrypts the .secret file with the new master key
-//  5. Re-encrypts all entries with the new vault key
-//
-// Returns the new salt so the caller can persist it in config.
-func MigrateVault(dataDir string, password string) (*RootKDFParams, error) {
+// HKDF-based scheme.
+func MigrateVault(dataDir string, password string) (*VaultParams, error) {
 	// Derive old keys using legacy scheme.
 	oldMasterKey := DeriveLegacyMasterKey(password)
 	defer WipeBytes(oldMasterKey)
@@ -363,7 +435,7 @@ func MigrateVault(dataDir string, password string) (*RootKDFParams, error) {
 	defer WipeBytes(oldVaultKey)
 
 	// Generate new params with fresh salt and recommended Argon2id cost.
-	newParams, err := DefaultRootKDFParams()
+	newParams, err := DefaultVaultParams()
 	if err != nil {
 		return nil, err
 	}
@@ -376,8 +448,8 @@ func MigrateVault(dataDir string, password string) (*RootKDFParams, error) {
 	defer WipeBytes(newMasterKey)
 	defer WipeBytes(newVaultKey)
 
-	// Re-encrypt .secret with the new master key.
-	if err := ReKeyVault(dataDir, newMasterKey); err != nil {
+	// Re-encrypt .secret with the new master key (includes vault params hash).
+	if err := writeSecretWithParams(dataDir, newParams, newMasterKey); err != nil {
 		return nil, fmt.Errorf("re-keying vault secret: %w", err)
 	}
 
@@ -386,9 +458,9 @@ func MigrateVault(dataDir string, password string) (*RootKDFParams, error) {
 		return nil, fmt.Errorf("re-keying entries: %w", err)
 	}
 
-	// Persist the new KDF params inside the vault directory.
-	if err := SaveRootKDFParams(dataDir, newParams); err != nil {
-		return nil, fmt.Errorf("saving kdf params: %w", err)
+	// Persist the new vault params.
+	if err := SaveVaultParams(dataDir, newParams); err != nil {
+		return nil, fmt.Errorf("saving vault params: %w", err)
 	}
 
 	return &newParams, nil
@@ -451,14 +523,63 @@ func secretPath(dataDir string) string {
 	return filepath.Join(dataDir, ".secret")
 }
 
+// EnsureKDFSecret loads or creates the .secret file encrypted with masterKey.
+// When vaultParams is available, callers should prefer EnsureSecret which
+// also stores the vault params hash.
 func EnsureKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
 	if p, err := loadKDFSecret(dataDir, masterKey); err == nil {
 		return p, nil
 	}
-	if err := writeKDFSecretAtomic(dataDir, KDFParams{}, masterKey); err != nil {
+	if err := writeKDFSecretAtomic(dataDir, KDFParams{}, masterKey, ""); err != nil {
 		return KDFParams{}, err
 	}
 	return loadKDFSecret(dataDir, masterKey)
+}
+
+// EnsureSecret loads the .secret file or creates it with the vault params
+// hash embedded.  Returns the KDF params and an error.
+func EnsureSecret(dataDir string, masterKey []byte, vp VaultParams) (KDFParams, error) {
+	if p, err := loadKDFSecret(dataDir, masterKey); err == nil {
+		return p, nil
+	}
+	hash, err := HashVaultParams(vp)
+	if err != nil {
+		return KDFParams{}, err
+	}
+	if err := writeKDFSecretAtomic(dataDir, KDFParams{}, masterKey, hash); err != nil {
+		return KDFParams{}, err
+	}
+	return loadKDFSecret(dataDir, masterKey)
+}
+
+// VerifyVaultParamsHash checks whether the vault params hash stored inside
+// the encrypted .secret matches the given VaultParams.  Returns nil if the
+// hash matches (or if the .secret pre-dates the hash field).
+func VerifyVaultParamsHash(dataDir string, masterKey []byte, vp VaultParams) error {
+	b, err := os.ReadFile(secretPath(dataDir))
+	if err != nil {
+		return fmt.Errorf("reading secret: %w", err)
+	}
+	plaintext, err := DecryptAES256GCM(b, masterKey)
+	if err != nil {
+		return fmt.Errorf("decrypting secret: %w", err)
+	}
+	var sf secretFile
+	if err := json.Unmarshal(plaintext, &sf); err != nil {
+		return fmt.Errorf("parsing secret: %w", err)
+	}
+	// Old vaults without the hash field — skip verification.
+	if sf.VaultParamsHash == "" {
+		return nil
+	}
+	expected, err := HashVaultParams(vp)
+	if err != nil {
+		return err
+	}
+	if sf.VaultParamsHash != expected {
+		return fmt.Errorf("vault params hash mismatch: .vault_params may have been tampered with")
+	}
+	return nil
 }
 
 func loadKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
@@ -466,7 +587,6 @@ func loadKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
 	if err != nil {
 		return KDFParams{}, err
 	}
-	// Decrypt the file content
 	plaintext, err := DecryptAES256GCM(b, masterKey)
 	if err != nil {
 		return KDFParams{}, err
@@ -488,7 +608,7 @@ func loadKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
 	return p, nil
 }
 
-func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte) error {
+func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte, vaultParamsHash string) error {
 	ensureKDFParams(&p)
 	if len(p.Salt) != 16 {
 		s := make([]byte, 16)
@@ -496,17 +616,17 @@ func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte) error {
 		p.Salt = s
 	}
 	sf := secretFile{
-		Version:  1,
-		Salt:     p.Salt,
-		Time:     p.Time,
-		MemoryKB: p.MemoryKB,
-		Threads:  p.Threads,
-		KeyLen:   32,
-		KDF:      "argon2id",
+		Version:         1,
+		Salt:            p.Salt,
+		Time:            p.Time,
+		MemoryKB:        p.MemoryKB,
+		Threads:         p.Threads,
+		KeyLen:          32,
+		KDF:             "argon2id",
+		VaultParamsHash: vaultParamsHash,
 	}
 	b, _ := json.MarshalIndent(sf, "", "  ")
 
-	// Encrypt the JSON data
 	ciphertext, err := EncryptAES256GCM(b, masterKey)
 	if err != nil {
 		return err
@@ -528,10 +648,25 @@ func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte) error {
 	return nil
 }
 
+// WriteSecretWithParams writes a new .secret file that includes the
+// SHA-256 hash of the given VaultParams.  Use this when changing the
+// master password or re-keying the vault.
+func WriteSecretWithParams(dataDir string, vp VaultParams, masterKey []byte) error {
+	hash, err := HashVaultParams(vp)
+	if err != nil {
+		return err
+	}
+	return writeKDFSecretAtomic(dataDir, KDFParams{}, masterKey, hash)
+}
+
+// writeSecretWithParams is the internal alias.
+var writeSecretWithParams = WriteSecretWithParams
+
 // ReKeyVault writes a new .secret file with a fresh salt, encrypted with the
 // new master key. Call ReKeyEntries separately to re-encrypt vault data.
+// Deprecated: prefer writeSecretWithParams which also embeds the hash.
 func ReKeyVault(dataDir string, newMasterKey []byte) error {
-	if err := writeKDFSecretAtomic(dataDir, KDFParams{}, newMasterKey); err != nil {
+	if err := writeKDFSecretAtomic(dataDir, KDFParams{}, newMasterKey, ""); err != nil {
 		return fmt.Errorf("writing new secret: %w", err)
 	}
 	return nil
