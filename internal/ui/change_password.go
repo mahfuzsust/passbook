@@ -3,6 +3,7 @@ package ui
 import (
 	"passbook/internal/config"
 	"passbook/internal/crypto"
+	"passbook/internal/utils"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -72,6 +73,12 @@ func doChangePassword() {
 
 	if currentPwd == newPwd {
 		showChangePwdError("New password must be different from current.")
+		return
+	}
+
+	_, level, _ := utils.PasswordStrength(newPwd)
+	if level < utils.StrengthGood {
+		showChangePwdError("New password is too weak.")
 		return
 	}
 

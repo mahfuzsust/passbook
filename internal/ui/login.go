@@ -4,6 +4,7 @@ import (
 	"errors"
 	"passbook/internal/config"
 	"passbook/internal/crypto"
+	"passbook/internal/utils"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -29,7 +30,14 @@ func goToMain(pwd string) {
 	}
 
 	if vaultParams == nil {
-		// First-time vault — create params and set up.
+		// First-time vault — enforce minimum password strength.
+		_, level, _ := utils.PasswordStrength(pwd)
+		if level < utils.StrengthGood {
+			showLoginError("Password is too weak.")
+			return
+		}
+
+		// Create params and set up.
 		newParams, err := crypto.DefaultVaultParams()
 		if err != nil {
 			return
@@ -125,4 +133,16 @@ func setupLogin() {
 
 	uiLoginModal = newResponsiveModal(uiLoginForm, 55, 10, 80, 15, 0.5, 0.4)
 	uiPages.AddPage("login", uiLoginModal, true, true)
+}
+
+func showLoginError(msg string) {
+	if uiLoginStrength != nil {
+		for _, tv := range uiLoginStrength.views {
+			tv.SetText("[red]" + msg)
+		}
+	}
+}
+
+func clearLoginError() {
+	// No-op: strength meter auto-updates on next keystroke.
 }
