@@ -186,149 +186,16 @@ Notes:
 
 ## 🔐 Security architecture
 
-### Encryption
+For the full security architecture — encryption details, key derivation hierarchy, HMAC commit tags, tamper detection, automatic migrations, and design rationale — see **[SECURITY.md](SECURITY.md)**.
 
-- **Algorithm**: AES-256-GCM (Galois/Counter Mode) providing authenticated encryption.
-- **Nonce**: 12-byte (96-bit) random nonce generated per encryption via a dedicated `generateNonce` function that:
-  1. Reads exactly 12 bytes from Go's `crypto/rand` using `io.ReadFull` — a short read returns an error, never a truncated nonce.
-  2. Rejects all-zero output as a sign of a catastrophic CSPRNG failure.
-- **Collision bound**: With 96-bit random nonces, collision probability stays below 2⁻³² for up to ~2³² encryptions per key. PassBook issues a fresh vault key on every password change, keeping the per-key encryption count far below that threshold.
-- **AAD (Additional Authenticated Data)**: The `.secret` file is encrypted with the SHA-256 hash of `.vault_params` as GCM AAD, cryptographically binding the two files together. Any modification to `.vault_params` causes GCM authentication to fail before the ciphertext is even decrypted.
-- **Format**: `[12-byte nonce][ciphertext + GCM tag]` — nonce is prepended to ciphertext for storage.
-- **Key size**: 256-bit (32-byte) keys.
+**Summary:**
 
-### Key derivation (HKDF-based hierarchy)
-
-PassBook derives all encryption keys from a single master password using a three-step hierarchy:
-
-```
-root_key   = Argon2id(password, salt, time, memory, threads)  ← params in <dataDir>/.vault_params
-master_key = HKDF-SHA256(root_key, "master")                  ← encrypts .secret
-vault_key  = HKDF-SHA256(root_key, "vault")                   ← encrypts entries & attachments
-```
-
-#### Step 1: Root Key
-
-- **KDF**: Argon2id
-  - Time: 6 (recommended default, stored per-vault)
-  - Memory: 256 MB (recommended default, stored per-vault)
-  - Threads: 4 (recommended default, stored per-vault)
-  - Salt: cryptographically random 32-byte salt (unique per vault)
-- **Parameters file**: `<dataDir>/.vault_params` (versioned JSON) stores the salt, Argon2id cost parameters, and KDF/cipher identifiers.
-- **Input**: your master password + stored parameters
-- **Output**: 32-byte root key (ephemeral — never stored)
-- **Auto-rehash**: If the recommended parameters increase in a future version, PassBook automatically re-derives keys and re-encrypts the vault on next login — no user action required.
-
-#### Step 2: Master Key
-
-- **Purpose**: Encrypt/decrypt the vault-local `.secret` file.
-- **KDF**: HKDF-SHA256 with info string `"master"`.
-- **Input**: root key
-- **Output**: 32-byte master key (ephemeral — never stored)
-
-#### Step 3: Vault Key
-
-- **Purpose**: Encrypt/decrypt all vault entry files (`*.pb`) and attachment blobs.
-- **KDF**: HKDF-SHA256 with info string `"vault"`.
-- **Input**: root key
-- **Output**: 32-byte vault key (ephemeral — never stored)
-
-### The `.secret` file
-
-Located at `<dataDir>/.secret`.
-
-- The file contains a small JSON document (versioned schema) with:
-  - `salt` (16 bytes)
-  - Argon2id parameters (`time`, `memory_kb`, `threads`)
-  - `vault_params_hash` — SHA-256 of `.vault_params` for tamper detection
-  - metadata like `kdf` ("argon2id") and `key_len` (32)
-- The JSON is **encrypted at rest** using AES-256-GCM with the **master key** and the SHA-256 hash of `.vault_params` as **GCM AAD** (Additional Authenticated Data).
-- Serves as a password-correctness check: if decryption of `.secret` succeeds, the password is correct.
-- **GCM AAD binding**: The `.vault_params` hash is included as AAD during encryption. If an attacker modifies `.vault_params` (e.g. to weaken Argon2id parameters), GCM authentication fails immediately — decryption is rejected before any plaintext is produced.
-- **Tamper detection (defense in depth)**: The `vault_params_hash` field inside the decrypted JSON is also compared against the SHA-256 of the raw `.vault_params` bytes on disk. This provides a secondary check for vaults migrated from older versions that were encrypted without AAD.
-
-### The `.vault_params` file
-
-Located at `<dataDir>/.vault_params`.
-
-- Versioned JSON document (currently `version: 1`) storing all public vault parameters:
-  - `salt` (32 bytes) — random Argon2id salt
-  - `time`, `memory_kb`, `threads` — Argon2id cost parameters
-  - `kdf` — KDF identifier (e.g. `"argon2id"`)
-  - `cipher` — cipher identifier (e.g. `"aes-256-gcm"`)
-- These values are **not secret** — they are public parameters needed to re-derive keys from the password.
-- **Deterministic serialization**: The file is written as compact JSON (no indentation) with keys sorted alphabetically (Go's `json.Marshal` guarantee). The same `VaultParams` value always produces identical bytes.
-- A SHA-256 hash of the **exact bytes written to disk** is stored inside the encrypted `.secret` file for integrity verification.
-
-**Portability**: The vault is fully self-contained—moving `<dataDir>` moves everything needed to unlock it (`.vault_params`, `.secret`, entries, and attachments). Only the master password is external.
-
-**Important**: Don't delete `<dataDir>/.secret` or `<dataDir>/.vault_params`. Without them, existing encrypted data becomes undecryptable.
-
-### Config file
-
-Located at `~/.passbook/config.json`.
-
-- `data_dir`: Path to the vault directory.
-- `is_migrated`: Whether the vault has been migrated to the new HKDF scheme (`true`/`false`).
-
-### Entries and attachments
-
-All vault data is encrypted with the vault key:
-
-- **Entry files** (`*.pb`): protobuf bytes encrypted with AES-256-GCM.
-- **Attachment files** (`_attachments/`): raw bytes encrypted with AES-256-GCM.
-- **Format**: `[nonce][ciphertext+tag]` where nonce is prepended.
-
-### Automatic migration from legacy scheme
-
-Older versions of PassBook used a fixed UUID string as the Argon2id salt for master key derivation, with a separate per-vault Argon2id pass for the vault key. The current version automatically migrates existing vaults on first login:
-
-1. The legacy master key is derived using the old fixed salt to verify the password.
-2. A new random 32-byte salt is generated.
-3. New master and vault keys are derived using the HKDF hierarchy.
-4. The `.secret` file is re-encrypted with the new master key.
-5. All entries and attachments are re-encrypted with the new vault key.
-6. The new vault parameters are saved to `<dataDir>/.vault_params` and `is_migrated` is set in `config.json`.
-
-If migration fails (e.g. disk error), the vault falls back to the legacy scheme for that session and retries on the next login. Changing the master password also always uses the new scheme.
-
-Legacy support can be removed entirely by setting `supportLegacy = false` in `internal/crypto/crypto.go` and deleting all code blocks marked with `// --- BEGIN supportLegacy ---` / `// --- END supportLegacy ---`.
-
-### Automatic parameter rehash
-
-Argon2id parameters (time, memory, threads) are stored per-vault in `<dataDir>/.vault_params`. When the recommended constants in `internal/crypto/crypto.go` are increased:
-
-1. On login, PassBook compares stored parameters against recommended values.
-2. If any stored parameter is strictly weaker, a rehash is triggered automatically.
-3. Old keys are derived with the stored (weaker) parameters.
-4. New keys are derived with the recommended (stronger) parameters, keeping the same salt.
-5. `.secret`, all entries, and attachments are re-encrypted with the new keys.
-6. Updated parameters are saved to `.vault_params`.
-
-If rehash fails (e.g. disk error), the vault continues working with the old parameters for that session.
-
-### Why this design?
-
-1. **Random salt**: Each vault gets a unique random salt instead of a fixed one, preventing rainbow table attacks across vaults.
-2. **Key separation**: HKDF produces independent master and vault keys from a single Argon2id pass — one slow KDF call instead of two.
-3. **Defense in depth**: `.secret` is encrypted with a separate key from vault data; compromising one doesn't directly expose the other.
-4. **Portability**: Everything needed to unlock (except the password) lives under `<dataDir>`. Copy the directory to a new machine and it just works.
-5. **Auto-rehash**: Argon2id parameters are stored per-vault in `.vault_params`. When the recommended parameters increase in a future release, PassBook automatically re-derives keys with the stronger settings and re-encrypts the vault on next login — no user intervention needed.
-6. **Key zeroization**: All ephemeral key material is wiped from memory as soon as it is no longer needed.
-7. **Tamper detection (two layers)**: The SHA-256 hash of `.vault_params` is used as GCM AAD when encrypting `.secret`, so any modification to the public parameters causes authenticated decryption to fail at the cryptographic level. A secondary JSON-level hash comparison provides defense in depth for vaults migrated from older versions.
-8. **Nonce uniqueness**: Every AES-256-GCM encryption uses a fresh 12-byte nonce from `crypto/rand`, validated for full read and non-zero output. A new vault key is issued on every password change, resetting the per-key nonce counter well within the birthday bound (~2³² encryptions).
-
-### Key zeroization
-
-All derived keys are ephemeral and zeroed from memory as soon as they are no longer needed:
-
-- **Root key**: Wiped immediately after HKDF expansion produces the master and vault keys (inside `DeriveKeys()`).
-- **Master key**: Wiped after it is used to encrypt/verify `.secret`. It is never stored in a long-lived variable.
-- **Vault key**: Held in memory only while the application is running (`uiMasterKey`). Wiped when the application exits (`Run()` returns) and when the master password is changed (old key wiped before the new key replaces it).
-- **Intermediate keys during migration/rehash/re-key**: All old and new master/vault keys are wiped via `defer` after the re-encryption operations complete.
-- **Decrypted plaintext during re-encryption**: Wiped immediately after the data is re-encrypted with the new key.
-
-Zeroization uses `crypto.WipeBytes()`, which overwrites every byte with `0x00`. This is a best-effort defence — Go's garbage collector may have copied the backing array, but zeroing the authoritative slice limits the exposure window.
+- **Encryption**: AES-256-GCM with 12-byte random nonces.
+- **Key derivation**: Argon2id → HKDF-SHA256 hierarchy producing separate master and vault keys from a single password.
+- **Wrong-password detection**: An HMAC commit tag (`HMAC-SHA256(masterKey, random_nonce)`) stored inside `.secret` provides explicit detection.
+- **Tamper detection**: Three layers — GCM AAD binding, SHA-256 hash verification, and HMAC commit tag.
+- **Auto-migration**: Legacy vaults, weaker Argon2id parameters, old HKDF purpose strings, and missing commit tags are all upgraded transparently on login.
+- **Key zeroization**: All ephemeral keys are wiped from memory as soon as they are no longer needed.
 
 
 ## ⌨️ Keyboard shortcuts
