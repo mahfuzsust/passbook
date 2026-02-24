@@ -48,6 +48,8 @@ type secretFile struct {
 const (
 	masterKeyPurpose = "passbook:master:v1"
 	vaultKeyPurpose  = "passbook:vault:v1"
+	masterKeyLegacy  = "master"
+	vaultKeyLegacy   = "vault"
 )
 
 // supportLegacy enables backward compatibility with vaults created before the
@@ -102,13 +104,15 @@ const (
 )
 
 type VaultParams struct {
-	Version  int    `json:"version"`          // schema version (currently 1)
-	Salt     []byte `json:"salt"`             // 32-byte random Argon2id salt
-	Time     uint32 `json:"time"`             // Argon2id time/iterations
-	MemoryKB uint32 `json:"memory_kb"`        // Argon2id memory in KiB
-	Threads  uint8  `json:"threads"`          // Argon2id parallelism
-	KDF      string `json:"kdf,omitempty"`    // identifier, e.g. "argon2id"
-	Cipher   string `json:"cipher,omitempty"` // identifier, e.g. "aes-256-gcm"
+	Version          int    `json:"version"`                      // schema version (currently 1)
+	Salt             []byte `json:"salt"`                         // 32-byte random Argon2id salt
+	Time             uint32 `json:"time"`                         // Argon2id time/iterations
+	MemoryKB         uint32 `json:"memory_kb"`                    // Argon2id memory in KiB
+	Threads          uint8  `json:"threads"`                      // Argon2id parallelism
+	KDF              string `json:"kdf,omitempty"`                // identifier, e.g. "argon2id"
+	Cipher           string `json:"cipher,omitempty"`             // identifier, e.g. "aes-256-gcm"
+	MasterKeyPurpose string `json:"master_key_purpose,omitempty"` // HKDF purpose for master key
+	VaultKeyPurpose  string `json:"vault_key_purpose,omitempty"`  // HKDF purpose for vault key
 }
 
 type RootKDFParams = VaultParams
@@ -119,13 +123,15 @@ func DefaultVaultParams() (VaultParams, error) {
 		return VaultParams{}, err
 	}
 	return VaultParams{
-		Version:  1,
-		Salt:     salt,
-		Time:     RecommendedTime,
-		MemoryKB: RecommendedMemory,
-		Threads:  RecommendedThreads,
-		KDF:      "argon2id",
-		Cipher:   "aes-256-gcm",
+		Version:          1,
+		Salt:             salt,
+		Time:             RecommendedTime,
+		MemoryKB:         RecommendedMemory,
+		Threads:          RecommendedThreads,
+		KDF:              "argon2id",
+		Cipher:           "aes-256-gcm",
+		MasterKeyPurpose: masterKeyPurpose,
+		VaultKeyPurpose:  vaultKeyPurpose,
 	}, nil
 }
 
@@ -317,11 +323,24 @@ func DeriveHKDFKey(rootKey []byte, purpose string) ([]byte, error) {
 func DeriveKeys(password string, p VaultParams) (masterKey, vaultKey []byte, err error) {
 	rootKey := DeriveRootKey(password, p)
 	defer WipeBytes(rootKey)
-	masterKey, err = DeriveHKDFKey(rootKey, masterKeyPurpose)
+
+	// Use the purpose strings stored in VaultParams.
+	// Existing vaults without these fields fall back to the legacy
+	// fixed-purpose strings ("master" / "vault").
+	mk := p.MasterKeyPurpose
+	if mk == "" {
+		mk = masterKeyLegacy
+	}
+	vk := p.VaultKeyPurpose
+	if vk == "" {
+		vk = vaultKeyLegacy
+	}
+
+	masterKey, err = DeriveHKDFKey(rootKey, mk)
 	if err != nil {
 		return nil, nil, err
 	}
-	vaultKey, err = DeriveHKDFKey(rootKey, vaultKeyPurpose)
+	vaultKey, err = DeriveHKDFKey(rootKey, vk)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -342,15 +361,17 @@ func RehashVault(dataDir string, password string, oldParams VaultParams) (*Vault
 		return nil, fmt.Errorf("old keys invalid (wrong password?): %w", err)
 	}
 
-	// Build new params: keep the same salt, bump the Argon2id cost.
+	// Build new params: keep the same salt and purpose strings, bump the Argon2id cost.
 	newParams := VaultParams{
-		Version:  1,
-		Salt:     oldParams.Salt,
-		Time:     RecommendedTime,
-		MemoryKB: RecommendedMemory,
-		Threads:  RecommendedThreads,
-		KDF:      "argon2id",
-		Cipher:   "aes-256-gcm",
+		Version:          1,
+		Salt:             oldParams.Salt,
+		Time:             RecommendedTime,
+		MemoryKB:         RecommendedMemory,
+		Threads:          RecommendedThreads,
+		KDF:              "argon2id",
+		Cipher:           "aes-256-gcm",
+		MasterKeyPurpose: oldParams.MasterKeyPurpose,
+		VaultKeyPurpose:  oldParams.VaultKeyPurpose,
 	}
 
 	// Derive new keys with stronger params.
@@ -372,6 +393,61 @@ func RehashVault(dataDir string, password string, oldParams VaultParams) (*Vault
 	}
 
 	// Persist the new parameters.
+	if err := SaveVaultParams(dataDir, newParams); err != nil {
+		return nil, fmt.Errorf("saving vault params: %w", err)
+	}
+
+	return &newParams, nil
+}
+
+// NeedsPurposeMigration returns true when the vault params are missing the
+// new HKDF purpose strings and should be upgraded from the legacy values.
+func (p VaultParams) NeedsPurposeMigration() bool {
+	return p.MasterKeyPurpose == "" || p.VaultKeyPurpose == ""
+}
+
+// MigrateVaultPurpose upgrades a vault from legacy HKDF purpose strings
+// ("master"/"vault") to the new versioned strings ("passbook:master:v1" /
+// "passbook:vault:v1"). It re-derives keys with both old and new purposes,
+// re-encrypts .secret and all entries, and persists the updated vault params.
+func MigrateVaultPurpose(dataDir string, password string, oldParams VaultParams) (*VaultParams, error) {
+	// Derive keys with the old (legacy) purposes.
+	oldMasterKey, oldVaultKey, err := DeriveKeys(password, oldParams)
+	if err != nil {
+		return nil, fmt.Errorf("deriving old keys: %w", err)
+	}
+	defer WipeBytes(oldMasterKey)
+	defer WipeBytes(oldVaultKey)
+
+	// Verify old keys work.
+	if _, err := loadKDFSecret(dataDir, oldMasterKey); err != nil {
+		return nil, fmt.Errorf("old keys invalid (wrong password?): %w", err)
+	}
+
+	// Build new params: keep everything, only upgrade the purpose strings.
+	newParams := oldParams
+	newParams.MasterKeyPurpose = masterKeyPurpose
+	newParams.VaultKeyPurpose = vaultKeyPurpose
+
+	// Derive keys with the new purposes.
+	newMasterKey, newVaultKey, err := DeriveKeys(password, newParams)
+	if err != nil {
+		return nil, fmt.Errorf("deriving new keys: %w", err)
+	}
+	defer WipeBytes(newMasterKey)
+	defer WipeBytes(newVaultKey)
+
+	// Re-encrypt .secret with the new master key.
+	if err := writeSecretWithParams(dataDir, newParams, newMasterKey); err != nil {
+		return nil, fmt.Errorf("re-keying vault secret: %w", err)
+	}
+
+	// Re-encrypt all entries and attachments.
+	if err := ReKeyEntries(dataDir, oldVaultKey, newVaultKey); err != nil {
+		return nil, fmt.Errorf("re-keying entries: %w", err)
+	}
+
+	// Persist the updated vault params with new purpose strings.
 	if err := SaveVaultParams(dataDir, newParams); err != nil {
 		return nil, fmt.Errorf("saving vault params: %w", err)
 	}

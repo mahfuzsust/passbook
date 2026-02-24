@@ -309,6 +309,12 @@ func TestDefaultVaultParams(t *testing.T) {
 	if p.KDF != "argon2id" || p.Cipher != "aes-256-gcm" {
 		t.Fatalf("expected kdf=argon2id cipher=aes-256-gcm, got kdf=%s cipher=%s", p.KDF, p.Cipher)
 	}
+	if p.MasterKeyPurpose != "passbook:master:v1" {
+		t.Fatalf("expected MasterKeyPurpose=passbook:master:v1, got %s", p.MasterKeyPurpose)
+	}
+	if p.VaultKeyPurpose != "passbook:vault:v1" {
+		t.Fatalf("expected VaultKeyPurpose=passbook:vault:v1, got %s", p.VaultKeyPurpose)
+	}
 }
 
 func TestHashVaultParams(t *testing.T) {
@@ -565,6 +571,172 @@ func TestDeriveKeys(t *testing.T) {
 	mk3, _, _ := DeriveKeys("other", p)
 	if bytes.Equal(mk, mk3) {
 		t.Fatalf("expected different keys for different password")
+	}
+}
+
+func TestDeriveKeysUsesVaultParamsPurpose(t *testing.T) {
+	salt := bytes.Repeat([]byte{0xAA}, 32)
+
+	// Legacy vault: no purpose fields → falls back to "master"/"vault".
+	legacy := VaultParams{
+		Salt: salt, Time: RecommendedTime,
+		MemoryKB: RecommendedMemory, Threads: RecommendedThreads,
+	}
+	mkLegacy, vkLegacy, err := DeriveKeys("password", legacy)
+	if err != nil {
+		t.Fatalf("DeriveKeys (legacy) error: %v", err)
+	}
+
+	// New vault: explicit purpose fields.
+	newVault := VaultParams{
+		Salt: salt, Time: RecommendedTime,
+		MemoryKB: RecommendedMemory, Threads: RecommendedThreads,
+		MasterKeyPurpose: "passbook:master:v1",
+		VaultKeyPurpose:  "passbook:vault:v1",
+	}
+	mkNew, vkNew, err := DeriveKeys("password", newVault)
+	if err != nil {
+		t.Fatalf("DeriveKeys (new) error: %v", err)
+	}
+
+	// Same salt+password but different purposes → different keys.
+	if bytes.Equal(mkLegacy, mkNew) {
+		t.Fatalf("legacy and new master keys should differ due to different purposes")
+	}
+	if bytes.Equal(vkLegacy, vkNew) {
+		t.Fatalf("legacy and new vault keys should differ due to different purposes")
+	}
+
+	// Deterministic: same params → same keys.
+	mkNew2, vkNew2, _ := DeriveKeys("password", newVault)
+	if !bytes.Equal(mkNew, mkNew2) || !bytes.Equal(vkNew, vkNew2) {
+		t.Fatalf("expected deterministic derivation with explicit purposes")
+	}
+}
+
+func TestNeedsPurposeMigration(t *testing.T) {
+	// Legacy params (no purpose) → needs migration.
+	legacy := VaultParams{
+		Version: 1, Salt: bytes.Repeat([]byte{0x11}, 32),
+		Time: RecommendedTime, MemoryKB: RecommendedMemory, Threads: RecommendedThreads,
+	}
+	if !legacy.NeedsPurposeMigration() {
+		t.Fatalf("expected legacy params to need purpose migration")
+	}
+
+	// Only master set → still needs migration.
+	partial := legacy
+	partial.MasterKeyPurpose = "passbook:master:v1"
+	if !partial.NeedsPurposeMigration() {
+		t.Fatalf("expected partial params to need purpose migration")
+	}
+
+	// Both set → no migration needed.
+	full := legacy
+	full.MasterKeyPurpose = "passbook:master:v1"
+	full.VaultKeyPurpose = "passbook:vault:v1"
+	if full.NeedsPurposeMigration() {
+		t.Fatalf("expected full params to NOT need purpose migration")
+	}
+}
+
+func TestMigrateVaultPurpose(t *testing.T) {
+	dir := t.TempDir()
+	password := "testpassword"
+
+	// Set up a vault with legacy purpose strings (empty).
+	legacyParams := VaultParams{
+		Version: 1, Salt: bytes.Repeat([]byte{0xBB}, 32),
+		Time: RecommendedTime, MemoryKB: RecommendedMemory, Threads: RecommendedThreads,
+		KDF: "argon2id", Cipher: "aes-256-gcm",
+	}
+
+	// Derive keys with legacy purposes and create the vault.
+	legacyMasterKey, legacyVaultKey, err := DeriveKeys(password, legacyParams)
+	if err != nil {
+		t.Fatalf("DeriveKeys error: %v", err)
+	}
+
+	// Save vault params and create .secret.
+	if err := SaveVaultParams(dir, legacyParams); err != nil {
+		t.Fatalf("SaveVaultParams error: %v", err)
+	}
+	if _, err := EnsureSecret(dir, legacyMasterKey, legacyParams); err != nil {
+		t.Fatalf("EnsureSecret error: %v", err)
+	}
+
+	// Write a dummy entry to verify re-encryption.
+	loginsDir := filepath.Join(dir, "logins")
+	if err := os.MkdirAll(loginsDir, 0700); err != nil {
+		t.Fatalf("MkdirAll error: %v", err)
+	}
+	plaintext := []byte("test-entry-data")
+	enc, err := Encrypt(legacyVaultKey, plaintext)
+	if err != nil {
+		t.Fatalf("Encrypt error: %v", err)
+	}
+	entryPath := filepath.Join(loginsDir, "test.pb")
+	if err := os.WriteFile(entryPath, enc, 0600); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+
+	WipeBytes(legacyMasterKey)
+	WipeBytes(legacyVaultKey)
+
+	// Confirm it needs migration.
+	if !legacyParams.NeedsPurposeMigration() {
+		t.Fatalf("expected legacy params to need purpose migration")
+	}
+
+	// Run the migration.
+	newParams, err := MigrateVaultPurpose(dir, password, legacyParams)
+	if err != nil {
+		t.Fatalf("MigrateVaultPurpose error: %v", err)
+	}
+
+	// Verify new params have the new purpose strings.
+	if newParams.MasterKeyPurpose != "passbook:master:v1" {
+		t.Fatalf("expected MasterKeyPurpose=passbook:master:v1, got %s", newParams.MasterKeyPurpose)
+	}
+	if newParams.VaultKeyPurpose != "passbook:vault:v1" {
+		t.Fatalf("expected VaultKeyPurpose=passbook:vault:v1, got %s", newParams.VaultKeyPurpose)
+	}
+	if newParams.NeedsPurposeMigration() {
+		t.Fatalf("expected migrated params to NOT need purpose migration")
+	}
+
+	// Verify new keys can decrypt the .secret.
+	newMasterKey, newVaultKey, err := DeriveKeys(password, *newParams)
+	if err != nil {
+		t.Fatalf("DeriveKeys (new) error: %v", err)
+	}
+	defer WipeBytes(newMasterKey)
+	defer WipeBytes(newVaultKey)
+
+	if _, err := loadKDFSecret(dir, newMasterKey); err != nil {
+		t.Fatalf("new master key cannot decrypt .secret: %v", err)
+	}
+
+	// Verify new vault key can decrypt the re-encrypted entry.
+	encData, err := os.ReadFile(entryPath)
+	if err != nil {
+		t.Fatalf("ReadFile error: %v", err)
+	}
+	decrypted, err := Decrypt(newVaultKey, encData)
+	if err != nil {
+		t.Fatalf("new vault key cannot decrypt entry: %v", err)
+	}
+	if !bytes.Equal(decrypted, plaintext) {
+		t.Fatalf("decrypted data mismatch: got %q, want %q", decrypted, plaintext)
+	}
+
+	// Verify vault params on disk have been updated.
+	diskParams, err := LoadVaultParams(dir)
+	if err != nil {
+		t.Fatalf("LoadVaultParams error: %v", err)
+	}
+	if diskParams.MasterKeyPurpose != "passbook:master:v1" || diskParams.VaultKeyPurpose != "passbook:vault:v1" {
+		t.Fatalf("disk params not updated: mk=%s vk=%s", diskParams.MasterKeyPurpose, diskParams.VaultKeyPurpose)
 	}
 }
 

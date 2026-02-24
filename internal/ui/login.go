@@ -45,15 +45,26 @@ func goToMain(pwd string) {
 		// Auto-rehash if Argon2id parameters are weaker than recommended.
 		if vaultParams.NeedsRehash() {
 			dataDir := config.ExpandPath(uiDataDir)
-			newParams, err := crypto.RehashVault(dataDir, pwd, *vaultParams)
-			if err == nil {
+			if newParams, err := crypto.RehashVault(dataDir, pwd, *vaultParams); err == nil && newParams != nil {
+				vaultParams = newParams
 				// Re-derive keys with the upgraded params.
-				_, vaultKey, err = crypto.DeriveKeys(pwd, *newParams)
-				if err != nil {
+				if _, vaultKey, err = crypto.DeriveKeys(pwd, *newParams); err != nil {
 					return
 				}
 			}
 			// If rehash fails, continue with old keys for this session.
+		}
+
+		// Auto-migrate HKDF purpose strings from legacy to versioned values.
+		if vaultParams.NeedsPurposeMigration() {
+			dataDir := config.ExpandPath(uiDataDir)
+			if newParams, err := crypto.MigrateVaultPurpose(dataDir, pwd, *vaultParams); err == nil && newParams != nil {
+				// Re-derive keys with the new purpose strings.
+				if _, vaultKey, err = crypto.DeriveKeys(pwd, *newParams); err != nil {
+					return
+				}
+			}
+			// If migration fails, continue with legacy keys for this session.
 		}
 
 		uiMasterKey = vaultKey
