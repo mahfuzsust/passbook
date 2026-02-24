@@ -1109,7 +1109,10 @@ func TestReKeyEntriesReEncryptsFiles(t *testing.T) {
 	}
 
 	// New key should decrypt the attachment.
-	attData, _ := os.ReadFile(attPath)
+	attData, err := os.ReadFile(attPath)
+	if err != nil {
+		t.Fatalf("ReadFile error: %v", err)
+	}
 	gotAtt, err := Decrypt(newKey, attData)
 	if err != nil {
 		t.Fatalf("Decrypt attachment with new key error: %v", err)
@@ -1127,5 +1130,276 @@ func TestReKeyEntriesSkipsMissingDirs(t *testing.T) {
 	// Should succeed even with no category directories.
 	if err := ReKeyEntries(dir, oldKey, newKey); err != nil {
 		t.Fatalf("ReKeyEntries error on empty vault: %v", err)
+	}
+}
+
+func TestGenerateCommitNonce(t *testing.T) {
+	n1, err := GenerateCommitNonce()
+	if err != nil {
+		t.Fatalf("GenerateCommitNonce error: %v", err)
+	}
+	if len(n1) != 32 {
+		t.Fatalf("expected 32-byte nonce, got %d", len(n1))
+	}
+
+	n2, err := GenerateCommitNonce()
+	if err != nil {
+		t.Fatalf("GenerateCommitNonce error: %v", err)
+	}
+	if bytes.Equal(n1, n2) {
+		t.Fatalf("expected unique nonces")
+	}
+}
+
+func TestComputeCommitTagDeterministic(t *testing.T) {
+	key := bytes.Repeat([]byte{0xAA}, 32)
+	nonce := bytes.Repeat([]byte{0x01}, 32)
+	tag1 := ComputeCommitTag(key, nonce)
+	tag2 := ComputeCommitTag(key, nonce)
+	if tag1 != tag2 {
+		t.Fatalf("expected deterministic commit tag")
+	}
+	// Tag should be a 64-char hex string (HMAC-SHA256).
+	if len(tag1) != 64 {
+		t.Fatalf("expected 64-char hex tag, got %d", len(tag1))
+	}
+}
+
+func TestComputeCommitTagDiffersForDiffKeys(t *testing.T) {
+	key1 := bytes.Repeat([]byte{0xAA}, 32)
+	key2 := bytes.Repeat([]byte{0xBB}, 32)
+	nonce := bytes.Repeat([]byte{0x01}, 32)
+	tag1 := ComputeCommitTag(key1, nonce)
+	tag2 := ComputeCommitTag(key2, nonce)
+	if tag1 == tag2 {
+		t.Fatalf("expected different commit tags for different keys")
+	}
+}
+
+func TestComputeCommitTagDiffersForDiffNonces(t *testing.T) {
+	key := bytes.Repeat([]byte{0xAA}, 32)
+	nonce1 := bytes.Repeat([]byte{0x01}, 32)
+	nonce2 := bytes.Repeat([]byte{0x02}, 32)
+	tag1 := ComputeCommitTag(key, nonce1)
+	tag2 := ComputeCommitTag(key, nonce2)
+	if tag1 == tag2 {
+		t.Fatalf("expected different commit tags for different nonces")
+	}
+}
+
+func TestWriteKDFSecretAtomicStoresCommitTag(t *testing.T) {
+	dir := t.TempDir()
+	key := bytes.Repeat([]byte{0xCC}, 32)
+
+	if err := writeKDFSecretAtomic(dir, KDFParams{}, key, ""); err != nil {
+		t.Fatalf("writeKDFSecretAtomic error: %v", err)
+	}
+
+	// Read and decrypt .secret to inspect the commit nonce and tag.
+	b, err := os.ReadFile(secretPath(dir))
+	if err != nil {
+		t.Fatalf("ReadFile error: %v", err)
+	}
+	plaintext, err := DecryptAES256GCM(b, key, nil)
+	if err != nil {
+		t.Fatalf("DecryptAES256GCM error: %v", err)
+	}
+	var sf secretFile
+	if err := json.Unmarshal(plaintext, &sf); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+	if sf.CommitTag == "" {
+		t.Fatalf("expected non-empty commit tag in .secret")
+	}
+	if len(sf.CommitNonce) != 32 {
+		t.Fatalf("expected 32-byte commit nonce, got %d", len(sf.CommitNonce))
+	}
+	expected := ComputeCommitTag(key, sf.CommitNonce)
+	if sf.CommitTag != expected {
+		t.Fatalf("commit tag mismatch: got %s, want %s", sf.CommitTag, expected)
+	}
+}
+
+func TestVerifyCommitTagCorrectKey(t *testing.T) {
+	dir := t.TempDir()
+	key := bytes.Repeat([]byte{0xDD}, 32)
+
+	if err := writeKDFSecretAtomic(dir, KDFParams{}, key, ""); err != nil {
+		t.Fatalf("writeKDFSecretAtomic error: %v", err)
+	}
+
+	if err := VerifyCommitTag(dir, key); err != nil {
+		t.Fatalf("VerifyCommitTag should pass with correct key: %v", err)
+	}
+}
+
+func TestVerifyCommitTagWrongKey(t *testing.T) {
+	dir := t.TempDir()
+	key := bytes.Repeat([]byte{0xDD}, 32)
+	wrongKey := bytes.Repeat([]byte{0xEE}, 32)
+
+	if err := writeKDFSecretAtomic(dir, KDFParams{}, key, ""); err != nil {
+		t.Fatalf("writeKDFSecretAtomic error: %v", err)
+	}
+
+	// Wrong key can't decrypt .secret at all (GCM auth failure),
+	// so VerifyCommitTag returns an error (not necessarily ErrWrongPassword).
+	err := VerifyCommitTag(dir, wrongKey)
+	if err == nil {
+		t.Fatalf("expected error when verifying commit tag with wrong key")
+	}
+}
+
+func TestLoadKDFSecretRejectsWrongKeyViaCommitTag(t *testing.T) {
+	dir := t.TempDir()
+	key := bytes.Repeat([]byte{0xFF}, 32)
+
+	// Create .secret with commit tag.
+	if err := writeKDFSecretAtomic(dir, KDFParams{}, key, ""); err != nil {
+		t.Fatalf("writeKDFSecretAtomic error: %v", err)
+	}
+
+	// Correct key should work.
+	if _, err := loadKDFSecret(dir, key); err != nil {
+		t.Fatalf("loadKDFSecret should succeed with correct key: %v", err)
+	}
+}
+
+func TestVerifyCommitTagSkipsOldVaults(t *testing.T) {
+	dir := t.TempDir()
+	key := bytes.Repeat([]byte{0x11}, 32)
+
+	// Simulate an old vault: write .secret without a commit tag.
+	// We do this by manually creating the secret file without the tag.
+	sf := secretFile{
+		Version:  1,
+		Salt:     bytes.Repeat([]byte{0x01}, 16),
+		Time:     6,
+		MemoryKB: 256 * 1024,
+		Threads:  4,
+		KeyLen:   32,
+		KDF:      "argon2id",
+		// CommitTag intentionally empty — old vault.
+	}
+	b, _ := json.MarshalIndent(sf, "", "  ")
+	ciphertext, err := EncryptAES256GCM(b, key, nil)
+	if err != nil {
+		t.Fatalf("EncryptAES256GCM error: %v", err)
+	}
+	if err := os.WriteFile(secretPath(dir), ciphertext, 0600); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+
+	// Should pass — no commit tag in old vault.
+	if err := VerifyCommitTag(dir, key); err != nil {
+		t.Fatalf("expected nil error for old vault without commit tag, got: %v", err)
+	}
+}
+
+func TestErrWrongPasswordSentinel(t *testing.T) {
+	if ErrWrongPassword == nil {
+		t.Fatalf("ErrWrongPassword should not be nil")
+	}
+	if ErrWrongPassword.Error() != "wrong master password" {
+		t.Fatalf("unexpected error message: %s", ErrWrongPassword.Error())
+	}
+}
+
+func TestEnsureSecretMigratesCommitTag(t *testing.T) {
+	dir := t.TempDir()
+	key := bytes.Repeat([]byte{0x99}, 32)
+	vp := VaultParams{
+		Version: 1, Salt: bytes.Repeat([]byte{0x99}, 32),
+		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
+		KDF: "argon2id", Cipher: "aes-256-gcm",
+	}
+
+	// Write .vault_params to disk.
+	if err := SaveVaultParams(dir, vp); err != nil {
+		t.Fatalf("SaveVaultParams error: %v", err)
+	}
+
+	// Simulate an old .secret without commit tag/nonce.
+	sf := secretFile{
+		Version:  1,
+		Salt:     bytes.Repeat([]byte{0x02}, 16),
+		Time:     6,
+		MemoryKB: 256 * 1024,
+		Threads:  4,
+		KeyLen:   32,
+		KDF:      "argon2id",
+	}
+	b, _ := json.MarshalIndent(sf, "", "  ")
+	hash, _ := HashVaultParams(vp)
+	ciphertext, err := EncryptAES256GCM(b, key, []byte(hash))
+	if err != nil {
+		t.Fatalf("EncryptAES256GCM error: %v", err)
+	}
+	if err := os.WriteFile(secretPath(dir), ciphertext, 0600); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+
+	// Confirm no commit tag before migration.
+	if secretHasCommitTag(dir, key) {
+		t.Fatalf("expected no commit tag before migration")
+	}
+
+	// EnsureSecret should auto-migrate by rewriting .secret with a commit tag.
+	if _, err := EnsureSecret(dir, key, vp); err != nil {
+		t.Fatalf("EnsureSecret error: %v", err)
+	}
+
+	// Now the commit tag should be present.
+	if !secretHasCommitTag(dir, key) {
+		t.Fatalf("expected commit tag after EnsureSecret migration")
+	}
+
+	// VerifyCommitTag should pass with the correct key.
+	if err := VerifyCommitTag(dir, key); err != nil {
+		t.Fatalf("VerifyCommitTag should pass after migration: %v", err)
+	}
+}
+
+func TestEnsureKDFSecretMigratesCommitTag(t *testing.T) {
+	dir := t.TempDir()
+	key := bytes.Repeat([]byte{0xAA}, 32)
+
+	// Simulate an old .secret without commit tag/nonce.
+	sf := secretFile{
+		Version:  1,
+		Salt:     bytes.Repeat([]byte{0x03}, 16),
+		Time:     6,
+		MemoryKB: 256 * 1024,
+		Threads:  4,
+		KeyLen:   32,
+		KDF:      "argon2id",
+	}
+	b, _ := json.MarshalIndent(sf, "", "  ")
+	ciphertext, err := EncryptAES256GCM(b, key, nil)
+	if err != nil {
+		t.Fatalf("EncryptAES256GCM error: %v", err)
+	}
+	if err := os.WriteFile(secretPath(dir), ciphertext, 0600); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+
+	// Confirm no commit tag before migration.
+	if secretHasCommitTag(dir, key) {
+		t.Fatalf("expected no commit tag before migration")
+	}
+
+	// EnsureKDFSecret should auto-migrate.
+	if _, err := EnsureKDFSecret(dir, key); err != nil {
+		t.Fatalf("EnsureKDFSecret error: %v", err)
+	}
+
+	// Now the commit tag should be present.
+	if !secretHasCommitTag(dir, key) {
+		t.Fatalf("expected commit tag after EnsureKDFSecret migration")
+	}
+
+	// VerifyCommitTag should pass with the correct key.
+	if err := VerifyCommitTag(dir, key); err != nil {
+		t.Fatalf("VerifyCommitTag should pass after migration: %v", err)
 	}
 }

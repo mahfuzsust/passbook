@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"passbook/internal/config"
 	"passbook/internal/crypto"
 
@@ -38,6 +39,15 @@ func goToMain(pwd string) {
 		if err := crypto.VerifyVaultParamsHash(uiDataDir, masterKey); err != nil {
 			crypto.WipeBytes(masterKey)
 			crypto.WipeBytes(vaultKey)
+			return
+		}
+		// Verify the HMAC commit tag for explicit wrong-password detection.
+		if err := crypto.VerifyCommitTag(uiDataDir, masterKey); err != nil {
+			crypto.WipeBytes(masterKey)
+			crypto.WipeBytes(vaultKey)
+			if errors.Is(err, crypto.ErrWrongPassword) {
+				return
+			}
 			return
 		}
 		crypto.WipeBytes(masterKey)

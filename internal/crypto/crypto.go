@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,6 +17,10 @@ import (
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"
 )
+
+// ErrWrongPassword is returned when the master password is incorrect.
+// This is detected via the HMAC commit tag stored in .secret.
+var ErrWrongPassword = errors.New("wrong master password")
 
 func WipeBytes(b []byte) {
 	for i := range b {
@@ -39,6 +44,8 @@ type secretFile struct {
 	KeyLen          uint32 `json:"key_len"`
 	KDF             string `json:"kdf"`
 	VaultParamsHash string `json:"vault_params_hash,omitempty"` // SHA-256 of .vault_params
+	CommitNonce     []byte `json:"commit_nonce,omitempty"`      // random nonce for commit tag HMAC
+	CommitTag       string `json:"commit_tag,omitempty"`        // HMAC-SHA256(masterKey, commitNonce) for wrong-password detection
 	CreatedAt       string `json:"created_at,omitempty"`
 	UpdatedAt       string `json:"updated_at,omitempty"`
 	VaultID         string `json:"vault_id,omitempty"`
@@ -51,6 +58,25 @@ const (
 	masterKeyLegacy  = "master"
 	vaultKeyLegacy   = "vault"
 )
+
+// ComputeCommitTag returns hex(HMAC-SHA256(masterKey, nonce)).
+// The nonce is a random value unique to each vault, stored alongside
+// the tag inside .secret for explicit wrong-password detection.
+func ComputeCommitTag(masterKey []byte, nonce []byte) string {
+	mac := hmac.New(sha256.New, masterKey)
+	mac.Write(nonce)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// GenerateCommitNonce returns a 32-byte random nonce for use as the
+// HMAC message in commit tag computation.
+func GenerateCommitNonce() ([]byte, error) {
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("generating commit nonce: %w", err)
+	}
+	return nonce, nil
+}
 
 // supportLegacy enables backward compatibility with vaults created before the
 // HKDF-based key hierarchy. Set to false and remove all code blocks marked
@@ -587,6 +613,13 @@ func vaultParamsAAD(dataDir string) []byte {
 
 func EnsureKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
 	if p, err := loadKDFSecret(dataDir, masterKey); err == nil {
+		// Older vaults may lack the commit tag. Rewrite .secret to add one.
+		if !secretHasCommitTag(dataDir, masterKey) {
+			if writeErr := writeKDFSecretAtomic(dataDir, p, masterKey, ""); writeErr != nil {
+				// Non-fatal: vault still works, just without commit tag.
+				return p, nil
+			}
+		}
 		return p, nil
 	}
 	if err := writeKDFSecretAtomic(dataDir, KDFParams{}, masterKey, ""); err != nil {
@@ -597,6 +630,17 @@ func EnsureKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
 
 func EnsureSecret(dataDir string, masterKey []byte, vp VaultParams) (KDFParams, error) {
 	if p, err := loadKDFSecret(dataDir, masterKey); err == nil {
+		// Older vaults may lack the commit tag. Rewrite .secret to add one.
+		if !secretHasCommitTag(dataDir, masterKey) {
+			hash, hashErr := HashVaultParams(vp)
+			if hashErr != nil {
+				return KDFParams{}, hashErr
+			}
+			if writeErr := writeKDFSecretAtomic(dataDir, p, masterKey, hash); writeErr != nil {
+				// Non-fatal: vault still works, just without commit tag.
+				return p, nil
+			}
+		}
 		return p, nil
 	}
 	hash, err := HashVaultParams(vp)
@@ -647,6 +691,43 @@ func VerifyVaultParamsHash(dataDir string, masterKey []byte) error {
 	return nil
 }
 
+// VerifyCommitTag reads and decrypts .secret, then checks the stored
+// HMAC commit tag against the provided master key and the nonce stored
+// alongside it. Returns ErrWrongPassword if the tag does not match,
+// nil if verification succeeds or the tag is absent (legacy vaults).
+func VerifyCommitTag(dataDir string, masterKey []byte) error {
+	b, err := os.ReadFile(secretPath(dataDir))
+	if err != nil {
+		return fmt.Errorf("reading secret: %w", err)
+	}
+
+	aad := vaultParamsAAD(dataDir)
+
+	plaintext, err := DecryptAES256GCM(b, masterKey, aad)
+	if err != nil && aad != nil {
+		plaintext, err = DecryptAES256GCM(b, masterKey, nil)
+	}
+	if err != nil {
+		return fmt.Errorf("decrypting secret: %w", err)
+	}
+
+	var sf secretFile
+	if err := json.Unmarshal(plaintext, &sf); err != nil {
+		return fmt.Errorf("parsing secret: %w", err)
+	}
+
+	// Old vaults without the commit tag — skip verification.
+	if sf.CommitTag == "" || len(sf.CommitNonce) == 0 {
+		return nil
+	}
+
+	expected := ComputeCommitTag(masterKey, sf.CommitNonce)
+	if !hmac.Equal([]byte(sf.CommitTag), []byte(expected)) {
+		return ErrWrongPassword
+	}
+	return nil
+}
+
 func loadKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
 	b, err := os.ReadFile(secretPath(dataDir))
 	if err != nil {
@@ -677,9 +758,40 @@ func loadKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
 		return KDFParams{}, errors.New("invalid salt")
 	}
 
+	// Verify the commit tag if present (new vaults).
+	// Old vaults without the tag are accepted for backward compatibility.
+	if sf.CommitTag != "" && len(sf.CommitNonce) > 0 {
+		expected := ComputeCommitTag(masterKey, sf.CommitNonce)
+		if !hmac.Equal([]byte(sf.CommitTag), []byte(expected)) {
+			return KDFParams{}, ErrWrongPassword
+		}
+	}
+
 	p := KDFParams{Salt: sf.Salt, Time: sf.Time, MemoryKB: sf.MemoryKB, Threads: sf.Threads}
 	ensureKDFParams(&p)
 	return p, nil
+}
+
+// secretHasCommitTag decrypts .secret and returns true if the file
+// already contains a non-empty commit nonce and tag.
+func secretHasCommitTag(dataDir string, masterKey []byte) bool {
+	b, err := os.ReadFile(secretPath(dataDir))
+	if err != nil {
+		return false
+	}
+	aad := vaultParamsAAD(dataDir)
+	plaintext, err := DecryptAES256GCM(b, masterKey, aad)
+	if err != nil && aad != nil {
+		plaintext, err = DecryptAES256GCM(b, masterKey, nil)
+	}
+	if err != nil {
+		return false
+	}
+	var sf secretFile
+	if err := json.Unmarshal(plaintext, &sf); err != nil {
+		return false
+	}
+	return sf.CommitTag != "" && len(sf.CommitNonce) > 0
 }
 
 func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte, vaultParamsHash string) error {
@@ -688,6 +800,10 @@ func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte, vaultPa
 		s := make([]byte, 16)
 		_, _ = rand.Read(s)
 		p.Salt = s
+	}
+	commitNonce, err := GenerateCommitNonce()
+	if err != nil {
+		return err
 	}
 	sf := secretFile{
 		Version:         1,
@@ -698,6 +814,8 @@ func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte, vaultPa
 		KeyLen:          32,
 		KDF:             "argon2id",
 		VaultParamsHash: vaultParamsHash,
+		CommitNonce:     commitNonce,
+		CommitTag:       ComputeCommitTag(masterKey, commitNonce),
 	}
 	b, _ := json.MarshalIndent(sf, "", "  ")
 
