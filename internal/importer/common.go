@@ -22,37 +22,21 @@ func saveEntries(entries []*pb.Entry, subDirs []string, names []string, masterPa
 	}
 
 	var encKey []byte
-	if cfg.IsMigrated {
-		vaultParams, err := crypto.LoadVaultParams(dataDir)
-		if err != nil || vaultParams == nil {
-			return fmt.Errorf("failed to load vault params: vault may not be migrated")
-		}
-		masterKey, vaultKey, err := crypto.DeriveKeys(masterPassword, *vaultParams)
-		if err != nil {
-			return fmt.Errorf("key derivation error: %w", err)
-		}
-		if _, err := crypto.EnsureSecret(dataDir, masterKey, *vaultParams); err != nil {
-			crypto.WipeBytes(masterKey)
-			crypto.WipeBytes(vaultKey)
-			return fmt.Errorf("wrong master password or vault error: %w", err)
-		}
-		crypto.WipeBytes(masterKey)
-		encKey = vaultKey
-
-		// --- BEGIN supportLegacy ---
-	} else if crypto.SupportLegacy() {
-		masterKey := crypto.DeriveMasterKey(masterPassword)
-		kdfParams, err := crypto.EnsureKDFSecret(dataDir, masterKey)
-		crypto.WipeBytes(masterKey)
-		if err != nil {
-			return fmt.Errorf("wrong master password or vault error: %w", err)
-		}
-		encKey = crypto.DeriveKey(masterPassword, kdfParams)
-		// --- END supportLegacy ---
-
-	} else {
-		return fmt.Errorf("vault not migrated and legacy support is disabled")
+	vaultParams, err := crypto.LoadVaultParams(dataDir)
+	if err != nil || vaultParams == nil {
+		return fmt.Errorf("failed to load vault params: vault may not be initialized")
 	}
+	masterKey, vaultKey, err := crypto.DeriveKeys(masterPassword, *vaultParams)
+	if err != nil {
+		return fmt.Errorf("key derivation error: %w", err)
+	}
+	if _, err := crypto.EnsureSecret(dataDir, masterKey, *vaultParams); err != nil {
+		crypto.WipeBytes(masterKey)
+		crypto.WipeBytes(vaultKey)
+		return fmt.Errorf("wrong master password or vault error: %w", err)
+	}
+	crypto.WipeBytes(masterKey)
+	encKey = vaultKey
 	defer crypto.WipeBytes(encKey)
 
 	var imported, skipped int

@@ -79,43 +79,24 @@ func doChangePassword() {
 
 	// Verify the current password and derive the old vault key.
 	var oldVaultKey []byte
-	if uiCfg.IsMigrated {
-		vaultParams, err := crypto.LoadVaultParams(dataDir)
-		if err != nil || vaultParams == nil {
-			showChangePwdError("Failed to load vault params.")
-			return
-		}
-		oldMasterKey, vk, err := crypto.DeriveKeys(currentPwd, *vaultParams)
-		if err != nil {
-			showChangePwdError("Key derivation error: " + err.Error())
-			return
-		}
-		if _, err := crypto.EnsureSecret(dataDir, oldMasterKey, *vaultParams); err != nil {
-			crypto.WipeBytes(oldMasterKey)
-			crypto.WipeBytes(vk)
-			showChangePwdError("Current password is incorrect.")
-			return
-		}
+	vaultParams, err := crypto.LoadVaultParams(dataDir)
+	if err != nil || vaultParams == nil {
+		showChangePwdError("Failed to load vault params.")
+		return
+	}
+	oldMasterKey, vk, err := crypto.DeriveKeys(currentPwd, *vaultParams)
+	if err != nil {
+		showChangePwdError("Key derivation error: " + err.Error())
+		return
+	}
+	if _, err := crypto.EnsureSecret(dataDir, oldMasterKey, *vaultParams); err != nil {
 		crypto.WipeBytes(oldMasterKey)
-		oldVaultKey = vk
-
-		// --- BEGIN supportLegacy ---
-	} else if crypto.SupportLegacy() {
-		// Legacy scheme.
-		oldMasterKey := crypto.DeriveLegacyMasterKey(currentPwd)
-		oldKDF, err := crypto.EnsureKDFSecret(dataDir, oldMasterKey)
-		crypto.WipeBytes(oldMasterKey)
-		if err != nil {
-			showChangePwdError("Current password is incorrect.")
-			return
-		}
-		oldVaultKey = crypto.DeriveKey(currentPwd, oldKDF)
-		// --- END supportLegacy ---
-
-	} else {
+		crypto.WipeBytes(vk)
 		showChangePwdError("Current password is incorrect.")
 		return
 	}
+	crypto.WipeBytes(oldMasterKey)
+	oldVaultKey = vk
 
 	// Always use new HKDF scheme for the new password.
 	newParams, err := crypto.DefaultVaultParams()
@@ -152,11 +133,6 @@ func doChangePassword() {
 	// Persist the new vault params and migration state.
 	if err := crypto.SaveVaultParams(dataDir, newParams); err != nil {
 		showChangePwdError("Failed to save vault params: " + err.Error())
-		return
-	}
-	uiCfg.IsMigrated = true
-	if err := config.Save(uiCfg); err != nil {
-		showChangePwdError("Failed to save config: " + err.Error())
 		return
 	}
 

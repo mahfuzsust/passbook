@@ -24,53 +24,6 @@ func TestWipeBytesNil(t *testing.T) {
 	WipeBytes([]byte{})
 }
 
-func TestDeriveKeyDeterministic(t *testing.T) {
-	p := KDFParams{
-		Salt:     []byte("0123456789abcdef"),
-		Time:     2,
-		MemoryKB: 32 * 1024,
-		Threads:  1,
-	}
-	k1 := DeriveKey("password", p)
-	k2 := DeriveKey("password", p)
-	if !bytes.Equal(k1, k2) {
-		t.Fatalf("expected deterministic key derivation")
-	}
-
-	p.Salt = []byte("fedcba9876543210")
-	k3 := DeriveKey("password", p)
-	if bytes.Equal(k1, k3) {
-		t.Fatalf("expected different key with different salt")
-	}
-}
-
-func TestDeriveMasterKeyDeterministic(t *testing.T) {
-	k1 := DeriveMasterKey("master")
-	k2 := DeriveMasterKey("master")
-	if !bytes.Equal(k1, k2) {
-		t.Fatalf("expected deterministic master key derivation")
-	}
-
-	k3 := DeriveMasterKey("master2")
-	if bytes.Equal(k1, k3) {
-		t.Fatalf("expected different master key with different password")
-	}
-}
-
-func TestSupportLegacy(t *testing.T) {
-	if !SupportLegacy() {
-		t.Fatalf("expected supportLegacy to be true by default")
-	}
-}
-
-func TestDeriveLegacyMasterKeyMatchesDeriveMasterKey(t *testing.T) {
-	k1 := DeriveMasterKey("testpass")
-	k2 := DeriveLegacyMasterKey("testpass")
-	if !bytes.Equal(k1, k2) {
-		t.Fatalf("DeriveMasterKey and DeriveLegacyMasterKey should produce identical output")
-	}
-}
-
 func TestGenerateRootSalt(t *testing.T) {
 	s1, err := GenerateRootSalt()
 	if err != nil {
@@ -86,48 +39,6 @@ func TestGenerateRootSalt(t *testing.T) {
 	}
 	if bytes.Equal(s1, s2) {
 		t.Fatalf("expected unique salts")
-	}
-}
-
-func TestSaveAndLoadRootSalt(t *testing.T) {
-	dir := t.TempDir()
-	salt := bytes.Repeat([]byte{0xAB}, 32)
-
-	if err := SaveRootSalt(dir, salt); err != nil {
-		t.Fatalf("SaveRootSalt error: %v", err)
-	}
-
-	loaded, err := LoadRootSalt(dir)
-	if err != nil {
-		t.Fatalf("LoadRootSalt error: %v", err)
-	}
-	if !bytes.Equal(salt, loaded) {
-		t.Fatalf("loaded salt does not match saved salt")
-	}
-}
-
-func TestLoadRootSaltMissing(t *testing.T) {
-	dir := t.TempDir()
-
-	loaded, err := LoadRootSalt(dir)
-	if err != nil {
-		t.Fatalf("expected no error for missing salt, got: %v", err)
-	}
-	if loaded != nil {
-		t.Fatalf("expected nil salt for missing file, got %d bytes", len(loaded))
-	}
-}
-
-func TestLoadRootSaltInvalidLength(t *testing.T) {
-	dir := t.TempDir()
-	// Write a .vault_params with bad salt length.
-	if err := os.WriteFile(filepath.Join(dir, ".vault_params"), []byte(`{"version":1,"salt":"c2hvcnQ=","time":6,"memory_kb":262144,"threads":4}`), 0600); err != nil {
-		t.Fatalf("setup error: %v", err)
-	}
-
-	_, err := LoadRootSalt(dir)
-	if err == nil {
-		t.Fatalf("expected error for invalid salt length")
 	}
 }
 
@@ -167,7 +78,6 @@ func TestSaveAndLoadVaultParams(t *testing.T) {
 
 func TestLoadVaultParamsBackfillsZeroes(t *testing.T) {
 	dir := t.TempDir()
-	// Write params with zero time/memory/threads — should back-fill.
 	salt := bytes.Repeat([]byte{0xCC}, 32)
 	p := VaultParams{Salt: salt}
 	if err := SaveVaultParams(dir, p); err != nil {
@@ -189,75 +99,19 @@ func TestLoadVaultParamsBackfillsZeroes(t *testing.T) {
 	}
 }
 
-func TestLoadVaultParamsMigratesLegacyRootSalt(t *testing.T) {
+func TestLoadVaultParamsMissing(t *testing.T) {
 	dir := t.TempDir()
-	salt := bytes.Repeat([]byte{0xDD}, 32)
-
-	// Write legacy .root_salt file.
-	if err := os.WriteFile(filepath.Join(dir, ".root_salt"), salt, 0600); err != nil {
-		t.Fatalf("setup error: %v", err)
-	}
-
 	loaded, err := LoadVaultParams(dir)
 	if err != nil {
-		t.Fatalf("LoadVaultParams error: %v", err)
+		t.Fatalf("expected no error for missing vault params, got: %v", err)
 	}
-	if loaded == nil {
-		t.Fatalf("expected non-nil params")
-	}
-	if !bytes.Equal(salt, loaded.Salt) {
-		t.Fatalf("salt mismatch after legacy migration")
-	}
-	if loaded.Time != RecommendedTime || loaded.MemoryKB != RecommendedMemory || loaded.Threads != RecommendedThreads {
-		t.Fatalf("expected recommended params after legacy migration")
-	}
-
-	// .root_salt should be removed.
-	if _, err := os.Stat(filepath.Join(dir, ".root_salt")); !os.IsNotExist(err) {
-		t.Fatalf("expected .root_salt to be removed after migration")
-	}
-
-	// .vault_params should exist.
-	if _, err := os.Stat(filepath.Join(dir, ".vault_params")); err != nil {
-		t.Fatalf("expected .vault_params to exist after migration")
-	}
-}
-
-func TestLoadVaultParamsMigratesLegacyKdfParams(t *testing.T) {
-	dir := t.TempDir()
-	salt := bytes.Repeat([]byte{0xEE}, 32)
-
-	// Write legacy .kdf_params file.
-	p := VaultParams{Salt: salt, Time: 6, MemoryKB: 256 * 1024, Threads: 4}
-	data, _ := json.Marshal(p)
-	if err := os.WriteFile(filepath.Join(dir, ".kdf_params"), data, 0600); err != nil {
-		t.Fatalf("setup error: %v", err)
-	}
-
-	loaded, err := LoadVaultParams(dir)
-	if err != nil {
-		t.Fatalf("LoadVaultParams error: %v", err)
-	}
-	if loaded == nil {
-		t.Fatalf("expected non-nil params")
-	}
-	if !bytes.Equal(salt, loaded.Salt) {
-		t.Fatalf("salt mismatch after .kdf_params migration")
-	}
-
-	// .kdf_params should be removed.
-	if _, err := os.Stat(filepath.Join(dir, ".kdf_params")); !os.IsNotExist(err) {
-		t.Fatalf("expected .kdf_params to be removed after migration")
-	}
-
-	// .vault_params should exist.
-	if _, err := os.Stat(filepath.Join(dir, ".vault_params")); err != nil {
-		t.Fatalf("expected .vault_params to exist after migration")
+	if loaded != nil {
+		t.Fatalf("expected nil params for missing file")
 	}
 }
 
 func TestNeedsRehash(t *testing.T) {
-	current := RootKDFParams{
+	current := VaultParams{
 		Salt:     bytes.Repeat([]byte{0x01}, 32),
 		Time:     RecommendedTime,
 		MemoryKB: RecommendedMemory,
@@ -327,17 +181,15 @@ func TestHashVaultParams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HashVaultParams error: %v", err)
 	}
-	if len(h1) != 64 { // hex-encoded SHA-256 = 64 chars
+	if len(h1) != 64 {
 		t.Fatalf("expected 64-char hex hash, got %d", len(h1))
 	}
 
-	// Deterministic.
 	h2, _ := HashVaultParams(p)
 	if h1 != h2 {
 		t.Fatalf("expected deterministic hash")
 	}
 
-	// Different params → different hash.
 	p.Time = 8
 	h3, _ := HashVaultParams(p)
 	if h1 == h3 {
@@ -353,18 +205,15 @@ func TestHashMatchesDiskBytes(t *testing.T) {
 		KDF: "argon2id", Cipher: "aes-256-gcm",
 	}
 
-	// Write to disk.
 	if err := SaveVaultParams(dir, p); err != nil {
 		t.Fatalf("SaveVaultParams error: %v", err)
 	}
 
-	// Read raw bytes from disk.
 	diskBytes, err := os.ReadFile(filepath.Join(dir, ".vault_params"))
 	if err != nil {
 		t.Fatalf("ReadFile error: %v", err)
 	}
 
-	// Hash computed from struct must equal hash of disk bytes.
 	structHash, _ := HashVaultParams(p)
 	diskHash := HashVaultParamsBytes(diskBytes)
 	if structHash != diskHash {
@@ -372,31 +221,39 @@ func TestHashMatchesDiskBytes(t *testing.T) {
 	}
 }
 
-func TestEnsureSecretStoresHash(t *testing.T) {
-	dir := t.TempDir()
-	key := bytes.Repeat([]byte{0x55}, 32)
-	vp := VaultParams{
+// newTestVaultParams returns valid VaultParams for use in tests.
+func newTestVaultParams() VaultParams {
+	return VaultParams{
 		Version: 1, Salt: bytes.Repeat([]byte{0x22}, 32),
 		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
 		KDF: "argon2id", Cipher: "aes-256-gcm",
+		MasterKeyPurpose: "passbook:master:v1",
+		VaultKeyPurpose:  "passbook:vault:v1",
 	}
+}
 
-	// Write .vault_params to disk first (VerifyVaultParamsHash reads it).
+// setupTestSecret creates .vault_params and .secret in dir.
+func setupTestSecret(t *testing.T, dir string, key []byte, vp VaultParams) {
+	t.Helper()
 	if err := SaveVaultParams(dir, vp); err != nil {
 		t.Fatalf("SaveVaultParams error: %v", err)
 	}
-
-	_, err := EnsureSecret(dir, key, vp)
-	if err != nil {
+	if _, err := EnsureSecret(dir, key, vp); err != nil {
 		t.Fatalf("EnsureSecret error: %v", err)
 	}
+}
 
-	// Verification should pass — file on disk matches.
+func TestEnsureSecretStoresHash(t *testing.T) {
+	dir := t.TempDir()
+	key := bytes.Repeat([]byte{0x55}, 32)
+	vp := newTestVaultParams()
+
+	setupTestSecret(t, dir, key, vp)
+
 	if err := VerifyVaultParamsHash(dir, key); err != nil {
 		t.Fatalf("VerifyVaultParamsHash should pass: %v", err)
 	}
 
-	// Tamper with the file on disk.
 	tampered := vp
 	tampered.Time = 999
 	if err := SaveVaultParams(dir, tampered); err != nil {
@@ -407,72 +264,30 @@ func TestEnsureSecretStoresHash(t *testing.T) {
 	}
 }
 
-func TestVerifyVaultParamsHashSkipsOldVaults(t *testing.T) {
-	dir := t.TempDir()
-	key := bytes.Repeat([]byte{0x66}, 32)
-
-	// Create a .secret without a hash (simulates old vault).
-	_, err := EnsureKDFSecret(dir, key)
-	if err != nil {
-		t.Fatalf("EnsureKDFSecret error: %v", err)
-	}
-
-	vp := VaultParams{
-		Version: 1, Salt: bytes.Repeat([]byte{0x33}, 32),
-		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
-	}
-
-	// Write .vault_params so VerifyVaultParamsHash can read it.
-	if err := SaveVaultParams(dir, vp); err != nil {
-		t.Fatalf("SaveVaultParams error: %v", err)
-	}
-
-	// Should pass — no hash field in old vault.
-	if err := VerifyVaultParamsHash(dir, key); err != nil {
-		t.Fatalf("expected nil error for old vault without hash, got: %v", err)
-	}
-}
-
 func TestSecretAADRejectsTamperedVaultParams(t *testing.T) {
 	dir := t.TempDir()
 	key := bytes.Repeat([]byte{0x88}, 32)
-	vp := VaultParams{
-		Version: 1, Salt: bytes.Repeat([]byte{0x44}, 32),
-		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
-		KDF: "argon2id", Cipher: "aes-256-gcm",
-	}
+	vp := newTestVaultParams()
 
-	// Write .vault_params first, then create .secret with AAD.
-	if err := SaveVaultParams(dir, vp); err != nil {
-		t.Fatalf("SaveVaultParams error: %v", err)
-	}
+	setupTestSecret(t, dir, key, vp)
 
-	hash, err := HashVaultParams(vp)
-	if err != nil {
-		t.Fatalf("HashVaultParams error: %v", err)
-	}
-	if err := writeKDFSecretAtomic(dir, KDFParams{}, key, hash); err != nil {
-		t.Fatalf("writeKDFSecretAtomic error: %v", err)
-	}
-
-	// Loading should succeed with correct .vault_params on disk.
 	if _, err := loadKDFSecret(dir, key); err != nil {
 		t.Fatalf("loadKDFSecret should succeed: %v", err)
 	}
 
-	// Tamper with .vault_params on disk → AAD mismatch → GCM auth fails.
 	tampered := vp
 	tampered.Time = 999
 	if err := SaveVaultParams(dir, tampered); err != nil {
 		t.Fatalf("SaveVaultParams (tampered) error: %v", err)
 	}
 
-	// loadKDFSecret falls back to nil AAD for legacy compat, so it still
-	// succeeds.  But VerifyVaultParamsHash catches the JSON-level mismatch.
-	// The GCM-level AAD check prevents forging a *new* .secret that
-	// validates against tampered params.
-	//
-	// For a direct GCM-level test, try decrypting with wrong AAD:
+	// AAD mismatch → GCM auth fails.
+	if _, err := loadKDFSecret(dir, key); err == nil {
+		t.Fatalf("expected loadKDFSecret to fail with tampered vault params")
+	}
+
+	// Direct GCM-level test.
+	hash, _ := HashVaultParams(vp)
 	secretBytes, _ := os.ReadFile(filepath.Join(dir, ".secret"))
 	wrongAAD := []byte(HashVaultParamsBytes([]byte(`{"tampered":true}`)))
 	correctAAD := []byte(hash)
@@ -485,7 +300,7 @@ func TestSecretAADRejectsTamperedVaultParams(t *testing.T) {
 }
 
 func TestDeriveRootKeyDeterministic(t *testing.T) {
-	p := RootKDFParams{
+	p := VaultParams{
 		Salt:     bytes.Repeat([]byte{0xAB}, 32),
 		Time:     RecommendedTime,
 		MemoryKB: RecommendedMemory,
@@ -505,7 +320,7 @@ func TestDeriveRootKeyDeterministic(t *testing.T) {
 		t.Fatalf("expected different key for different password")
 	}
 
-	p2 := RootKDFParams{
+	p2 := VaultParams{
 		Salt:     bytes.Repeat([]byte{0xCD}, 32),
 		Time:     RecommendedTime,
 		MemoryKB: RecommendedMemory,
@@ -536,7 +351,6 @@ func TestDeriveHKDFKey(t *testing.T) {
 		t.Fatalf("expected different keys for different purposes")
 	}
 
-	// Deterministic.
 	mk2, _ := DeriveHKDFKey(rootKey, masterKeyPurpose)
 	if !bytes.Equal(mk, mk2) {
 		t.Fatalf("expected deterministic HKDF output")
@@ -544,11 +358,13 @@ func TestDeriveHKDFKey(t *testing.T) {
 }
 
 func TestDeriveKeys(t *testing.T) {
-	p := RootKDFParams{
-		Salt:     bytes.Repeat([]byte{0x99}, 32),
-		Time:     RecommendedTime,
-		MemoryKB: RecommendedMemory,
-		Threads:  RecommendedThreads,
+	p := VaultParams{
+		Salt:             bytes.Repeat([]byte{0x99}, 32),
+		Time:             RecommendedTime,
+		MemoryKB:         RecommendedMemory,
+		Threads:          RecommendedThreads,
+		MasterKeyPurpose: "passbook:master:v1",
+		VaultKeyPurpose:  "passbook:vault:v1",
 	}
 	mk, vk, err := DeriveKeys("password", p)
 	if err != nil {
@@ -561,182 +377,27 @@ func TestDeriveKeys(t *testing.T) {
 		t.Fatalf("master and vault keys should differ")
 	}
 
-	// Deterministic.
 	mk2, vk2, _ := DeriveKeys("password", p)
 	if !bytes.Equal(mk, mk2) || !bytes.Equal(vk, vk2) {
 		t.Fatalf("expected deterministic key derivation")
 	}
 
-	// Different password → different keys.
 	mk3, _, _ := DeriveKeys("other", p)
 	if bytes.Equal(mk, mk3) {
 		t.Fatalf("expected different keys for different password")
 	}
 }
 
-func TestDeriveKeysUsesVaultParamsPurpose(t *testing.T) {
-	salt := bytes.Repeat([]byte{0xAA}, 32)
-
-	// Legacy vault: no purpose fields → falls back to "master"/"vault".
-	legacy := VaultParams{
-		Salt: salt, Time: RecommendedTime,
-		MemoryKB: RecommendedMemory, Threads: RecommendedThreads,
+func TestDeriveKeysRejectsEmptyPurpose(t *testing.T) {
+	p := VaultParams{
+		Salt:     bytes.Repeat([]byte{0x99}, 32),
+		Time:     RecommendedTime,
+		MemoryKB: RecommendedMemory,
+		Threads:  RecommendedThreads,
 	}
-	mkLegacy, vkLegacy, err := DeriveKeys("password", legacy)
-	if err != nil {
-		t.Fatalf("DeriveKeys (legacy) error: %v", err)
-	}
-
-	// New vault: explicit purpose fields.
-	newVault := VaultParams{
-		Salt: salt, Time: RecommendedTime,
-		MemoryKB: RecommendedMemory, Threads: RecommendedThreads,
-		MasterKeyPurpose: "passbook:master:v1",
-		VaultKeyPurpose:  "passbook:vault:v1",
-	}
-	mkNew, vkNew, err := DeriveKeys("password", newVault)
-	if err != nil {
-		t.Fatalf("DeriveKeys (new) error: %v", err)
-	}
-
-	// Same salt+password but different purposes → different keys.
-	if bytes.Equal(mkLegacy, mkNew) {
-		t.Fatalf("legacy and new master keys should differ due to different purposes")
-	}
-	if bytes.Equal(vkLegacy, vkNew) {
-		t.Fatalf("legacy and new vault keys should differ due to different purposes")
-	}
-
-	// Deterministic: same params → same keys.
-	mkNew2, vkNew2, _ := DeriveKeys("password", newVault)
-	if !bytes.Equal(mkNew, mkNew2) || !bytes.Equal(vkNew, vkNew2) {
-		t.Fatalf("expected deterministic derivation with explicit purposes")
-	}
-}
-
-func TestNeedsPurposeMigration(t *testing.T) {
-	// Legacy params (no purpose) → needs migration.
-	legacy := VaultParams{
-		Version: 1, Salt: bytes.Repeat([]byte{0x11}, 32),
-		Time: RecommendedTime, MemoryKB: RecommendedMemory, Threads: RecommendedThreads,
-	}
-	if !legacy.NeedsPurposeMigration() {
-		t.Fatalf("expected legacy params to need purpose migration")
-	}
-
-	// Only master set → still needs migration.
-	partial := legacy
-	partial.MasterKeyPurpose = "passbook:master:v1"
-	if !partial.NeedsPurposeMigration() {
-		t.Fatalf("expected partial params to need purpose migration")
-	}
-
-	// Both set → no migration needed.
-	full := legacy
-	full.MasterKeyPurpose = "passbook:master:v1"
-	full.VaultKeyPurpose = "passbook:vault:v1"
-	if full.NeedsPurposeMigration() {
-		t.Fatalf("expected full params to NOT need purpose migration")
-	}
-}
-
-func TestMigrateVaultPurpose(t *testing.T) {
-	dir := t.TempDir()
-	password := "testpassword"
-
-	// Set up a vault with legacy purpose strings (empty).
-	legacyParams := VaultParams{
-		Version: 1, Salt: bytes.Repeat([]byte{0xBB}, 32),
-		Time: RecommendedTime, MemoryKB: RecommendedMemory, Threads: RecommendedThreads,
-		KDF: "argon2id", Cipher: "aes-256-gcm",
-	}
-
-	// Derive keys with legacy purposes and create the vault.
-	legacyMasterKey, legacyVaultKey, err := DeriveKeys(password, legacyParams)
-	if err != nil {
-		t.Fatalf("DeriveKeys error: %v", err)
-	}
-
-	// Save vault params and create .secret.
-	if err := SaveVaultParams(dir, legacyParams); err != nil {
-		t.Fatalf("SaveVaultParams error: %v", err)
-	}
-	if _, err := EnsureSecret(dir, legacyMasterKey, legacyParams); err != nil {
-		t.Fatalf("EnsureSecret error: %v", err)
-	}
-
-	// Write a dummy entry to verify re-encryption.
-	loginsDir := filepath.Join(dir, "logins")
-	if err := os.MkdirAll(loginsDir, 0700); err != nil {
-		t.Fatalf("MkdirAll error: %v", err)
-	}
-	plaintext := []byte("test-entry-data")
-	enc, err := Encrypt(legacyVaultKey, plaintext)
-	if err != nil {
-		t.Fatalf("Encrypt error: %v", err)
-	}
-	entryPath := filepath.Join(loginsDir, "test.pb")
-	if err := os.WriteFile(entryPath, enc, 0600); err != nil {
-		t.Fatalf("WriteFile error: %v", err)
-	}
-
-	WipeBytes(legacyMasterKey)
-	WipeBytes(legacyVaultKey)
-
-	// Confirm it needs migration.
-	if !legacyParams.NeedsPurposeMigration() {
-		t.Fatalf("expected legacy params to need purpose migration")
-	}
-
-	// Run the migration.
-	newParams, err := MigrateVaultPurpose(dir, password, legacyParams)
-	if err != nil {
-		t.Fatalf("MigrateVaultPurpose error: %v", err)
-	}
-
-	// Verify new params have the new purpose strings.
-	if newParams.MasterKeyPurpose != "passbook:master:v1" {
-		t.Fatalf("expected MasterKeyPurpose=passbook:master:v1, got %s", newParams.MasterKeyPurpose)
-	}
-	if newParams.VaultKeyPurpose != "passbook:vault:v1" {
-		t.Fatalf("expected VaultKeyPurpose=passbook:vault:v1, got %s", newParams.VaultKeyPurpose)
-	}
-	if newParams.NeedsPurposeMigration() {
-		t.Fatalf("expected migrated params to NOT need purpose migration")
-	}
-
-	// Verify new keys can decrypt the .secret.
-	newMasterKey, newVaultKey, err := DeriveKeys(password, *newParams)
-	if err != nil {
-		t.Fatalf("DeriveKeys (new) error: %v", err)
-	}
-	defer WipeBytes(newMasterKey)
-	defer WipeBytes(newVaultKey)
-
-	if _, err := loadKDFSecret(dir, newMasterKey); err != nil {
-		t.Fatalf("new master key cannot decrypt .secret: %v", err)
-	}
-
-	// Verify new vault key can decrypt the re-encrypted entry.
-	encData, err := os.ReadFile(entryPath)
-	if err != nil {
-		t.Fatalf("ReadFile error: %v", err)
-	}
-	decrypted, err := Decrypt(newVaultKey, encData)
-	if err != nil {
-		t.Fatalf("new vault key cannot decrypt entry: %v", err)
-	}
-	if !bytes.Equal(decrypted, plaintext) {
-		t.Fatalf("decrypted data mismatch: got %q, want %q", decrypted, plaintext)
-	}
-
-	// Verify vault params on disk have been updated.
-	diskParams, err := LoadVaultParams(dir)
-	if err != nil {
-		t.Fatalf("LoadVaultParams error: %v", err)
-	}
-	if diskParams.MasterKeyPurpose != "passbook:master:v1" || diskParams.VaultKeyPurpose != "passbook:vault:v1" {
-		t.Fatalf("disk params not updated: mk=%s vk=%s", diskParams.MasterKeyPurpose, diskParams.VaultKeyPurpose)
+	_, _, err := DeriveKeys("password", p)
+	if err == nil {
+		t.Fatalf("expected error for empty purpose strings")
 	}
 }
 
@@ -832,13 +493,11 @@ func TestEncryptAES256GCMWithAAD(t *testing.T) {
 	plaintext := []byte("authenticated data test")
 	aad := []byte("vault-params-hash-hex")
 
-	// Encrypt with AAD.
 	ciphertext, err := EncryptAES256GCM(plaintext, key, aad)
 	if err != nil {
 		t.Fatalf("EncryptAES256GCM with AAD error: %v", err)
 	}
 
-	// Decrypt with correct AAD succeeds.
 	got, err := DecryptAES256GCM(ciphertext, key, aad)
 	if err != nil {
 		t.Fatalf("DecryptAES256GCM with AAD error: %v", err)
@@ -847,12 +506,10 @@ func TestEncryptAES256GCMWithAAD(t *testing.T) {
 		t.Fatalf("plaintext mismatch")
 	}
 
-	// Decrypt with wrong AAD fails.
 	if _, err := DecryptAES256GCM(ciphertext, key, []byte("wrong-aad")); err == nil {
 		t.Fatalf("expected error when decrypting with wrong AAD")
 	}
 
-	// Decrypt with nil AAD fails (AAD was non-nil during encrypt).
 	if _, err := DecryptAES256GCM(ciphertext, key, nil); err == nil {
 		t.Fatalf("expected error when decrypting with nil AAD (was encrypted with AAD)")
 	}
@@ -866,86 +523,47 @@ func TestDecryptAES256GCMRejectsShortCiphertext(t *testing.T) {
 	}
 }
 
-func TestEnsureKDFSecretPersists(t *testing.T) {
+func TestEnsureSecretPersists(t *testing.T) {
 	dir := t.TempDir()
 	key := bytes.Repeat([]byte{0x55}, 32)
+	vp := newTestVaultParams()
 
-	p1, err := EnsureKDFSecret(dir, key)
+	setupTestSecret(t, dir, key, vp)
+
+	p1, err := loadKDFSecret(dir, key)
 	if err != nil {
-		t.Fatalf("EnsureKDFSecret error: %v", err)
+		t.Fatalf("loadKDFSecret error: %v", err)
 	}
 	if len(p1.Salt) != 16 {
 		t.Fatalf("expected 16-byte salt, got %d", len(p1.Salt))
 	}
 
-	p2, err := EnsureKDFSecret(dir, key)
+	p2, err := loadKDFSecret(dir, key)
 	if err != nil {
-		t.Fatalf("EnsureKDFSecret second call error: %v", err)
+		t.Fatalf("loadKDFSecret second call error: %v", err)
 	}
 	if !bytes.Equal(p1.Salt, p2.Salt) || p1.Time != p2.Time || p1.MemoryKB != p2.MemoryKB || p1.Threads != p2.Threads {
 		t.Fatalf("expected stable KDF params across calls")
 	}
 
-	secretFile := filepath.Join(dir, ".secret")
-	if _, err := os.Stat(secretFile); err != nil {
+	sf := filepath.Join(dir, ".secret")
+	if _, err := os.Stat(sf); err != nil {
 		t.Fatalf("expected secret file to exist: %v", err)
-	}
-}
-
-func TestDeriveKeyLength(t *testing.T) {
-	p := KDFParams{
-		Salt:     []byte("0123456789abcdef"),
-		Time:     2,
-		MemoryKB: 32 * 1024,
-		Threads:  1,
-	}
-	k := DeriveKey("password", p)
-	if len(k) != 32 {
-		t.Fatalf("expected 32-byte key, got %d", len(k))
-	}
-}
-
-func TestDeriveMasterKeyLength(t *testing.T) {
-	k := DeriveMasterKey("master")
-	if len(k) != 32 {
-		t.Fatalf("expected 32-byte master key, got %d", len(k))
-	}
-}
-
-func TestEncryptRejectsBadKeyLength(t *testing.T) {
-	_, err := Encrypt([]byte("short"), []byte("data"))
-	if err == nil {
-		t.Fatalf("expected error for invalid key length")
-	}
-}
-
-func TestDecryptRejectsBadKeyLength(t *testing.T) {
-	_, err := Decrypt([]byte("short"), []byte("cipher"))
-	if err == nil {
-		t.Fatalf("expected error for invalid key length")
-	}
-}
-
-func TestEnsureKDFSecretRejectsInvalidSecretFile(t *testing.T) {
-	dir := t.TempDir()
-	key := bytes.Repeat([]byte{0x66}, 32)
-
-	if err := os.WriteFile(filepath.Join(dir, ".secret"), []byte("not-json"), 0600); err != nil {
-		t.Fatalf("setup error: %v", err)
-	}
-
-	_, err := loadKDFSecret(dir, key)
-	if err == nil {
-		t.Fatalf("expected loadKDFSecret to fail on invalid data")
 	}
 }
 
 func TestWriteKDFSecretAtomicCreatesValidSecret(t *testing.T) {
 	dir := t.TempDir()
 	key := bytes.Repeat([]byte{0x77}, 32)
+	vp := newTestVaultParams()
+
+	if err := SaveVaultParams(dir, vp); err != nil {
+		t.Fatalf("SaveVaultParams error: %v", err)
+	}
+	hash, _ := HashVaultParams(vp)
 
 	p := KDFParams{Salt: bytes.Repeat([]byte{0x01}, 16), Time: 1, MemoryKB: 64, Threads: 1}
-	if err := writeKDFSecretAtomic(dir, p, key, ""); err != nil {
+	if err := writeKDFSecretAtomic(dir, p, key, hash); err != nil {
 		t.Fatalf("writeKDFSecretAtomic error: %v", err)
 	}
 
@@ -963,6 +581,34 @@ func TestEnsureKDFParamsDefaults(t *testing.T) {
 	ensureKDFParams(&p)
 	if p.Time == 0 || p.MemoryKB == 0 || p.Threads == 0 {
 		t.Fatalf("expected defaults to be applied")
+	}
+}
+
+func TestEncryptRejectsBadKeyLength(t *testing.T) {
+	_, err := Encrypt([]byte("short"), []byte("data"))
+	if err == nil {
+		t.Fatalf("expected error for invalid key length")
+	}
+}
+
+func TestDecryptRejectsBadKeyLength(t *testing.T) {
+	_, err := Decrypt([]byte("short"), []byte("cipher"))
+	if err == nil {
+		t.Fatalf("expected error for invalid key length")
+	}
+}
+
+func TestLoadKDFSecretRejectsInvalidSecretFile(t *testing.T) {
+	dir := t.TempDir()
+	key := bytes.Repeat([]byte{0x66}, 32)
+
+	if err := os.WriteFile(filepath.Join(dir, ".secret"), []byte("not-json"), 0600); err != nil {
+		t.Fatalf("setup error: %v", err)
+	}
+
+	_, err := loadKDFSecret(dir, key)
+	if err == nil {
+		t.Fatalf("expected loadKDFSecret to fail on invalid data")
 	}
 }
 
@@ -1024,27 +670,21 @@ func TestDecryptAES256GCMFailsWithTamperedCiphertext(t *testing.T) {
 
 func TestReKeyVaultWritesNewSecret(t *testing.T) {
 	dir := t.TempDir()
-	oldMasterKey := bytes.Repeat([]byte{0xAA}, 32)
-	newMasterKey := bytes.Repeat([]byte{0xBB}, 32)
+	key := bytes.Repeat([]byte{0xAA}, 32)
+	newKey := bytes.Repeat([]byte{0xBB}, 32)
+	vp := newTestVaultParams()
 
-	// Create initial secret.
-	_, err := EnsureKDFSecret(dir, oldMasterKey)
-	if err != nil {
-		t.Fatalf("EnsureKDFSecret error: %v", err)
-	}
+	setupTestSecret(t, dir, key, vp)
 
-	// Re-key vault (writes new .secret).
-	if err := ReKeyVault(dir, newMasterKey); err != nil {
+	if err := ReKeyVault(dir, newKey); err != nil {
 		t.Fatalf("ReKeyVault error: %v", err)
 	}
 
-	// Old master key should no longer work.
-	if _, err := loadKDFSecret(dir, oldMasterKey); err == nil {
+	if _, err := loadKDFSecret(dir, key); err == nil {
 		t.Fatalf("expected old master key to fail after re-key")
 	}
 
-	// New master key should work.
-	p, err := loadKDFSecret(dir, newMasterKey)
+	p, err := loadKDFSecret(dir, newKey)
 	if err != nil {
 		t.Fatalf("expected new master key to work: %v", err)
 	}
@@ -1058,7 +698,6 @@ func TestReKeyEntriesReEncryptsFiles(t *testing.T) {
 	oldKey := bytes.Repeat([]byte{0xCC}, 32)
 	newKey := bytes.Repeat([]byte{0xDD}, 32)
 
-	// Create a category directory with an encrypted .pb file.
 	loginsDir := filepath.Join(dir, "logins")
 	if err := os.MkdirAll(loginsDir, 0700); err != nil {
 		t.Fatalf("MkdirAll error: %v", err)
@@ -1073,7 +712,6 @@ func TestReKeyEntriesReEncryptsFiles(t *testing.T) {
 		t.Fatalf("WriteFile error: %v", err)
 	}
 
-	// Create an attachment directory with an encrypted file.
 	attDir := filepath.Join(dir, "_attachments")
 	if err := os.MkdirAll(attDir, 0700); err != nil {
 		t.Fatalf("MkdirAll error: %v", err)
@@ -1088,18 +726,15 @@ func TestReKeyEntriesReEncryptsFiles(t *testing.T) {
 		t.Fatalf("WriteFile error: %v", err)
 	}
 
-	// Re-key entries.
 	if err := ReKeyEntries(dir, oldKey, newKey); err != nil {
 		t.Fatalf("ReKeyEntries error: %v", err)
 	}
 
-	// Old key should no longer decrypt the entry.
 	data, _ := os.ReadFile(entryPath)
 	if _, err := Decrypt(oldKey, data); err == nil {
 		t.Fatalf("expected old key to fail after re-key")
 	}
 
-	// New key should decrypt the entry.
 	got, err := Decrypt(newKey, data)
 	if err != nil {
 		t.Fatalf("Decrypt with new key error: %v", err)
@@ -1108,7 +743,6 @@ func TestReKeyEntriesReEncryptsFiles(t *testing.T) {
 		t.Fatalf("plaintext mismatch after re-key")
 	}
 
-	// New key should decrypt the attachment.
 	attData, err := os.ReadFile(attPath)
 	if err != nil {
 		t.Fatalf("ReadFile error: %v", err)
@@ -1127,7 +761,6 @@ func TestReKeyEntriesSkipsMissingDirs(t *testing.T) {
 	oldKey := bytes.Repeat([]byte{0xEE}, 32)
 	newKey := bytes.Repeat([]byte{0xFF}, 32)
 
-	// Should succeed even with no category directories.
 	if err := ReKeyEntries(dir, oldKey, newKey); err != nil {
 		t.Fatalf("ReKeyEntries error on empty vault: %v", err)
 	}
@@ -1159,7 +792,6 @@ func TestComputeCommitTagDeterministic(t *testing.T) {
 	if tag1 != tag2 {
 		t.Fatalf("expected deterministic commit tag")
 	}
-	// Tag should be a 64-char hex string (HMAC-SHA256).
 	if len(tag1) != 64 {
 		t.Fatalf("expected 64-char hex tag, got %d", len(tag1))
 	}
@@ -1190,17 +822,22 @@ func TestComputeCommitTagDiffersForDiffNonces(t *testing.T) {
 func TestWriteKDFSecretAtomicStoresCommitTag(t *testing.T) {
 	dir := t.TempDir()
 	key := bytes.Repeat([]byte{0xCC}, 32)
+	vp := newTestVaultParams()
 
-	if err := writeKDFSecretAtomic(dir, KDFParams{}, key, ""); err != nil {
+	if err := SaveVaultParams(dir, vp); err != nil {
+		t.Fatalf("SaveVaultParams error: %v", err)
+	}
+	hash, _ := HashVaultParams(vp)
+
+	if err := writeKDFSecretAtomic(dir, KDFParams{}, key, hash); err != nil {
 		t.Fatalf("writeKDFSecretAtomic error: %v", err)
 	}
 
-	// Read and decrypt .secret to inspect the commit nonce and tag.
 	b, err := os.ReadFile(secretPath(dir))
 	if err != nil {
 		t.Fatalf("ReadFile error: %v", err)
 	}
-	plaintext, err := DecryptAES256GCM(b, key, nil)
+	plaintext, err := DecryptAES256GCM(b, key, []byte(hash))
 	if err != nil {
 		t.Fatalf("DecryptAES256GCM error: %v", err)
 	}
@@ -1223,10 +860,9 @@ func TestWriteKDFSecretAtomicStoresCommitTag(t *testing.T) {
 func TestVerifyCommitTagCorrectKey(t *testing.T) {
 	dir := t.TempDir()
 	key := bytes.Repeat([]byte{0xDD}, 32)
+	vp := newTestVaultParams()
 
-	if err := writeKDFSecretAtomic(dir, KDFParams{}, key, ""); err != nil {
-		t.Fatalf("writeKDFSecretAtomic error: %v", err)
-	}
+	setupTestSecret(t, dir, key, vp)
 
 	if err := VerifyCommitTag(dir, key); err != nil {
 		t.Fatalf("VerifyCommitTag should pass with correct key: %v", err)
@@ -1237,13 +873,10 @@ func TestVerifyCommitTagWrongKey(t *testing.T) {
 	dir := t.TempDir()
 	key := bytes.Repeat([]byte{0xDD}, 32)
 	wrongKey := bytes.Repeat([]byte{0xEE}, 32)
+	vp := newTestVaultParams()
 
-	if err := writeKDFSecretAtomic(dir, KDFParams{}, key, ""); err != nil {
-		t.Fatalf("writeKDFSecretAtomic error: %v", err)
-	}
+	setupTestSecret(t, dir, key, vp)
 
-	// Wrong key can't decrypt .secret at all (GCM auth failure),
-	// so VerifyCommitTag returns an error (not necessarily ErrWrongPassword).
 	err := VerifyCommitTag(dir, wrongKey)
 	if err == nil {
 		t.Fatalf("expected error when verifying commit tag with wrong key")
@@ -1253,46 +886,12 @@ func TestVerifyCommitTagWrongKey(t *testing.T) {
 func TestLoadKDFSecretRejectsWrongKeyViaCommitTag(t *testing.T) {
 	dir := t.TempDir()
 	key := bytes.Repeat([]byte{0xFF}, 32)
+	vp := newTestVaultParams()
 
-	// Create .secret with commit tag.
-	if err := writeKDFSecretAtomic(dir, KDFParams{}, key, ""); err != nil {
-		t.Fatalf("writeKDFSecretAtomic error: %v", err)
-	}
+	setupTestSecret(t, dir, key, vp)
 
-	// Correct key should work.
 	if _, err := loadKDFSecret(dir, key); err != nil {
 		t.Fatalf("loadKDFSecret should succeed with correct key: %v", err)
-	}
-}
-
-func TestVerifyCommitTagSkipsOldVaults(t *testing.T) {
-	dir := t.TempDir()
-	key := bytes.Repeat([]byte{0x11}, 32)
-
-	// Simulate an old vault: write .secret without a commit tag.
-	// We do this by manually creating the secret file without the tag.
-	sf := secretFile{
-		Version:  1,
-		Salt:     bytes.Repeat([]byte{0x01}, 16),
-		Time:     6,
-		MemoryKB: 256 * 1024,
-		Threads:  4,
-		KeyLen:   32,
-		KDF:      "argon2id",
-		// CommitTag intentionally empty — old vault.
-	}
-	b, _ := json.MarshalIndent(sf, "", "  ")
-	ciphertext, err := EncryptAES256GCM(b, key, nil)
-	if err != nil {
-		t.Fatalf("EncryptAES256GCM error: %v", err)
-	}
-	if err := os.WriteFile(secretPath(dir), ciphertext, 0600); err != nil {
-		t.Fatalf("WriteFile error: %v", err)
-	}
-
-	// Should pass — no commit tag in old vault.
-	if err := VerifyCommitTag(dir, key); err != nil {
-		t.Fatalf("expected nil error for old vault without commit tag, got: %v", err)
 	}
 }
 
@@ -1302,104 +901,5 @@ func TestErrWrongPasswordSentinel(t *testing.T) {
 	}
 	if ErrWrongPassword.Error() != "wrong master password" {
 		t.Fatalf("unexpected error message: %s", ErrWrongPassword.Error())
-	}
-}
-
-func TestEnsureSecretMigratesCommitTag(t *testing.T) {
-	dir := t.TempDir()
-	key := bytes.Repeat([]byte{0x99}, 32)
-	vp := VaultParams{
-		Version: 1, Salt: bytes.Repeat([]byte{0x99}, 32),
-		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
-		KDF: "argon2id", Cipher: "aes-256-gcm",
-	}
-
-	// Write .vault_params to disk.
-	if err := SaveVaultParams(dir, vp); err != nil {
-		t.Fatalf("SaveVaultParams error: %v", err)
-	}
-
-	// Simulate an old .secret without commit tag/nonce.
-	sf := secretFile{
-		Version:  1,
-		Salt:     bytes.Repeat([]byte{0x02}, 16),
-		Time:     6,
-		MemoryKB: 256 * 1024,
-		Threads:  4,
-		KeyLen:   32,
-		KDF:      "argon2id",
-	}
-	b, _ := json.MarshalIndent(sf, "", "  ")
-	hash, _ := HashVaultParams(vp)
-	ciphertext, err := EncryptAES256GCM(b, key, []byte(hash))
-	if err != nil {
-		t.Fatalf("EncryptAES256GCM error: %v", err)
-	}
-	if err := os.WriteFile(secretPath(dir), ciphertext, 0600); err != nil {
-		t.Fatalf("WriteFile error: %v", err)
-	}
-
-	// Confirm no commit tag before migration.
-	if secretHasCommitTag(dir, key) {
-		t.Fatalf("expected no commit tag before migration")
-	}
-
-	// EnsureSecret should auto-migrate by rewriting .secret with a commit tag.
-	if _, err := EnsureSecret(dir, key, vp); err != nil {
-		t.Fatalf("EnsureSecret error: %v", err)
-	}
-
-	// Now the commit tag should be present.
-	if !secretHasCommitTag(dir, key) {
-		t.Fatalf("expected commit tag after EnsureSecret migration")
-	}
-
-	// VerifyCommitTag should pass with the correct key.
-	if err := VerifyCommitTag(dir, key); err != nil {
-		t.Fatalf("VerifyCommitTag should pass after migration: %v", err)
-	}
-}
-
-func TestEnsureKDFSecretMigratesCommitTag(t *testing.T) {
-	dir := t.TempDir()
-	key := bytes.Repeat([]byte{0xAA}, 32)
-
-	// Simulate an old .secret without commit tag/nonce.
-	sf := secretFile{
-		Version:  1,
-		Salt:     bytes.Repeat([]byte{0x03}, 16),
-		Time:     6,
-		MemoryKB: 256 * 1024,
-		Threads:  4,
-		KeyLen:   32,
-		KDF:      "argon2id",
-	}
-	b, _ := json.MarshalIndent(sf, "", "  ")
-	ciphertext, err := EncryptAES256GCM(b, key, nil)
-	if err != nil {
-		t.Fatalf("EncryptAES256GCM error: %v", err)
-	}
-	if err := os.WriteFile(secretPath(dir), ciphertext, 0600); err != nil {
-		t.Fatalf("WriteFile error: %v", err)
-	}
-
-	// Confirm no commit tag before migration.
-	if secretHasCommitTag(dir, key) {
-		t.Fatalf("expected no commit tag before migration")
-	}
-
-	// EnsureKDFSecret should auto-migrate.
-	if _, err := EnsureKDFSecret(dir, key); err != nil {
-		t.Fatalf("EnsureKDFSecret error: %v", err)
-	}
-
-	// Now the commit tag should be present.
-	if !secretHasCommitTag(dir, key) {
-		t.Fatalf("expected commit tag after EnsureKDFSecret migration")
-	}
-
-	// VerifyCommitTag should pass with the correct key.
-	if err := VerifyCommitTag(dir, key); err != nil {
-		t.Fatalf("VerifyCommitTag should pass after migration: %v", err)
 	}
 }

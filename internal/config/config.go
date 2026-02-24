@@ -8,8 +8,7 @@ import (
 )
 
 type AppConfig struct {
-	DataDir    string `json:"data_dir"`
-	IsMigrated bool   `json:"is_migrated"`
+	DataDir string `json:"data_dir"`
 }
 
 func ExpandPath(path string) string {
@@ -33,7 +32,6 @@ func LoadOrInit() AppConfig {
 		var loaded AppConfig
 		if json.Unmarshal(data, &loaded) == nil && loaded.DataDir != "" {
 			cfg.DataDir = loaded.DataDir
-			cfg.IsMigrated = loaded.IsMigrated
 		}
 	}
 

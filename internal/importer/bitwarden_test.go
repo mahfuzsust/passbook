@@ -18,10 +18,21 @@ func setupTestVault(t *testing.T, password string) (string, config.AppConfig) {
 	dir := t.TempDir()
 	cfg := config.AppConfig{DataDir: dir}
 
-	masterKey := crypto.DeriveMasterKey(password)
-	if _, err := crypto.EnsureKDFSecret(dir, masterKey); err != nil {
-		t.Fatalf("EnsureKDFSecret: %v", err)
+	vp, err := crypto.DefaultVaultParams()
+	if err != nil {
+		t.Fatalf("DefaultVaultParams: %v", err)
 	}
+	masterKey, _, err := crypto.DeriveKeys(password, vp)
+	if err != nil {
+		t.Fatalf("DeriveKeys: %v", err)
+	}
+	if err := crypto.SaveVaultParams(dir, vp); err != nil {
+		t.Fatalf("SaveVaultParams: %v", err)
+	}
+	if _, err := crypto.EnsureSecret(dir, masterKey, vp); err != nil {
+		t.Fatalf("EnsureSecret: %v", err)
+	}
+	crypto.WipeBytes(masterKey)
 	return dir, cfg
 }
 
@@ -58,12 +69,15 @@ func decryptEntry(t *testing.T, path string, key []byte) *pb.Entry {
 
 func deriveTestKey(t *testing.T, dir, password string) []byte {
 	t.Helper()
-	masterKey := crypto.DeriveMasterKey(password)
-	kdf, err := crypto.EnsureKDFSecret(dir, masterKey)
-	if err != nil {
-		t.Fatalf("EnsureKDFSecret: %v", err)
+	vp, err := crypto.LoadVaultParams(dir)
+	if err != nil || vp == nil {
+		t.Fatalf("LoadVaultParams: %v", err)
 	}
-	return crypto.DeriveKey(password, kdf)
+	_, vaultKey, err := crypto.DeriveKeys(password, *vp)
+	if err != nil {
+		t.Fatalf("DeriveKeys: %v", err)
+	}
+	return vaultKey
 }
 
 func TestImportBitwardenLogin(t *testing.T) {
@@ -94,9 +108,7 @@ func TestImportBitwardenLogin(t *testing.T) {
 		t.Fatalf("expected entry file: %v", err)
 	}
 
-	masterKey := crypto.DeriveMasterKey(password)
-	kdf, _ := crypto.EnsureKDFSecret(dir, masterKey)
-	key := crypto.DeriveKey(password, kdf)
+	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
 	if entry.Type != "Login" {
@@ -146,9 +158,7 @@ func TestImportBitwardenPasswordHistory(t *testing.T) {
 	}
 
 	entryPath := filepath.Join(dir, "logins", "WithHistory.pb")
-	masterKey := crypto.DeriveMasterKey(password)
-	kdf, _ := crypto.EnsureKDFSecret(dir, masterKey)
-	key := crypto.DeriveKey(password, kdf)
+	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
 	if len(entry.History) != 2 {
@@ -188,9 +198,7 @@ func TestImportBitwardenCard(t *testing.T) {
 	}
 
 	entryPath := filepath.Join(dir, "cards", "Visa.pb")
-	masterKey := crypto.DeriveMasterKey(password)
-	kdf, _ := crypto.EnsureKDFSecret(dir, masterKey)
-	key := crypto.DeriveKey(password, kdf)
+	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
 	if entry.Type != "Card" {
@@ -224,9 +232,7 @@ func TestImportBitwardenNote(t *testing.T) {
 	}
 
 	entryPath := filepath.Join(dir, "notes", "Secret Note.pb")
-	masterKey := crypto.DeriveMasterKey(password)
-	kdf, _ := crypto.EnsureKDFSecret(dir, masterKey)
-	key := crypto.DeriveKey(password, kdf)
+	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
 	if entry.Type != "Note" {
@@ -292,9 +298,7 @@ func TestImportBitwardenCustomFields(t *testing.T) {
 	}
 
 	entryPath := filepath.Join(dir, "logins", "WithFields.pb")
-	masterKey := crypto.DeriveMasterKey(password)
-	kdf, _ := crypto.EnsureKDFSecret(dir, masterKey)
-	key := crypto.DeriveKey(password, kdf)
+	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
 	if entry.CustomText == "" || !contains(entry.CustomText, "API Key: abc123") {

@@ -19,7 +19,6 @@ var (
 
 	uiCfg     config.AppConfig
 	uiDataDir string
-	uiKDF     crypto.KDFParams
 
 	uiMasterKey []byte
 )
