@@ -20,3 +20,13 @@ tasks:
     cmds:
       - rm -f entry.pb.go
       - protoc --proto_path=. --go_out=. --go_opt=paths=source_relative entry.proto
+
+  build:
+    desc: Build the passbook binary
+    cmds:
+      - go build -o passbook ./cmd/passbook
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...

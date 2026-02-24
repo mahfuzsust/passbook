@@ -91,16 +91,16 @@ func TestPasswordStrengthEmpty(t *testing.T) {
 }
 
 func TestPasswordStrengthWeak(t *testing.T) {
-	score, level, _ := PasswordStrength("abc")
+	score, level, _ := PasswordStrength("aaa")
 	if level != StrengthWeak {
-		t.Fatalf("expected Weak for 'abc', got level=%d score=%d", level, score)
+		t.Fatalf("expected Weak for 'aaa', got level=%d score=%d", level, score)
 	}
 }
 
 func TestPasswordStrengthFair(t *testing.T) {
-	score, level, _ := PasswordStrength("Hello123")
+	score, level, _ := PasswordStrength("abcd12")
 	if level != StrengthFair {
-		t.Fatalf("expected Fair for 'Hello123', got level=%d score=%d", level, score)
+		t.Fatalf("expected Fair for 'abcd12', got level=%d score=%d", level, score)
 	}
 }
 

@@ -514,7 +514,7 @@ func TestDeriveRootKeyDeterministic(t *testing.T) {
 func TestDeriveHKDFKey(t *testing.T) {
 	rootKey := bytes.Repeat([]byte{0x42}, 32)
 
-	mk, err := DeriveHKDFKey(rootKey, "master")
+	mk, err := DeriveHKDFKey(rootKey, masterKeyPurpose)
 	if err != nil {
 		t.Fatalf("DeriveHKDFKey master error: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestDeriveHKDFKey(t *testing.T) {
 		t.Fatalf("expected 32-byte key, got %d", len(mk))
 	}
 
-	vk, err := DeriveHKDFKey(rootKey, "vault")
+	vk, err := DeriveHKDFKey(rootKey, vaultKeyPurpose)
 	if err != nil {
 		t.Fatalf("DeriveHKDFKey vault error: %v", err)
 	}
@@ -531,7 +531,7 @@ func TestDeriveHKDFKey(t *testing.T) {
 	}
 
 	// Deterministic.
-	mk2, _ := DeriveHKDFKey(rootKey, "master")
+	mk2, _ := DeriveHKDFKey(rootKey, masterKeyPurpose)
 	if !bytes.Equal(mk, mk2) {
 		t.Fatalf("expected deterministic HKDF output")
 	}

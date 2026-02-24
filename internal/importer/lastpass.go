@@ -16,7 +16,12 @@ func ImportLastPass(csvPath, masterPassword string, cfg config.AppConfig) error 
 	if err != nil {
 		return fmt.Errorf("opening file: %w", err)
 	}
-	defer f.Close()
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			return
+		}
+	}(f)
 
 	reader := csv.NewReader(f)
 	reader.LazyQuotes = true
@@ -27,7 +32,7 @@ func ImportLastPass(csvPath, masterPassword string, cfg config.AppConfig) error 
 	}
 
 	if len(records) < 2 {
-		return fmt.Errorf("CSV file is empty or has no data rows")
+		return nil
 	}
 
 	header := records[0]

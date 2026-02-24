@@ -45,6 +45,11 @@ type secretFile struct {
 	Reserved01      string `json:"reserved01,omitempty"`
 }
 
+const (
+	masterKeyPurpose = "passbook:master:v1"
+	vaultKeyPurpose  = "passbook:vault:v1"
+)
+
 // supportLegacy enables backward compatibility with vaults created before the
 // HKDF-based key hierarchy. Set to false and remove all code blocks marked
 // "--- BEGIN supportLegacy" / "--- END supportLegacy" once every user has migrated.
@@ -312,11 +317,11 @@ func DeriveHKDFKey(rootKey []byte, purpose string) ([]byte, error) {
 func DeriveKeys(password string, p VaultParams) (masterKey, vaultKey []byte, err error) {
 	rootKey := DeriveRootKey(password, p)
 	defer WipeBytes(rootKey)
-	masterKey, err = DeriveHKDFKey(rootKey, "master")
+	masterKey, err = DeriveHKDFKey(rootKey, masterKeyPurpose)
 	if err != nil {
 		return nil, nil, err
 	}
-	vaultKey, err = DeriveHKDFKey(rootKey, "vault")
+	vaultKey, err = DeriveHKDFKey(rootKey, vaultKeyPurpose)
 	if err != nil {
 		return nil, nil, err
 	}
