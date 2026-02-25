@@ -384,6 +384,23 @@ func secretPath(dataDir string) string {
 	return filepath.Join(dataDir, ".secret")
 }
 
+func SecretExists(dataDir string) bool {
+	_, err := os.Stat(secretPath(dataDir))
+	return err == nil
+}
+
+// VerifyMasterKey attempts to decrypt .secret with the given master key.
+// Returns nil on success, or an error if decryption fails (wrong password).
+func VerifyMasterKey(dataDir string, masterKey []byte) error {
+	b, err := os.ReadFile(secretPath(dataDir))
+	if err != nil {
+		return err
+	}
+	aad := vaultParamsAAD(dataDir)
+	_, err = DecryptAES256GCM(b, masterKey, aad)
+	return err
+}
+
 func vaultParamsAAD(dataDir string) []byte {
 	data, err := os.ReadFile(vaultParamsPath(dataDir))
 	if err != nil {
