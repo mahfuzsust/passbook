@@ -156,6 +156,7 @@ func refreshTree(filter string) {
 	addItemNodes(root, basePath, filter)
 
 	if uiCurrentPath == "" {
+		uiRightPages.SetTitle(" Keybindings ")
 		uiRightPages.SwitchToPage("empty")
 	}
 }
@@ -176,6 +177,7 @@ func loadEntry(path string) {
 		uiCurrentPath = path
 		uiShowSensitive = false
 		updateViewPane()
+		uiRightPages.SetTitle(" " + entryTypeIcon(ent.Type) + " " + ent.Title + " ")
 		uiRightPages.SwitchToPage("content")
 	}
 }

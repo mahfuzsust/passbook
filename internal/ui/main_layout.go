@@ -43,6 +43,7 @@ func setupMainLayout() {
 			uiCurrentFolder = path
 			uiCurrentPath = ""
 			uiCurrentEnt = nil
+			uiRightPages.SetTitle(" Keybindings ")
 			uiRightPages.SwitchToPage("empty")
 		}
 	})
