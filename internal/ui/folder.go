@@ -23,14 +23,20 @@ var (
 func isValidFolderName(name string) bool {
 	return name != "" &&
 		!strings.ContainsAny(name, `<>:"/\|?*`) &&
+		!strings.Contains(name, "/") &&
+		!strings.Contains(name, string(filepath.Separator)) &&
 		name != "." && name != ".." &&
 		!strings.HasPrefix(name, ".") &&
 		!strings.HasPrefix(name, "_")
 }
 
+func folderNameAcceptFunc(text string, ch rune) bool {
+	return !strings.ContainsRune(`<>:"/\|?*`, ch) && ch != '/'
+}
+
 func setupFolderCreate() {
 	uiFolderForm = tview.NewForm()
-	uiFolderForm.AddInputField("Folder Name", "", 0, nil, nil)
+	uiFolderForm.AddInputField("Folder Name", "", 0, folderNameAcceptFunc, nil)
 	uiFolderForm.AddButton("Create", func() {
 		nameField := uiFolderForm.GetFormItemByLabel("Folder Name").(*tview.InputField)
 		name := strings.TrimSpace(nameField.GetText())
@@ -80,7 +86,7 @@ func showFolderCreate() {
 
 func setupFolderRename() {
 	uiFolderRenameForm = tview.NewForm()
-	uiFolderRenameForm.AddInputField("Folder Name", "", 0, nil, nil)
+	uiFolderRenameForm.AddInputField("Folder Name", "", 0, folderNameAcceptFunc, nil)
 	uiFolderRenameForm.AddButton("Rename", doFolderRename)
 	uiFolderRenameForm.AddButton("Cancel", func() {
 		uiPages.SwitchToPage("main")
