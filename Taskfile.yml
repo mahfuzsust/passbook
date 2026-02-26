@@ -24,9 +24,16 @@ tasks:
   build:
     desc: Build the passbook binary
     cmds:
-      - go build -o passbook ./cmd/passbook
+      - go build -o bin/passbook ./cmd/passbook
 
   test:
     desc: Run all tests
     cmds:
       - go test ./...
+
+  run:
+    deps:
+      - build
+    desc: Run the passbook binary
+    cmds:
+      - ./bin/passbook

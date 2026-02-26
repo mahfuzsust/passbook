@@ -76,4 +76,5 @@ func setupUI() {
 	setupModals()
 	setupEditor()
 	setupChangePassword()
+	setupFolderCreate()
 }

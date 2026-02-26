@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"passbook/internal/config"
@@ -48,40 +49,111 @@ func selectTreePath(path string) {
 	}
 }
 
+func entryTypeIcon(t string) string {
+	switch EntryType(t) {
+	case TypeLogin:
+		return "🔐"
+	case TypeCard:
+		return "💳"
+	case TypeNote:
+		return "📝"
+	case TypeFile:
+		return "📎"
+	default:
+		return "📄"
+	}
+}
+
+func readEntryType(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	dec, err := crypto.Decrypt(uiMasterKey, data)
+	if err != nil {
+		return ""
+	}
+	ent, err := unmarshalEntry(dec)
+	if err != nil {
+		return ""
+	}
+	return ent.Type
+}
+
+func listFolders() []string {
+	basePath := config.ExpandPath(uiDataDir)
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		return nil
+	}
+	var folders []string
+	for _, e := range entries {
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && !strings.HasPrefix(e.Name(), "_") {
+			folders = append(folders, e.Name())
+		}
+	}
+	sort.Strings(folders)
+	return folders
+}
+
+func addItemNodes(parent *tview.TreeNode, dir string, filter string) int {
+	files, _ := os.ReadDir(dir)
+	count := 0
+	for _, f := range files {
+		if f.IsDir() || !strings.HasSuffix(f.Name(), ".pb") {
+			continue
+		}
+		name := strings.TrimSuffix(f.Name(), ".pb")
+		if filter != "" && !strings.Contains(strings.ToLower(name), strings.ToLower(filter)) {
+			continue
+		}
+		fullPath := filepath.Join(dir, f.Name())
+		icon := entryTypeIcon(readEntryType(fullPath))
+		child := tview.NewTreeNode(fmt.Sprintf("%s %s", icon, name)).
+			SetReference(fullPath).
+			SetSelectable(true)
+		parent.AddChild(child)
+		count++
+	}
+	return count
+}
+
 func refreshTree(filter string) {
 	root := uiTreeView.GetRoot()
 	root.ClearChildren()
 	basePath := config.ExpandPath(uiDataDir)
 
-	cats := []struct {
-		T EntryType
-		I string
-	}{{TypeLogin, "🔐"}, {TypeCard, "💳"}, {TypeNote, "📝"}, {TypeFile, "📎"}}
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		return
+	}
 
-	for _, c := range cats {
-		catNode := tview.NewTreeNode(fmt.Sprintf("%s %ss", c.I, c.T)).SetColor(tcell.ColorSkyblue).SetSelectable(true).SetExpanded(true)
-		dir := filepath.Join(basePath, strings.ToLower(string(c.T))+"s")
-		err := os.MkdirAll(dir, 0700)
-		if err != nil {
-			return
+	var folders []os.DirEntry
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+			continue
 		}
-		files, _ := os.ReadDir(dir)
-
-		count := 0
-		for _, f := range files {
-			if !f.IsDir() && strings.HasSuffix(f.Name(), ".pb") {
-				name := strings.TrimSuffix(f.Name(), ".pb")
-				if filter == "" || strings.Contains(strings.ToLower(name), strings.ToLower(filter)) {
-					child := tview.NewTreeNode(name).SetReference(filepath.Join(dir, f.Name())).SetSelectable(true)
-					catNode.AddChild(child)
-					count++
-				}
-			}
-		}
-		if count > 0 || filter == "" {
-			root.AddChild(catNode)
+		if e.IsDir() {
+			folders = append(folders, e)
 		}
 	}
+
+	for _, d := range folders {
+		folderPath := filepath.Join(basePath, d.Name())
+		folderNode := tview.NewTreeNode(fmt.Sprintf("📁 %s", d.Name())).
+			SetColor(tcell.ColorSkyblue).
+			SetSelectable(true).
+			SetExpanded(true)
+
+		count := addItemNodes(folderNode, folderPath, filter)
+		if count > 0 || filter == "" {
+			root.AddChild(folderNode)
+		}
+	}
+
+	addItemNodes(root, basePath, filter)
+
 	if uiCurrentPath == "" {
 		uiRightPages.SwitchToPage("empty")
 	}

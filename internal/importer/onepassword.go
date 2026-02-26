@@ -61,23 +61,22 @@ func Import1Password(jsonPath, masterPassword string, cfg config.AppConfig) erro
 	}
 
 	var entries []*pb.Entry
-	var subDirs, names []string
+	var names []string
 
 	for _, acct := range export.Accounts {
 		for _, vault := range acct.Vaults {
 			for _, item := range vault.Items {
-				entry, subDir := convert1PasswordItem(item)
+				entry := convert1PasswordItem(item)
 				entries = append(entries, entry)
-				subDirs = append(subDirs, subDir)
 				names = append(names, item.Title)
 			}
 		}
 	}
 
-	return saveEntries(entries, subDirs, names, masterPassword, cfg)
+	return saveEntries(entries, names, masterPassword, cfg)
 }
 
-func convert1PasswordItem(item onePasswordItem) (*pb.Entry, string) {
+func convert1PasswordItem(item onePasswordItem) *pb.Entry {
 	switch item.Category {
 	case "001": // Login
 		entry := &pb.Entry{
@@ -95,7 +94,6 @@ func convert1PasswordItem(item onePasswordItem) (*pb.Entry, string) {
 			}
 		}
 
-		// Look for TOTP in sections.
 		for _, sec := range item.Sections {
 			for _, f := range sec.Fields {
 				if f.Type == "OTP" || f.ID == "TOTP" || f.Name == "one-time password" {
@@ -110,7 +108,7 @@ func convert1PasswordItem(item onePasswordItem) (*pb.Entry, string) {
 
 		extra := collect1PasswordExtraFields(item)
 		entry.CustomText = appendNotes(entry.CustomText, formatCustomFields(extra))
-		return entry, "logins"
+		return entry
 
 	case "002": // Credit Card
 		entry := &pb.Entry{
@@ -132,7 +130,6 @@ func convert1PasswordItem(item onePasswordItem) (*pb.Entry, string) {
 				cardholder = f.Value
 			}
 		}
-		// Also check sections for card fields.
 		for _, sec := range item.Sections {
 			for _, f := range sec.Fields {
 				switch f.Name {
@@ -161,7 +158,7 @@ func convert1PasswordItem(item onePasswordItem) (*pb.Entry, string) {
 
 		extra := collect1PasswordExtraFields(item)
 		entry.CustomText = appendNotes(entry.CustomText, formatCustomFields(extra))
-		return entry, "cards"
+		return entry
 
 	case "003": // Secure Note
 		entry := &pb.Entry{
@@ -172,7 +169,7 @@ func convert1PasswordItem(item onePasswordItem) (*pb.Entry, string) {
 
 		extra := collect1PasswordExtraFields(item)
 		entry.CustomText = appendNotes(entry.CustomText, formatCustomFields(extra))
-		return entry, "notes"
+		return entry
 
 	case "006": // Document
 		entry := &pb.Entry{
@@ -183,12 +180,11 @@ func convert1PasswordItem(item onePasswordItem) (*pb.Entry, string) {
 
 		extra := collect1PasswordExtraFields(item)
 		entry.CustomText = appendNotes(entry.CustomText, formatCustomFields(extra))
-		return entry, "notes"
+		return entry
 
 	default:
-		// Map any other category as a Note to avoid losing data.
 		if item.Title == "" {
-			return nil, ""
+			return nil
 		}
 		entry := &pb.Entry{
 			Type:       "Note",
@@ -197,7 +193,7 @@ func convert1PasswordItem(item onePasswordItem) (*pb.Entry, string) {
 		}
 		extra := collect1PasswordExtraFields(item)
 		entry.CustomText = appendNotes(entry.CustomText, formatCustomFields(extra))
-		return entry, "notes"
+		return entry
 	}
 }
 

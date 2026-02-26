@@ -27,6 +27,7 @@ var (
 	uiEditorForm          *tview.Form
 	uiEditorLayout        *tview.Flex
 	uiEditorTitleField    *tview.InputField
+	uiEditorFolderField   *tview.DropDown
 	uiEditorSaveButton    *tview.Button
 	uiEditorPasswordField *tview.InputField
 	uiEditorCardNumber    *tview.InputField
@@ -99,6 +100,7 @@ func openEditor(ent *Entry) {
 	uiEditorForm.Clear(true)
 	uiEditorTitleField, uiEditorPasswordField, uiEditorSaveButton = nil, nil, nil
 	uiEditorCardNumber, uiEditorExpiry, uiEditorCVV = nil, nil, nil
+	uiEditorFolderField = nil
 
 	if uiCurrentPath == "" {
 		uiEditorLayout.SetTitle(" Add Entry ")
@@ -110,6 +112,29 @@ func openEditor(ent *Entry) {
 	titleField.SetChangedFunc(func(text string) { updateEditorSaveState() })
 	uiEditorTitleField = titleField
 	uiEditorForm.AddFormItem(titleField)
+
+	folders := listFolders()
+	folderOptions := []string{"— (root)"}
+	folderOptions = append(folderOptions, folders...)
+	currentFolderIdx := 0
+	if uiCurrentPath != "" {
+		dir := filepath.Dir(uiCurrentPath)
+		base := config.ExpandPath(uiDataDir)
+		if dir != base {
+			folderName := filepath.Base(dir)
+			for i, opt := range folderOptions {
+				if opt == folderName {
+					currentFolderIdx = i
+					break
+				}
+			}
+		}
+	}
+	folderDrop := tview.NewDropDown().SetLabel("Folder").SetFieldWidth(30)
+	folderDrop.SetOptions(folderOptions, nil)
+	folderDrop.SetCurrentOption(currentFolderIdx)
+	uiEditorFolderField = folderDrop
+	uiEditorForm.AddFormItem(folderDrop)
 
 	uiEditorLayout.RemoveItem(uiAttachFlex)
 
@@ -226,8 +251,14 @@ func saveEntry(eType EntryType) {
 	bytes, _ := proto.Marshal(ent)
 	enc, _ := crypto.Encrypt(uiMasterKey, bytes)
 
-	subDir := strings.ToLower(string(eType)) + "s"
-	fullDir := filepath.Join(config.ExpandPath(uiDataDir), subDir)
+	basePath := config.ExpandPath(uiDataDir)
+	fullDir := basePath
+	if uiEditorFolderField != nil {
+		_, folderName := uiEditorFolderField.GetCurrentOption()
+		if folderName != "— (root)" {
+			fullDir = filepath.Join(basePath, folderName)
+		}
+	}
 	if err := os.MkdirAll(fullDir, 0700); err != nil {
 		return
 	}
@@ -235,7 +266,7 @@ func saveEntry(eType EntryType) {
 	newPath := filepath.Join(fullDir, filename)
 
 	if _, err := os.Stat(newPath); !os.IsNotExist(err) && uiCurrentPath != newPath {
-		uiErrorModal.SetText("Title already exists. Please change the title.")
+		uiErrorModal.SetText("Title already exists in this folder. Please change the title.")
 		uiPages.SwitchToPage("error")
 		return
 	}

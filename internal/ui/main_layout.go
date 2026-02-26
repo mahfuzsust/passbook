@@ -1,6 +1,12 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
+
+	"passbook/internal/config"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -9,6 +15,7 @@ var (
 	uiSearchField *tview.InputField
 	uiTreeView    *tview.TreeView
 	uiRightPages  *tview.Pages
+	uiFolderForm  *tview.Form
 )
 
 func setupMainLayout() {
@@ -51,11 +58,35 @@ func setupMainLayout() {
 	uiViewStatus = tview.NewTextView().SetDynamicColors(true)
 	uiAttachmentList = tview.NewList().ShowSecondaryText(false).SetMainTextColor(tcell.ColorSkyblue)
 
-	emptyView := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter).
-		SetText("\n\n\n[yellow]Select an item from the list to view details.[-]")
+	keybindTable := tview.NewTable().SetBorders(false).SetSelectable(false, false)
+	bindings := [][2]string{
+		{"Ctrl+A", "Create new item"},
+		{"Ctrl+E", "Edit selected item"},
+		{"Ctrl+D", "Delete selected item"},
+		{"Ctrl+N", "Create new folder"},
+		{"Ctrl+F", "Search vault"},
+		{"Ctrl+P", "Change master password"},
+		{"Ctrl+Q", "Quit"},
+		{"Enter", "Open item / toggle folder"},
+		{"Esc", "Focus tree view"},
+	}
+	keybindTable.SetCell(0, 0, tview.NewTableCell("[yellow::b]Key[-::-]").SetExpansion(1).SetAlign(tview.AlignRight))
+	keybindTable.SetCell(0, 1, tview.NewTableCell("  "))
+	keybindTable.SetCell(0, 2, tview.NewTableCell("[yellow::b]Action[-::-]").SetExpansion(2))
+	for i, b := range bindings {
+		row := i + 1
+		keybindTable.SetCell(row, 0, tview.NewTableCell("[skyblue]"+b[0]+"[-]").SetAlign(tview.AlignRight).SetExpansion(1))
+		keybindTable.SetCell(row, 1, tview.NewTableCell("  "))
+		keybindTable.SetCell(row, 2, tview.NewTableCell("[white]"+b[1]+"[-]").SetExpansion(2))
+	}
+
+	emptyView := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(nil, 0, 1, false).
+		AddItem(keybindTable, len(bindings)+2, 0, false).
+		AddItem(nil, 0, 1, false)
 
 	uiRightPages = tview.NewPages()
-	uiRightPages.SetBorder(true).SetTitle(" (Ctrl+A Create | Ctrl+E Edit | Ctrl+D Delete | Ctrl+P Password) ")
+	uiRightPages.SetBorder(true).SetTitle(" Keybindings ")
 	uiRightPages.AddPage("empty", emptyView, true, true)
 	uiRightPages.AddPage("content", uiViewFlex, true, false)
 
@@ -76,6 +107,9 @@ func setupMainLayout() {
 				showDeleteModal()
 			}
 			return nil
+		case tcell.KeyCtrlN:
+			showFolderCreate()
+			return nil
 		case tcell.KeyCtrlF:
 			uiApp.SetFocus(uiSearchField)
 			return nil
@@ -94,4 +128,51 @@ func setupMainLayout() {
 	})
 
 	uiPages.AddPage("main", mainFlex, true, false)
+}
+
+func setupFolderCreate() {
+	uiFolderForm = tview.NewForm()
+	uiFolderForm.AddInputField("Folder Name", "", 0, nil, nil)
+	uiFolderForm.AddButton("Create", func() {
+		nameField := uiFolderForm.GetFormItemByLabel("Folder Name").(*tview.InputField)
+		name := strings.TrimSpace(nameField.GetText())
+		if name == "" {
+			return
+		}
+		if strings.ContainsAny(name, `<>:"/\|?*`) || name == "." || name == ".." ||
+			strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+			return
+		}
+		basePath := config.ExpandPath(uiDataDir)
+		folderPath := filepath.Join(basePath, name)
+		if err := os.MkdirAll(folderPath, 0700); err != nil {
+			return
+		}
+		refreshTree(uiSearchField.GetText())
+		uiPages.SwitchToPage("main")
+		uiApp.SetFocus(uiTreeView)
+	})
+	uiFolderForm.AddButton("Cancel", func() {
+		uiPages.SwitchToPage("main")
+		uiApp.SetFocus(uiTreeView)
+	})
+	uiFolderForm.SetBorder(true).SetTitle(" New Folder ")
+	styleForm(uiFolderForm)
+	uiFolderForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEsc {
+			uiPages.SwitchToPage("main")
+			uiApp.SetFocus(uiTreeView)
+			return nil
+		}
+		return event
+	})
+	uiPages.AddPage("folder_create", newResponsiveModal(uiFolderForm, 45, 9, 65, 13, 0.45, 0.3), true, false)
+}
+
+func showFolderCreate() {
+	if uiFolderForm != nil {
+		nameField := uiFolderForm.GetFormItemByLabel("Folder Name").(*tview.InputField)
+		nameField.SetText("")
+	}
+	uiPages.SwitchToPage("folder_create")
 }

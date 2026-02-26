@@ -67,19 +67,18 @@ func ImportBitwarden(jsonPath, masterPassword string, cfg config.AppConfig) erro
 	}
 
 	var entries []*pb.Entry
-	var subDirs, names []string
+	var names []string
 
 	for _, item := range export.Items {
-		entry, subDir := convertBitwardenItem(item)
+		entry := convertBitwardenItem(item)
 		entries = append(entries, entry)
-		subDirs = append(subDirs, subDir)
 		names = append(names, item.Name)
 	}
 
-	return saveEntries(entries, subDirs, names, masterPassword, cfg)
+	return saveEntries(entries, names, masterPassword, cfg)
 }
 
-func convertBitwardenItem(item bitwardenItem) (*pb.Entry, string) {
+func convertBitwardenItem(item bitwardenItem) *pb.Entry {
 	fields := convertBitwardenFields(item.Fields)
 
 	switch item.Type {
@@ -104,7 +103,7 @@ func convertBitwardenItem(item bitwardenItem) (*pb.Entry, string) {
 			})
 		}
 		entry.CustomText = appendNotes(entry.CustomText, formatCustomFields(fields))
-		return entry, "logins"
+		return entry
 
 	case 2: // Secure Note
 		entry := &pb.Entry{
@@ -113,7 +112,7 @@ func convertBitwardenItem(item bitwardenItem) (*pb.Entry, string) {
 			CustomText: item.Notes,
 		}
 		entry.CustomText = appendNotes(entry.CustomText, formatCustomFields(fields))
-		return entry, "notes"
+		return entry
 
 	case 3: // Card
 		entry := &pb.Entry{
@@ -136,10 +135,10 @@ func convertBitwardenItem(item bitwardenItem) (*pb.Entry, string) {
 			}
 		}
 		entry.CustomText = appendNotes(entry.CustomText, formatCustomFields(fields))
-		return entry, "cards"
+		return entry
 
 	default:
-		return nil, ""
+		return nil
 	}
 }
 

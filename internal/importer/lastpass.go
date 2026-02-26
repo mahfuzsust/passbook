@@ -39,16 +39,15 @@ func ImportLastPass(csvPath, masterPassword string, cfg config.AppConfig) error 
 	colIndex := buildColumnIndex(header)
 
 	var entries []*pb.Entry
-	var subDirs, names []string
+	var names []string
 
 	for _, row := range records[1:] {
-		entry, subDir := convertLastPassRow(row, colIndex)
+		entry := convertLastPassRow(row, colIndex)
 		entries = append(entries, entry)
-		subDirs = append(subDirs, subDir)
 		names = append(names, colVal(row, colIndex, "name"))
 	}
 
-	return saveEntries(entries, subDirs, names, masterPassword, cfg)
+	return saveEntries(entries, names, masterPassword, cfg)
 }
 
 func buildColumnIndex(header []string) map[string]int {
@@ -66,7 +65,7 @@ func colVal(row []string, idx map[string]int, col string) string {
 	return ""
 }
 
-func convertLastPassRow(row []string, colIndex map[string]int) (*pb.Entry, string) {
+func convertLastPassRow(row []string, colIndex map[string]int) *pb.Entry {
 	name := colVal(row, colIndex, "name")
 	url := colVal(row, colIndex, "url")
 	username := colVal(row, colIndex, "username")
@@ -76,20 +75,17 @@ func convertLastPassRow(row []string, colIndex map[string]int) (*pb.Entry, strin
 	grouping := colVal(row, colIndex, "grouping")
 
 	if name == "" && username == "" && password == "" && extra == "" {
-		return nil, ""
+		return nil
 	}
 
-	// LastPass uses grouping to identify Secure Notes.
 	if isLastPassSecureNote(url, grouping) {
-		entry := &pb.Entry{
+		return &pb.Entry{
 			Type:       "Note",
 			Title:      name,
 			CustomText: extra,
 		}
-		return entry, "notes"
 	}
 
-	// Default: treat as Login.
 	entry := &pb.Entry{
 		Type:       "Login",
 		Title:      name,
@@ -104,7 +100,7 @@ func convertLastPassRow(row []string, colIndex map[string]int) (*pb.Entry, strin
 		entry.Title = url
 	}
 
-	return entry, "logins"
+	return entry
 }
 
 func isLastPassSecureNote(url, grouping string) bool {

@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"
@@ -313,20 +314,28 @@ func RehashVault(dataDir string, password string, oldParams VaultParams) (*Vault
 }
 
 func VaultHasEntries(dataDir string) bool {
-	categories := []string{"logins", "cards", "notes", "files"}
-	for _, cat := range categories {
-		dir := filepath.Join(dataDir, cat)
-		files, err := os.ReadDir(dir)
+	found := false
+	_ = filepath.WalkDir(dataDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			continue
+			return nil
 		}
-		for _, f := range files {
-			if !f.IsDir() && filepath.Ext(f.Name()) == ".pb" {
-				return true
+		if d.IsDir() {
+			if path == dataDir {
+				return nil
 			}
+			name := d.Name()
+			if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+				return filepath.SkipDir
+			}
+			return nil
 		}
-	}
-	return false
+		if filepath.Ext(d.Name()) == ".pb" {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 func generateNonce(size int) ([]byte, error) {
@@ -597,29 +606,33 @@ func vaultParamsAADHex(dataDir string) string {
 }
 
 func ReKeyEntries(dataDir string, oldKey, newKey []byte) error {
-	// 1. Re-encrypt all .pb entry files in category sub-directories.
-	categories := []string{"logins", "cards", "notes", "files"}
-	for _, cat := range categories {
-		dir := filepath.Join(dataDir, cat)
-		files, err := os.ReadDir(dir)
+	// Re-encrypt all .pb entry files (in root and any user-created folders).
+	err := filepath.WalkDir(dataDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return fmt.Errorf("reading %s: %w", dir, err)
+			return nil
 		}
-		for _, f := range files {
-			if f.IsDir() || filepath.Ext(f.Name()) != ".pb" {
-				continue
+		if d.IsDir() {
+			if path == dataDir {
+				return nil
 			}
-			path := filepath.Join(dir, f.Name())
+			name := d.Name()
+			if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(d.Name()) == ".pb" {
 			if err := reEncryptFile(path, oldKey, newKey); err != nil {
 				return fmt.Errorf("re-encrypting %s: %w", path, err)
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
-	// 2. Re-encrypt all attachment blobs.
+	// Re-encrypt all attachment blobs.
 	attDir := filepath.Join(dataDir, "_attachments")
 	attFiles, err := os.ReadDir(attDir)
 	if err == nil {

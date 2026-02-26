@@ -54,7 +54,7 @@ func TestImport1PasswordLogin(t *testing.T) {
 		t.Fatalf("Import1Password: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "logins", "GitHub.pb")
+	entryPath := filepath.Join(dir, "GitHub.pb")
 	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
@@ -99,7 +99,7 @@ func TestImport1PasswordCard(t *testing.T) {
 		t.Fatalf("Import1Password: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "cards", "Visa.pb")
+	entryPath := filepath.Join(dir, "Visa.pb")
 	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
@@ -136,7 +136,7 @@ func TestImport1PasswordSecureNote(t *testing.T) {
 		t.Fatalf("Import1Password: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "notes", "My Note.pb")
+	entryPath := filepath.Join(dir, "My Note.pb")
 	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
@@ -172,7 +172,7 @@ func TestImport1PasswordExtraFields(t *testing.T) {
 		t.Fatalf("Import1Password: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "logins", "WithExtra.pb")
+	entryPath := filepath.Join(dir, "WithExtra.pb")
 	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
@@ -197,7 +197,7 @@ func TestImport1PasswordUnknownCategoryAsNote(t *testing.T) {
 		t.Fatalf("Import1Password: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "notes", "Identity.pb")
+	entryPath := filepath.Join(dir, "Identity.pb")
 	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)

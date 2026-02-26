@@ -13,8 +13,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// saveEntries encrypts and writes a slice of entries to the vault.
-func saveEntries(entries []*pb.Entry, subDirs []string, names []string, masterPassword string, cfg config.AppConfig) error {
+// saveEntries encrypts and writes a slice of entries to the vault root.
+func saveEntries(entries []*pb.Entry, names []string, masterPassword string, cfg config.AppConfig) error {
 	dataDir := config.ExpandPath(cfg.DataDir)
 
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
@@ -46,13 +46,7 @@ func saveEntries(entries []*pb.Entry, subDirs []string, names []string, masterPa
 			continue
 		}
 
-		subDir := subDirs[i]
 		origName := names[i]
-
-		fullDir := filepath.Join(dataDir, subDir)
-		if err := os.MkdirAll(fullDir, 0700); err != nil {
-			return fmt.Errorf("creating dir %s: %w", subDir, err)
-		}
 
 		title := sanitizeTitle(entry.Title)
 		if title == "" {
@@ -61,13 +55,12 @@ func saveEntries(entries []*pb.Entry, subDirs []string, names []string, masterPa
 		entry.Title = title
 
 		filename := title + ".pb"
-		path := filepath.Join(fullDir, filename)
+		path := filepath.Join(dataDir, filename)
 
-		// Handle duplicate titles by appending a suffix.
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			counter := 1
 			for {
-				path = filepath.Join(fullDir, fmt.Sprintf("%s_%d.pb", title, counter))
+				path = filepath.Join(dataDir, fmt.Sprintf("%s_%d.pb", title, counter))
 				if _, err := os.Stat(path); os.IsNotExist(err) {
 					break
 				}

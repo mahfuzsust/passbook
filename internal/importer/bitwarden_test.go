@@ -102,8 +102,7 @@ func TestImportBitwardenLogin(t *testing.T) {
 		t.Fatalf("ImportBitwarden: %v", err)
 	}
 
-	// Verify the entry was created.
-	entryPath := filepath.Join(dir, "logins", "GitHub.pb")
+	entryPath := filepath.Join(dir, "GitHub.pb")
 	if _, err := os.Stat(entryPath); err != nil {
 		t.Fatalf("expected entry file: %v", err)
 	}
@@ -157,7 +156,7 @@ func TestImportBitwardenPasswordHistory(t *testing.T) {
 		t.Fatalf("ImportBitwarden: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "logins", "WithHistory.pb")
+	entryPath := filepath.Join(dir, "WithHistory.pb")
 	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
@@ -197,7 +196,7 @@ func TestImportBitwardenCard(t *testing.T) {
 		t.Fatalf("ImportBitwarden: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "cards", "Visa.pb")
+	entryPath := filepath.Join(dir, "Visa.pb")
 	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
@@ -231,7 +230,7 @@ func TestImportBitwardenNote(t *testing.T) {
 		t.Fatalf("ImportBitwarden: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "notes", "Secret Note.pb")
+	entryPath := filepath.Join(dir, "Secret Note.pb")
 	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
@@ -256,11 +255,10 @@ func TestImportBitwardenDuplicateTitles(t *testing.T) {
 		t.Fatalf("ImportBitwarden: %v", err)
 	}
 
-	// Both should exist — one as Dup.pb, one as Dup_1.pb.
-	if _, err := os.Stat(filepath.Join(dir, "logins", "Dup.pb")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "Dup.pb")); err != nil {
 		t.Fatalf("expected Dup.pb: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "logins", "Dup_1.pb")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "Dup_1.pb")); err != nil {
 		t.Fatalf("expected Dup_1.pb: %v", err)
 	}
 }
@@ -297,7 +295,7 @@ func TestImportBitwardenCustomFields(t *testing.T) {
 		t.Fatalf("ImportBitwarden: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "logins", "WithFields.pb")
+	entryPath := filepath.Join(dir, "WithFields.pb")
 	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)

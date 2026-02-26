@@ -28,7 +28,7 @@ https://github.com,user@example.com,secret123,JBSWY3DPEHPK3PXP,My GitHub account
 		t.Fatalf("ImportLastPass: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "logins", "GitHub.pb")
+	entryPath := filepath.Join(dir, "GitHub.pb")
 	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
@@ -65,7 +65,7 @@ http://sn,,,,"Secret note content",My Note,,0
 		t.Fatalf("ImportLastPass: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "notes", "My Note.pb")
+	entryPath := filepath.Join(dir, "My Note.pb")
 	key := deriveTestKey(t, dir, password)
 
 	entry := decryptEntry(t, entryPath, key)
@@ -93,12 +93,12 @@ https://b.com,u2,p2,,,Site B,,0
 
 	key := deriveTestKey(t, dir, password)
 
-	entryA := decryptEntry(t, filepath.Join(dir, "logins", "Site A.pb"), key)
+	entryA := decryptEntry(t, filepath.Join(dir, "Site A.pb"), key)
 	if entryA.Username != "u1" {
 		t.Fatalf("expected u1, got %s", entryA.Username)
 	}
 
-	entryB := decryptEntry(t, filepath.Join(dir, "logins", "Site B.pb"), key)
+	entryB := decryptEntry(t, filepath.Join(dir, "Site B.pb"), key)
 	if entryB.Username != "u2" {
 		t.Fatalf("expected u2, got %s", entryB.Username)
 	}
@@ -118,10 +118,10 @@ https://b.com,u2,p2,,,Dup,,0
 		t.Fatalf("ImportLastPass: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "logins", "Dup.pb")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "Dup.pb")); err != nil {
 		t.Fatalf("expected Dup.pb: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "logins", "Dup_1.pb")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "Dup_1.pb")); err != nil {
 		t.Fatalf("expected Dup_1.pb: %v", err)
 	}
 }
@@ -152,13 +152,17 @@ https://example.com,user,pass,,,,, 0
 		t.Fatalf("ImportLastPass: %v", err)
 	}
 
-	// When name is empty, it should use the URL as the title.
-	// URL contains ":" and "/" which get sanitized.
-	files, err := os.ReadDir(filepath.Join(dir, "logins"))
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)
 	}
-	if len(files) != 1 {
-		t.Fatalf("expected 1 file, got %d", len(files))
+	pbCount := 0
+	for _, f := range files {
+		if filepath.Ext(f.Name()) == ".pb" {
+			pbCount++
+		}
+	}
+	if pbCount != 1 {
+		t.Fatalf("expected 1 .pb file, got %d", pbCount)
 	}
 }
