@@ -142,6 +142,7 @@ func refreshTree(filter string) {
 	for _, d := range folders {
 		folderPath := filepath.Join(basePath, d.Name())
 		folderNode := tview.NewTreeNode(fmt.Sprintf("📁 %s", d.Name())).
+			SetReference(folderPath).
 			SetColor(tcell.ColorSkyblue).
 			SetSelectable(true).
 			SetExpanded(true)

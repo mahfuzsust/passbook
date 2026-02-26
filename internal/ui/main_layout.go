@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"passbook/internal/config"
+	"passbook/internal/crypto"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -15,7 +17,11 @@ var (
 	uiSearchField *tview.InputField
 	uiTreeView    *tview.TreeView
 	uiRightPages  *tview.Pages
-	uiFolderForm  *tview.Form
+
+	uiCurrentFolder      string
+	uiFolderForm         *tview.Form
+	uiFolderRenameForm   *tview.Form
+	uiFolderDeleteModal  *tview.Modal
 )
 
 func setupMainLayout() {
@@ -37,8 +43,18 @@ func setupMainLayout() {
 		ref := node.GetReference()
 		if ref == nil {
 			node.SetExpanded(!node.IsExpanded())
+			return
+		}
+		path := ref.(string)
+		if strings.HasSuffix(path, ".pb") {
+			uiCurrentFolder = ""
+			loadEntry(path)
 		} else {
-			loadEntry(ref.(string))
+			node.SetExpanded(!node.IsExpanded())
+			uiCurrentFolder = path
+			uiCurrentPath = ""
+			uiCurrentEnt = nil
+			uiRightPages.SwitchToPage("empty")
 		}
 	})
 
@@ -61,8 +77,8 @@ func setupMainLayout() {
 	keybindTable := tview.NewTable().SetBorders(false).SetSelectable(false, false)
 	bindings := [][2]string{
 		{"Ctrl+A", "Create new item"},
-		{"Ctrl+E", "Edit selected item"},
-		{"Ctrl+D", "Delete selected item"},
+		{"Ctrl+E", "Edit item / rename folder"},
+		{"Ctrl+D", "Delete item / folder"},
 		{"Ctrl+N", "Create new folder"},
 		{"Ctrl+F", "Search vault"},
 		{"Ctrl+P", "Change master password"},
@@ -98,12 +114,16 @@ func setupMainLayout() {
 			showCreateMenu()
 			return nil
 		case tcell.KeyCtrlE:
-			if uiCurrentEnt != nil && uiCurrentPath != "" {
+			if uiCurrentFolder != "" {
+				showFolderRename()
+			} else if uiCurrentEnt != nil && uiCurrentPath != "" {
 				openEditor(uiCurrentEnt)
 			}
 			return nil
 		case tcell.KeyCtrlD:
-			if uiCurrentPath != "" {
+			if uiCurrentFolder != "" {
+				showFolderDeleteModal()
+			} else if uiCurrentPath != "" {
 				showDeleteModal()
 			}
 			return nil
@@ -136,11 +156,7 @@ func setupFolderCreate() {
 	uiFolderForm.AddButton("Create", func() {
 		nameField := uiFolderForm.GetFormItemByLabel("Folder Name").(*tview.InputField)
 		name := strings.TrimSpace(nameField.GetText())
-		if name == "" {
-			return
-		}
-		if strings.ContainsAny(name, `<>:"/\|?*`) || name == "." || name == ".." ||
-			strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+		if !isValidFolderName(name) {
 			return
 		}
 		basePath := config.ExpandPath(uiDataDir)
@@ -175,4 +191,133 @@ func showFolderCreate() {
 		nameField.SetText("")
 	}
 	uiPages.SwitchToPage("folder_create")
+}
+
+func isValidFolderName(name string) bool {
+	return name != "" &&
+		!strings.ContainsAny(name, `<>:"/\|?*`) &&
+		name != "." && name != ".." &&
+		!strings.HasPrefix(name, ".") &&
+		!strings.HasPrefix(name, "_")
+}
+
+func setupFolderRename() {
+	uiFolderRenameForm = tview.NewForm()
+	uiFolderRenameForm.AddInputField("Folder Name", "", 0, nil, nil)
+	uiFolderRenameForm.AddButton("Rename", doFolderRename)
+	uiFolderRenameForm.AddButton("Cancel", func() {
+		uiPages.SwitchToPage("main")
+		uiApp.SetFocus(uiTreeView)
+	})
+	uiFolderRenameForm.SetBorder(true).SetTitle(" Rename Folder ")
+	styleForm(uiFolderRenameForm)
+	uiFolderRenameForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEsc {
+			uiPages.SwitchToPage("main")
+			uiApp.SetFocus(uiTreeView)
+			return nil
+		}
+		return event
+	})
+	uiPages.AddPage("folder_rename", newResponsiveModal(uiFolderRenameForm, 45, 9, 65, 13, 0.45, 0.3), true, false)
+}
+
+func showFolderRename() {
+	if uiFolderRenameForm == nil || uiCurrentFolder == "" {
+		return
+	}
+	nameField := uiFolderRenameForm.GetFormItemByLabel("Folder Name").(*tview.InputField)
+	nameField.SetText(filepath.Base(uiCurrentFolder))
+	uiPages.SwitchToPage("folder_rename")
+}
+
+func doFolderRename() {
+	nameField := uiFolderRenameForm.GetFormItemByLabel("Folder Name").(*tview.InputField)
+	name := strings.TrimSpace(nameField.GetText())
+	if !isValidFolderName(name) {
+		return
+	}
+	basePath := config.ExpandPath(uiDataDir)
+	newPath := filepath.Join(basePath, name)
+	if newPath == uiCurrentFolder {
+		uiPages.SwitchToPage("main")
+		uiApp.SetFocus(uiTreeView)
+		return
+	}
+	if err := os.Rename(uiCurrentFolder, newPath); err != nil {
+		return
+	}
+	uiCurrentFolder = newPath
+	refreshTree(uiSearchField.GetText())
+	uiPages.SwitchToPage("main")
+	uiApp.SetFocus(uiTreeView)
+}
+
+func setupFolderDelete() {
+	uiFolderDeleteModal = tview.NewModal().
+		AddButtons([]string{"Delete", "Cancel"}).
+		SetDoneFunc(func(index int, label string) {
+			if label == "Delete" {
+				doFolderDelete()
+			}
+			uiPages.SwitchToPage("main")
+			uiApp.SetFocus(uiTreeView)
+		})
+	uiPages.AddPage("folder_delete", uiFolderDeleteModal, true, false)
+}
+
+func showFolderDeleteModal() {
+	if uiCurrentFolder == "" {
+		return
+	}
+	folderName := filepath.Base(uiCurrentFolder)
+	files, _ := os.ReadDir(uiCurrentFolder)
+	count := 0
+	for _, f := range files {
+		if !f.IsDir() && strings.HasSuffix(f.Name(), ".pb") {
+			count++
+		}
+	}
+
+	if count > 0 {
+		uiFolderDeleteModal.SetText(fmt.Sprintf(
+			"Folder \"%s\" contains %d item(s).\nAll items inside will be permanently deleted.\n\nAre you sure?",
+			folderName, count))
+	} else {
+		uiFolderDeleteModal.SetText(fmt.Sprintf("Delete empty folder \"%s\"?", folderName))
+	}
+	uiPages.SwitchToPage("folder_delete")
+}
+
+func doFolderDelete() {
+	if uiCurrentFolder == "" {
+		return
+	}
+	files, _ := os.ReadDir(uiCurrentFolder)
+	for _, f := range files {
+		if f.IsDir() || !strings.HasSuffix(f.Name(), ".pb") {
+			continue
+		}
+		path := filepath.Join(uiCurrentFolder, f.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		dec, err := crypto.Decrypt(uiMasterKey, data)
+		if err != nil {
+			continue
+		}
+		ent, err := unmarshalEntry(dec)
+		if err != nil {
+			continue
+		}
+		for _, att := range ent.Attachments {
+			_ = os.Remove(filepath.Join(getAttachmentDir(), att.Id))
+		}
+	}
+	_ = os.RemoveAll(uiCurrentFolder)
+	uiCurrentFolder = ""
+	uiCurrentPath = ""
+	uiCurrentEnt = nil
+	refreshTree(uiSearchField.GetText())
 }
