@@ -28,10 +28,14 @@ func setupMainLayout() {
 	uiTreeView = tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
 	uiTreeView.SetTopLevel(1)
 	uiTreeView.SetBorder(true).SetTitle(" Vault ")
-	uiTreeView.SetSelectedFunc(func(node *tview.TreeNode) {
+	uiTreeView.SetChangedFunc(func(node *tview.TreeNode) {
 		ref := node.GetReference()
 		if ref == nil {
-			node.SetExpanded(!node.IsExpanded())
+			uiCurrentFolder = ""
+			uiCurrentPath = ""
+			uiCurrentEnt = nil
+			uiRightPages.SetTitle(" Keybindings ")
+			uiRightPages.SwitchToPage("empty")
 			return
 		}
 		path := ref.(string)
@@ -39,12 +43,21 @@ func setupMainLayout() {
 			uiCurrentFolder = ""
 			loadEntry(path)
 		} else {
-			node.SetExpanded(!node.IsExpanded())
 			uiCurrentFolder = path
 			uiCurrentPath = ""
 			uiCurrentEnt = nil
 			uiRightPages.SetTitle(" Keybindings ")
 			uiRightPages.SwitchToPage("empty")
+		}
+	})
+	uiTreeView.SetSelectedFunc(func(node *tview.TreeNode) {
+		ref := node.GetReference()
+		if ref == nil {
+			node.SetExpanded(!node.IsExpanded())
+			return
+		}
+		if !strings.HasSuffix(ref.(string), ".pb") {
+			node.SetExpanded(!node.IsExpanded())
 		}
 	})
 

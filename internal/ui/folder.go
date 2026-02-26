@@ -53,10 +53,17 @@ func setupFolderCreate() {
 	uiFolderForm.SetBorder(true).SetTitle(" New Folder ")
 	styleForm(uiFolderForm)
 	uiFolderForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEsc {
+		switch event.Key() {
+		case tcell.KeyEsc:
 			uiPages.SwitchToPage("main")
 			uiApp.SetFocus(uiTreeView)
 			return nil
+		case tcell.KeyEnter:
+			if uiApp.GetFocus() != uiFolderForm.GetButton(0) &&
+				uiApp.GetFocus() != uiFolderForm.GetButton(1) {
+				uiFolderForm.GetButton(0).InputHandler()(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), nil)
+				return nil
+			}
 		}
 		return event
 	})

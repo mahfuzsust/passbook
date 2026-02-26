@@ -129,6 +129,14 @@ func openEditor(ent *Entry) {
 				}
 			}
 		}
+	} else if uiCurrentFolder != "" {
+		folderName := filepath.Base(uiCurrentFolder)
+		for i, opt := range folderOptions {
+			if opt == folderName {
+				currentFolderIdx = i
+				break
+			}
+		}
 	}
 	folderDrop := tview.NewDropDown().SetLabel("Folder").SetFieldWidth(30)
 	folderDrop.SetOptions(folderOptions, nil)
