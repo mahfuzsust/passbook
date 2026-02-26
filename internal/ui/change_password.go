@@ -91,17 +91,19 @@ func doChangePassword() {
 		showChangePwdError("Failed to load vault params.")
 		return
 	}
-	oldMasterKey, vk, err := crypto.DeriveKeys(currentPwd, *vaultParams)
+	oldMasterKey, vk, err := crypto.DeriveKeys(currentPwd, vaultParams)
 	if err != nil {
 		showChangePwdError("Key derivation error: " + err.Error())
 		return
 	}
-	if _, err := crypto.EnsureSecret(dataDir, oldMasterKey, *vaultParams); err != nil {
+	if _, err := crypto.EnsureSecret(dataDir, oldMasterKey, vaultParams); err != nil {
 		crypto.WipeBytes(oldMasterKey)
 		crypto.WipeBytes(vk)
 		showChangePwdError("Current password is incorrect.")
 		return
 	}
+
+	pinCfg, _ := crypto.ReadPinConfig(dataDir, oldMasterKey)
 	crypto.WipeBytes(oldMasterKey)
 	oldVaultKey = vk
 
@@ -118,13 +120,22 @@ func doChangePassword() {
 		return
 	}
 
-	// Re-encrypt .secret with the new master key (includes vault params hash).
 	if err := crypto.WriteSecretWithParams(dataDir, newParams, newMasterKey); err != nil {
 		crypto.WipeBytes(newMasterKey)
 		crypto.WipeBytes(newVaultKey)
 		crypto.WipeBytes(oldVaultKey)
 		showChangePwdError("Failed to write new secret: " + err.Error())
 		return
+	}
+
+	if pinCfg != nil && pinCfg.Mode != "" {
+		if err := crypto.WritePinConfig(dataDir, newMasterKey, *pinCfg); err != nil {
+			crypto.WipeBytes(newMasterKey)
+			crypto.WipeBytes(newVaultKey)
+			crypto.WipeBytes(oldVaultKey)
+			showChangePwdError("Failed to preserve PIN config: " + err.Error())
+			return
+		}
 	}
 	crypto.WipeBytes(newMasterKey)
 

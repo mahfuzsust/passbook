@@ -2,10 +2,13 @@ package crypto
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"passbook/internal/pb"
+
+	"google.golang.org/protobuf/proto"
 )
 
 func TestWipeBytes(t *testing.T) {
@@ -44,13 +47,13 @@ func TestGenerateRootSalt(t *testing.T) {
 
 func TestSaveAndLoadVaultParams(t *testing.T) {
 	dir := t.TempDir()
-	p := VaultParams{
+	p := &pb.VaultParams{
 		Version:  1,
 		Salt:     bytes.Repeat([]byte{0xBB}, 32),
 		Time:     8,
-		MemoryKB: 512 * 1024,
+		MemoryKb: 512 * 1024,
 		Threads:  8,
-		KDF:      "argon2id",
+		Kdf:      "argon2id",
 		Cipher:   "aes-256-gcm",
 	}
 
@@ -68,18 +71,18 @@ func TestSaveAndLoadVaultParams(t *testing.T) {
 	if !bytes.Equal(p.Salt, loaded.Salt) {
 		t.Fatalf("salt mismatch")
 	}
-	if loaded.Time != 8 || loaded.MemoryKB != 512*1024 || loaded.Threads != 8 {
-		t.Fatalf("params mismatch: got time=%d memory=%d threads=%d", loaded.Time, loaded.MemoryKB, loaded.Threads)
+	if loaded.Time != 8 || loaded.MemoryKb != 512*1024 || loaded.Threads != 8 {
+		t.Fatalf("params mismatch: got time=%d memory=%d threads=%d", loaded.Time, loaded.MemoryKb, loaded.Threads)
 	}
-	if loaded.Version != 1 || loaded.KDF != "argon2id" || loaded.Cipher != "aes-256-gcm" {
-		t.Fatalf("metadata mismatch: version=%d kdf=%s cipher=%s", loaded.Version, loaded.KDF, loaded.Cipher)
+	if loaded.Version != 1 || loaded.Kdf != "argon2id" || loaded.Cipher != "aes-256-gcm" {
+		t.Fatalf("metadata mismatch: version=%d kdf=%s cipher=%s", loaded.Version, loaded.Kdf, loaded.Cipher)
 	}
 }
 
 func TestLoadVaultParamsBackfillsZeroes(t *testing.T) {
 	dir := t.TempDir()
 	salt := bytes.Repeat([]byte{0xCC}, 32)
-	p := VaultParams{Salt: salt}
+	p := &pb.VaultParams{Salt: salt}
 	if err := SaveVaultParams(dir, p); err != nil {
 		t.Fatalf("SaveVaultParams error: %v", err)
 	}
@@ -91,10 +94,10 @@ func TestLoadVaultParamsBackfillsZeroes(t *testing.T) {
 	if loaded == nil {
 		t.Fatalf("expected non-nil params")
 	}
-	if loaded.Time != RecommendedTime || loaded.MemoryKB != RecommendedMemory || loaded.Threads != RecommendedThreads {
+	if loaded.Time != RecommendedTime || loaded.MemoryKb != RecommendedMemory || loaded.Threads != RecommendedThreads {
 		t.Fatalf("expected zeroed params to be back-filled with recommended values")
 	}
-	if loaded.Version != 1 || loaded.KDF != "argon2id" || loaded.Cipher != "aes-256-gcm" {
+	if loaded.Version != 1 || loaded.Kdf != "argon2id" || loaded.Cipher != "aes-256-gcm" {
 		t.Fatalf("expected defaults to be back-filled")
 	}
 }
@@ -111,37 +114,37 @@ func TestLoadVaultParamsMissing(t *testing.T) {
 }
 
 func TestNeedsRehash(t *testing.T) {
-	current := VaultParams{
+	current := &pb.VaultParams{
 		Salt:     bytes.Repeat([]byte{0x01}, 32),
 		Time:     RecommendedTime,
-		MemoryKB: RecommendedMemory,
+		MemoryKb: RecommendedMemory,
 		Threads:  RecommendedThreads,
 	}
-	if current.NeedsRehash() {
+	if NeedsRehash(current) {
 		t.Fatalf("should not need rehash at recommended values")
 	}
 
-	weaker := current
+	weaker := proto.Clone(current).(*pb.VaultParams)
 	weaker.Time = RecommendedTime - 1
-	if !weaker.NeedsRehash() {
+	if !NeedsRehash(weaker) {
 		t.Fatalf("should need rehash when time is below recommended")
 	}
 
-	weaker = current
-	weaker.MemoryKB = RecommendedMemory - 1
-	if !weaker.NeedsRehash() {
+	weaker = proto.Clone(current).(*pb.VaultParams)
+	weaker.MemoryKb = RecommendedMemory - 1
+	if !NeedsRehash(weaker) {
 		t.Fatalf("should need rehash when memory is below recommended")
 	}
 
-	weaker = current
+	weaker = proto.Clone(current).(*pb.VaultParams)
 	weaker.Threads = RecommendedThreads - 1
-	if !weaker.NeedsRehash() {
+	if !NeedsRehash(weaker) {
 		t.Fatalf("should need rehash when threads is below recommended")
 	}
 
-	stronger := current
+	stronger := proto.Clone(current).(*pb.VaultParams)
 	stronger.Time = RecommendedTime + 2
-	if stronger.NeedsRehash() {
+	if NeedsRehash(stronger) {
 		t.Fatalf("should not need rehash when params are stronger")
 	}
 }
@@ -154,14 +157,14 @@ func TestDefaultVaultParams(t *testing.T) {
 	if len(p.Salt) != 32 {
 		t.Fatalf("expected 32-byte salt, got %d", len(p.Salt))
 	}
-	if p.Time != RecommendedTime || p.MemoryKB != RecommendedMemory || p.Threads != RecommendedThreads {
+	if p.Time != RecommendedTime || p.MemoryKb != RecommendedMemory || p.Threads != RecommendedThreads {
 		t.Fatalf("expected recommended params")
 	}
 	if p.Version != 1 {
 		t.Fatalf("expected version 1, got %d", p.Version)
 	}
-	if p.KDF != "argon2id" || p.Cipher != "aes-256-gcm" {
-		t.Fatalf("expected kdf=argon2id cipher=aes-256-gcm, got kdf=%s cipher=%s", p.KDF, p.Cipher)
+	if p.Kdf != "argon2id" || p.Cipher != "aes-256-gcm" {
+		t.Fatalf("expected kdf=argon2id cipher=aes-256-gcm, got kdf=%s cipher=%s", p.Kdf, p.Cipher)
 	}
 	if p.MasterKeyPurpose != "passbook:master:v1" {
 		t.Fatalf("expected MasterKeyPurpose=passbook:master:v1, got %s", p.MasterKeyPurpose)
@@ -172,10 +175,10 @@ func TestDefaultVaultParams(t *testing.T) {
 }
 
 func TestHashVaultParams(t *testing.T) {
-	p := VaultParams{
+	p := &pb.VaultParams{
 		Version: 1, Salt: bytes.Repeat([]byte{0x11}, 32),
-		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
-		KDF: "argon2id", Cipher: "aes-256-gcm",
+		Time: 6, MemoryKb: 256 * 1024, Threads: 4,
+		Kdf: "argon2id", Cipher: "aes-256-gcm",
 	}
 	h1, err := HashVaultParams(p)
 	if err != nil {
@@ -199,10 +202,10 @@ func TestHashVaultParams(t *testing.T) {
 
 func TestHashMatchesDiskBytes(t *testing.T) {
 	dir := t.TempDir()
-	p := VaultParams{
+	p := &pb.VaultParams{
 		Version: 1, Salt: bytes.Repeat([]byte{0x44}, 32),
-		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
-		KDF: "argon2id", Cipher: "aes-256-gcm",
+		Time: 6, MemoryKb: 256 * 1024, Threads: 4,
+		Kdf: "argon2id", Cipher: "aes-256-gcm",
 	}
 
 	if err := SaveVaultParams(dir, p); err != nil {
@@ -221,19 +224,17 @@ func TestHashMatchesDiskBytes(t *testing.T) {
 	}
 }
 
-// newTestVaultParams returns valid VaultParams for use in tests.
-func newTestVaultParams() VaultParams {
-	return VaultParams{
+func newTestVaultParams() *pb.VaultParams {
+	return &pb.VaultParams{
 		Version: 1, Salt: bytes.Repeat([]byte{0x22}, 32),
-		Time: 6, MemoryKB: 256 * 1024, Threads: 4,
-		KDF: "argon2id", Cipher: "aes-256-gcm",
+		Time: 6, MemoryKb: 256 * 1024, Threads: 4,
+		Kdf: "argon2id", Cipher: "aes-256-gcm",
 		MasterKeyPurpose: "passbook:master:v1",
 		VaultKeyPurpose:  "passbook:vault:v1",
 	}
 }
 
-// setupTestSecret creates .vault_params and .secret in dir.
-func setupTestSecret(t *testing.T, dir string, key []byte, vp VaultParams) {
+func setupTestSecret(t *testing.T, dir string, key []byte, vp *pb.VaultParams) {
 	t.Helper()
 	if err := SaveVaultParams(dir, vp); err != nil {
 		t.Fatalf("SaveVaultParams error: %v", err)
@@ -254,7 +255,7 @@ func TestEnsureSecretStoresHash(t *testing.T) {
 		t.Fatalf("VerifyVaultParamsHash should pass: %v", err)
 	}
 
-	tampered := vp
+	tampered := proto.Clone(vp).(*pb.VaultParams)
 	tampered.Time = 999
 	if err := SaveVaultParams(dir, tampered); err != nil {
 		t.Fatalf("SaveVaultParams (tampered) error: %v", err)
@@ -275,7 +276,7 @@ func TestSecretAADRejectsTamperedVaultParams(t *testing.T) {
 		t.Fatalf("loadKDFSecret should succeed: %v", err)
 	}
 
-	tampered := vp
+	tampered := proto.Clone(vp).(*pb.VaultParams)
 	tampered.Time = 999
 	if err := SaveVaultParams(dir, tampered); err != nil {
 		t.Fatalf("SaveVaultParams (tampered) error: %v", err)
@@ -286,7 +287,6 @@ func TestSecretAADRejectsTamperedVaultParams(t *testing.T) {
 		t.Fatalf("expected loadKDFSecret to fail with tampered vault params")
 	}
 
-	// Direct GCM-level test.
 	hash, _ := HashVaultParams(vp)
 	secretBytes, _ := os.ReadFile(filepath.Join(dir, ".secret"))
 	wrongAAD := []byte(HashVaultParamsBytes([]byte(`{"tampered":true}`)))
@@ -300,10 +300,10 @@ func TestSecretAADRejectsTamperedVaultParams(t *testing.T) {
 }
 
 func TestDeriveRootKeyDeterministic(t *testing.T) {
-	p := VaultParams{
+	p := &pb.VaultParams{
 		Salt:     bytes.Repeat([]byte{0xAB}, 32),
 		Time:     RecommendedTime,
-		MemoryKB: RecommendedMemory,
+		MemoryKb: RecommendedMemory,
 		Threads:  RecommendedThreads,
 	}
 	k1 := DeriveRootKey("password", p)
@@ -320,10 +320,10 @@ func TestDeriveRootKeyDeterministic(t *testing.T) {
 		t.Fatalf("expected different key for different password")
 	}
 
-	p2 := VaultParams{
+	p2 := &pb.VaultParams{
 		Salt:     bytes.Repeat([]byte{0xCD}, 32),
 		Time:     RecommendedTime,
-		MemoryKB: RecommendedMemory,
+		MemoryKb: RecommendedMemory,
 		Threads:  RecommendedThreads,
 	}
 	k4 := DeriveRootKey("password", p2)
@@ -358,10 +358,10 @@ func TestDeriveHKDFKey(t *testing.T) {
 }
 
 func TestDeriveKeys(t *testing.T) {
-	p := VaultParams{
+	p := &pb.VaultParams{
 		Salt:             bytes.Repeat([]byte{0x99}, 32),
 		Time:             RecommendedTime,
-		MemoryKB:         RecommendedMemory,
+		MemoryKb:         RecommendedMemory,
 		Threads:          RecommendedThreads,
 		MasterKeyPurpose: "passbook:master:v1",
 		VaultKeyPurpose:  "passbook:vault:v1",
@@ -389,10 +389,10 @@ func TestDeriveKeys(t *testing.T) {
 }
 
 func TestDeriveKeysRejectsEmptyPurpose(t *testing.T) {
-	p := VaultParams{
+	p := &pb.VaultParams{
 		Salt:     bytes.Repeat([]byte{0x99}, 32),
 		Time:     RecommendedTime,
-		MemoryKB: RecommendedMemory,
+		MemoryKb: RecommendedMemory,
 		Threads:  RecommendedThreads,
 	}
 	_, _, err := DeriveKeys("password", p)
@@ -841,8 +841,8 @@ func TestWriteKDFSecretAtomicStoresCommitTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecryptAES256GCM error: %v", err)
 	}
-	var sf secretFile
-	if err := json.Unmarshal(plaintext, &sf); err != nil {
+	var sf pb.SecretFile
+	if err := proto.Unmarshal(plaintext, &sf); err != nil {
 		t.Fatalf("Unmarshal error: %v", err)
 	}
 	if sf.CommitTag == "" {

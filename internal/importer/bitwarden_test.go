@@ -73,7 +73,7 @@ func deriveTestKey(t *testing.T, dir, password string) []byte {
 	if err != nil || vp == nil {
 		t.Fatalf("LoadVaultParams: %v", err)
 	}
-	_, vaultKey, err := crypto.DeriveKeys(password, *vp)
+	_, vaultKey, err := crypto.DeriveKeys(password, vp)
 	if err != nil {
 		t.Fatalf("DeriveKeys: %v", err)
 	}

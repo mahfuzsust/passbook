@@ -55,10 +55,10 @@ func (a *AppHandle) Run() error {
 	return uiApp.SetRoot(uiPages, true).EnableMouse(true).Run()
 }
 
-// wipeKeys zeroes all in-memory key material.
 func (a *AppHandle) wipeKeys() {
 	crypto.WipeBytes(uiMasterKey)
 	uiMasterKey = nil
+	wipeTempMasterKey()
 }
 
 func (a *AppHandle) QueueUpdateDraw(f func()) {
@@ -72,6 +72,7 @@ func setupUI() {
 	tview.Styles.TitleColor = tcell.ColorLightSkyBlue
 
 	setupLogin()
+	setupPin()
 	setupMainLayout()
 	setupModals()
 	setupEditor()

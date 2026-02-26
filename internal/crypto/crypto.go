@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,8 +14,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"passbook/internal/pb"
+
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"
+	"google.golang.org/protobuf/proto"
 )
 
 // ErrWrongPassword is returned when the master password is incorrect.
@@ -36,21 +38,103 @@ type KDFParams struct {
 	Threads  uint8
 }
 
-type secretFile struct {
-	Version         int    `json:"version"`
-	Salt            []byte `json:"salt"`
-	Time            uint32 `json:"time"`
-	MemoryKB        uint32 `json:"memory_kb"`
-	Threads         uint8  `json:"threads"`
-	KeyLen          uint32 `json:"key_len"`
-	KDF             string `json:"kdf"`
-	VaultParamsHash string `json:"vault_params_hash,omitempty"` // SHA-256 of .vault_params
-	CommitNonce     []byte `json:"commit_nonce,omitempty"`      // random nonce for commit tag HMAC
-	CommitTag       string `json:"commit_tag,omitempty"`        // HMAC-SHA256(masterKey, commitNonce) for wrong-password detection
-	CreatedAt       string `json:"created_at,omitempty"`
-	UpdatedAt       string `json:"updated_at,omitempty"`
-	VaultID         string `json:"vault_id,omitempty"`
-	Reserved01      string `json:"reserved01,omitempty"`
+
+type PinConfig struct {
+	Mode       string
+	PinKey     []byte
+	PinTag     string
+	TotpSecret string
+}
+
+func GeneratePinKey() ([]byte, error) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, fmt.Errorf("generating pin key: %w", err)
+	}
+	return key, nil
+}
+
+func ComputePinTag(pinKey []byte, pin string) string {
+	mac := hmac.New(sha256.New, pinKey)
+	mac.Write([]byte("passbook:pin:" + pin))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func VerifyPinTag(pinKey []byte, pin, storedTag string) bool {
+	computed := ComputePinTag(pinKey, pin)
+	return hmac.Equal([]byte(computed), []byte(storedTag))
+}
+
+func decryptSecret(dataDir string, masterKey []byte) (*pb.SecretFile, error) {
+	b, err := os.ReadFile(secretPath(dataDir))
+	if err != nil {
+		return nil, fmt.Errorf("reading secret: %w", err)
+	}
+	aad := vaultParamsAAD(dataDir)
+	plaintext, err := DecryptAES256GCM(b, masterKey, aad)
+	if err != nil {
+		return nil, fmt.Errorf("decrypting secret: %w", err)
+	}
+	sf := &pb.SecretFile{}
+	if err := proto.Unmarshal(plaintext, sf); err != nil {
+		return nil, fmt.Errorf("parsing secret: %w", err)
+	}
+	return sf, nil
+}
+
+func encryptAndWriteSecret(dataDir string, masterKey []byte, sf *pb.SecretFile) error {
+	b, err := proto.Marshal(sf)
+	if err != nil {
+		return fmt.Errorf("marshalling secret: %w", err)
+	}
+
+	aad := vaultParamsAAD(dataDir)
+	ciphertext, err := EncryptAES256GCM(b, masterKey, aad)
+	if err != nil {
+		return err
+	}
+
+	vaultDir := filepath.Dir(secretPath(dataDir))
+	if err := os.MkdirAll(vaultDir, 0700); err != nil {
+		return err
+	}
+
+	tmp := secretPath(dataDir) + ".tmp"
+	if err := os.WriteFile(tmp, ciphertext, 0600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, secretPath(dataDir)); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+func ReadPinConfig(dataDir string, masterKey []byte) (*PinConfig, error) {
+	sf, err := decryptSecret(dataDir, masterKey)
+	if err != nil {
+		return nil, err
+	}
+	return &PinConfig{
+		Mode:       sf.PinMode,
+		PinKey:     sf.PinKey,
+		PinTag:     sf.PinVerifyTag,
+		TotpSecret: sf.TotpSecret,
+	}, nil
+}
+
+func WritePinConfig(dataDir string, masterKey []byte, cfg PinConfig) error {
+	sf, err := decryptSecret(dataDir, masterKey)
+	if err != nil {
+		return err
+	}
+
+	sf.PinMode = cfg.Mode
+	sf.PinKey = cfg.PinKey
+	sf.PinVerifyTag = cfg.PinTag
+	sf.TotpSecret = cfg.TotpSecret
+
+	return encryptAndWriteSecret(dataDir, masterKey, sf)
 }
 
 const (
@@ -88,58 +172,44 @@ func GenerateRootSalt() ([]byte, error) {
 const (
 	RecommendedTime    uint32 = 6
 	RecommendedMemory  uint32 = 256 * 1024 // 256 MB in KiB
-	RecommendedThreads uint8  = 4
+	RecommendedThreads uint32 = 4
 )
 
-type VaultParams struct {
-	Version          int    `json:"version"`                      // schema version (currently 1)
-	Salt             []byte `json:"salt"`                         // 32-byte random Argon2id salt
-	Time             uint32 `json:"time"`                         // Argon2id time/iterations
-	MemoryKB         uint32 `json:"memory_kb"`                    // Argon2id memory in KiB
-	Threads          uint8  `json:"threads"`                      // Argon2id parallelism
-	KDF              string `json:"kdf,omitempty"`                // identifier, e.g. "argon2id"
-	Cipher           string `json:"cipher,omitempty"`             // identifier, e.g. "aes-256-gcm"
-	MasterKeyPurpose string `json:"master_key_purpose,omitempty"` // HKDF purpose for master key
-	VaultKeyPurpose  string `json:"vault_key_purpose,omitempty"`  // HKDF purpose for vault key
-}
-
-func DefaultVaultParams() (VaultParams, error) {
+func DefaultVaultParams() (*pb.VaultParams, error) {
 	salt, err := GenerateRootSalt()
 	if err != nil {
-		return VaultParams{}, err
+		return nil, err
 	}
-	return VaultParams{
+	return &pb.VaultParams{
 		Version:          1,
 		Salt:             salt,
 		Time:             RecommendedTime,
-		MemoryKB:         RecommendedMemory,
+		MemoryKb:         RecommendedMemory,
 		Threads:          RecommendedThreads,
-		KDF:              "argon2id",
+		Kdf:              "argon2id",
 		Cipher:           "aes-256-gcm",
 		MasterKeyPurpose: masterKeyPurpose,
 		VaultKeyPurpose:  vaultKeyPurpose,
 	}, nil
 }
 
-// NeedsRehash returns true when any stored parameter is strictly weaker
-// (lower) than the current recommended values.
-func (p VaultParams) NeedsRehash() bool {
+func NeedsRehash(p *pb.VaultParams) bool {
 	return p.Time < RecommendedTime ||
-		p.MemoryKB < RecommendedMemory ||
+		p.MemoryKb < RecommendedMemory ||
 		p.Threads < RecommendedThreads
 }
 
-func marshalVaultParams(p VaultParams) ([]byte, error) {
+func marshalVaultParams(p *pb.VaultParams) ([]byte, error) {
 	if p.Version == 0 {
 		p.Version = 1
 	}
-	if p.KDF == "" {
-		p.KDF = "argon2id"
+	if p.Kdf == "" {
+		p.Kdf = "argon2id"
 	}
 	if p.Cipher == "" {
 		p.Cipher = "aes-256-gcm"
 	}
-	data, err := json.Marshal(p)
+	data, err := proto.Marshal(p)
 	if err != nil {
 		return nil, fmt.Errorf("marshalling vault params: %w", err)
 	}
@@ -151,7 +221,7 @@ func HashVaultParamsBytes(data []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
-func HashVaultParams(p VaultParams) (string, error) {
+func HashVaultParams(p *pb.VaultParams) (string, error) {
 	data, err := marshalVaultParams(p)
 	if err != nil {
 		return "", err
@@ -163,7 +233,7 @@ func vaultParamsPath(dataDir string) string {
 	return filepath.Join(dataDir, ".vault_params")
 }
 
-func SaveVaultParams(dataDir string, p VaultParams) error {
+func SaveVaultParams(dataDir string, p *pb.VaultParams) error {
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
@@ -177,7 +247,7 @@ func SaveVaultParams(dataDir string, p VaultParams) error {
 	return nil
 }
 
-func LoadVaultParams(dataDir string) (*VaultParams, error) {
+func LoadVaultParams(dataDir string) (*pb.VaultParams, error) {
 	p, err := loadVaultParamsFrom(vaultParamsPath(dataDir))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -188,13 +258,13 @@ func LoadVaultParams(dataDir string) (*VaultParams, error) {
 	return p, nil
 }
 
-func loadVaultParamsFrom(path string) (*VaultParams, error) {
+func loadVaultParamsFrom(path string) (*pb.VaultParams, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var p VaultParams
-	if err := json.Unmarshal(data, &p); err != nil {
+	p := &pb.VaultParams{}
+	if err := proto.Unmarshal(data, p); err != nil {
 		return nil, fmt.Errorf("parsing vault params: %w", err)
 	}
 	if len(p.Salt) != 32 {
@@ -206,28 +276,28 @@ func loadVaultParamsFrom(path string) (*VaultParams, error) {
 	if p.Time == 0 {
 		p.Time = RecommendedTime
 	}
-	if p.MemoryKB == 0 {
-		p.MemoryKB = RecommendedMemory
+	if p.MemoryKb == 0 {
+		p.MemoryKb = RecommendedMemory
 	}
 	if p.Threads == 0 {
 		p.Threads = RecommendedThreads
 	}
-	if p.KDF == "" {
-		p.KDF = "argon2id"
+	if p.Kdf == "" {
+		p.Kdf = "argon2id"
 	}
 	if p.Cipher == "" {
 		p.Cipher = "aes-256-gcm"
 	}
-	return &p, nil
+	return p, nil
 }
 
-func DeriveRootKey(password string, p VaultParams) []byte {
+func DeriveRootKey(password string, p *pb.VaultParams) []byte {
 	return argon2.IDKey(
 		[]byte(password),
 		p.Salt,
 		p.Time,
-		p.MemoryKB,
-		p.Threads,
+		p.MemoryKb,
+		uint8(p.Threads),
 		32,
 	)
 }
@@ -241,7 +311,7 @@ func DeriveHKDFKey(rootKey []byte, purpose string) ([]byte, error) {
 	return key, nil
 }
 
-func DeriveKeys(password string, p VaultParams) (masterKey, vaultKey []byte, err error) {
+func DeriveKeys(password string, p *pb.VaultParams) (masterKey, vaultKey []byte, err error) {
 	rootKey := DeriveRootKey(password, p)
 	defer WipeBytes(rootKey)
 
@@ -260,7 +330,7 @@ func DeriveKeys(password string, p VaultParams) (masterKey, vaultKey []byte, err
 	return masterKey, vaultKey, nil
 }
 
-func RehashVault(dataDir string, password string, oldParams VaultParams) (*VaultParams, error) {
+func RehashVault(dataDir string, password string, oldParams *pb.VaultParams) (*pb.VaultParams, error) {
 	// Derive old keys.
 	oldMasterKey, oldVaultKey, err := DeriveKeys(password, oldParams)
 	if err != nil {
@@ -275,13 +345,13 @@ func RehashVault(dataDir string, password string, oldParams VaultParams) (*Vault
 	}
 
 	// Build new params: keep the same salt and purpose strings, bump the Argon2id cost.
-	newParams := VaultParams{
+	newParams := &pb.VaultParams{
 		Version:          1,
 		Salt:             oldParams.Salt,
 		Time:             RecommendedTime,
-		MemoryKB:         RecommendedMemory,
+		MemoryKb:         RecommendedMemory,
 		Threads:          RecommendedThreads,
-		KDF:              "argon2id",
+		Kdf:              "argon2id",
 		Cipher:           "aes-256-gcm",
 		MasterKeyPurpose: oldParams.MasterKeyPurpose,
 		VaultKeyPurpose:  oldParams.VaultKeyPurpose,
@@ -295,9 +365,16 @@ func RehashVault(dataDir string, password string, oldParams VaultParams) (*Vault
 	defer WipeBytes(newMasterKey)
 	defer WipeBytes(newVaultKey)
 
-	// Re-encrypt .secret (includes vault params hash).
+	pinCfg, _ := ReadPinConfig(dataDir, oldMasterKey)
+
 	if err := WriteSecretWithParams(dataDir, newParams, newMasterKey); err != nil {
 		return nil, fmt.Errorf("re-keying vault secret: %w", err)
+	}
+
+	if pinCfg != nil && pinCfg.Mode != "" {
+		if err := WritePinConfig(dataDir, newMasterKey, *pinCfg); err != nil {
+			return nil, fmt.Errorf("preserving pin config: %w", err)
+		}
 	}
 
 	// Re-encrypt all entries and attachments.
@@ -310,7 +387,7 @@ func RehashVault(dataDir string, password string, oldParams VaultParams) (*Vault
 		return nil, fmt.Errorf("saving vault params: %w", err)
 	}
 
-	return &newParams, nil
+	return newParams, nil
 }
 
 func VaultHasEntries(dataDir string) bool {
@@ -419,7 +496,7 @@ func vaultParamsAAD(dataDir string) []byte {
 	return []byte(h)
 }
 
-func EnsureSecret(dataDir string, masterKey []byte, vp VaultParams) (KDFParams, error) {
+func EnsureSecret(dataDir string, masterKey []byte, vp *pb.VaultParams) (KDFParams, error) {
 	if p, err := loadKDFSecret(dataDir, masterKey); err == nil {
 		return p, nil
 	}
@@ -434,19 +511,9 @@ func EnsureSecret(dataDir string, masterKey []byte, vp VaultParams) (KDFParams, 
 }
 
 func VerifyVaultParamsHash(dataDir string, masterKey []byte) error {
-	b, err := os.ReadFile(secretPath(dataDir))
+	sf, err := decryptSecret(dataDir, masterKey)
 	if err != nil {
-		return fmt.Errorf("reading secret: %w", err)
-	}
-
-	aad := vaultParamsAAD(dataDir)
-	plaintext, err := DecryptAES256GCM(b, masterKey, aad)
-	if err != nil {
-		return fmt.Errorf("decrypting secret: %w", err)
-	}
-	var sf secretFile
-	if err := json.Unmarshal(plaintext, &sf); err != nil {
-		return fmt.Errorf("parsing secret: %w", err)
+		return err
 	}
 	if sf.VaultParamsHash == "" {
 		return fmt.Errorf("vault params hash missing from .secret")
@@ -467,20 +534,9 @@ func VerifyVaultParamsHash(dataDir string, masterKey []byte) error {
 // HMAC commit tag against the provided master key and the nonce stored
 // alongside it. Returns ErrWrongPassword if the tag does not match.
 func VerifyCommitTag(dataDir string, masterKey []byte) error {
-	b, err := os.ReadFile(secretPath(dataDir))
+	sf, err := decryptSecret(dataDir, masterKey)
 	if err != nil {
-		return fmt.Errorf("reading secret: %w", err)
-	}
-
-	aad := vaultParamsAAD(dataDir)
-	plaintext, err := DecryptAES256GCM(b, masterKey, aad)
-	if err != nil {
-		return fmt.Errorf("decrypting secret: %w", err)
-	}
-
-	var sf secretFile
-	if err := json.Unmarshal(plaintext, &sf); err != nil {
-		return fmt.Errorf("parsing secret: %w", err)
+		return err
 	}
 
 	if sf.CommitTag == "" || len(sf.CommitNonce) == 0 {
@@ -495,19 +551,8 @@ func VerifyCommitTag(dataDir string, masterKey []byte) error {
 }
 
 func loadKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
-	b, err := os.ReadFile(secretPath(dataDir))
+	sf, err := decryptSecret(dataDir, masterKey)
 	if err != nil {
-		return KDFParams{}, err
-	}
-
-	aad := vaultParamsAAD(dataDir)
-	plaintext, err := DecryptAES256GCM(b, masterKey, aad)
-	if err != nil {
-		return KDFParams{}, err
-	}
-
-	var sf secretFile
-	if err := json.Unmarshal(plaintext, &sf); err != nil {
 		return KDFParams{}, err
 	}
 	if sf.Version <= 0 {
@@ -525,7 +570,7 @@ func loadKDFSecret(dataDir string, masterKey []byte) (KDFParams, error) {
 		return KDFParams{}, ErrWrongPassword
 	}
 
-	p := KDFParams{Salt: sf.Salt, Time: sf.Time, MemoryKB: sf.MemoryKB, Threads: sf.Threads}
+	p := KDFParams{Salt: sf.Salt, Time: sf.Time, MemoryKB: sf.MemoryKb, Threads: uint8(sf.Threads)}
 	ensureKDFParams(&p)
 	return p, nil
 }
@@ -541,45 +586,23 @@ func writeKDFSecretAtomic(dataDir string, p KDFParams, masterKey []byte, vaultPa
 	if err != nil {
 		return err
 	}
-	sf := secretFile{
+	sf := &pb.SecretFile{
 		Version:         1,
 		Salt:            p.Salt,
 		Time:            p.Time,
-		MemoryKB:        p.MemoryKB,
-		Threads:         p.Threads,
+		MemoryKb:        p.MemoryKB,
+		Threads:         uint32(p.Threads),
 		KeyLen:          32,
-		KDF:             "argon2id",
+		Kdf:             "argon2id",
 		VaultParamsHash: vaultParamsHash,
 		CommitNonce:     commitNonce,
 		CommitTag:       ComputeCommitTag(masterKey, commitNonce),
 	}
-	b, _ := json.MarshalIndent(sf, "", "  ")
 
-	// Use the vault params hash as GCM AAD so that any tampering with
-	// .vault_params causes authenticated decryption to fail.
-	aad := []byte(vaultParamsHash)
-	ciphertext, err := EncryptAES256GCM(b, masterKey, aad)
-	if err != nil {
-		return err
-	}
-
-	vaultDir := filepath.Dir(secretPath(dataDir))
-	if err := os.MkdirAll(vaultDir, 0700); err != nil {
-		return err
-	}
-
-	tmp := secretPath(dataDir) + ".tmp"
-	if err := os.WriteFile(tmp, ciphertext, 0600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, secretPath(dataDir)); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+	return encryptAndWriteSecret(dataDir, masterKey, sf)
 }
 
-func WriteSecretWithParams(dataDir string, vp VaultParams, masterKey []byte) error {
+func WriteSecretWithParams(dataDir string, vp *pb.VaultParams, masterKey []byte) error {
 	hash, err := HashVaultParams(vp)
 	if err != nil {
 		return err

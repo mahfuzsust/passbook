@@ -26,11 +26,11 @@ func saveEntries(entries []*pb.Entry, names []string, masterPassword string, cfg
 	if err != nil || vaultParams == nil {
 		return fmt.Errorf("failed to load vault params: vault may not be initialized")
 	}
-	masterKey, vaultKey, err := crypto.DeriveKeys(masterPassword, *vaultParams)
+	masterKey, vaultKey, err := crypto.DeriveKeys(masterPassword, vaultParams)
 	if err != nil {
 		return fmt.Errorf("key derivation error: %w", err)
 	}
-	if _, err := crypto.EnsureSecret(dataDir, masterKey, *vaultParams); err != nil {
+	if _, err := crypto.EnsureSecret(dataDir, masterKey, vaultParams); err != nil {
 		crypto.WipeBytes(masterKey)
 		crypto.WipeBytes(vaultKey)
 		return fmt.Errorf("wrong master password or vault error: %w", err)

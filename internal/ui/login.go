@@ -57,46 +57,53 @@ func goToMain(pwd string) {
 			crypto.WipeBytes(vaultKey)
 			return
 		}
-		crypto.WipeBytes(masterKey)
 
 		uiMasterKey = vaultKey
-	} else {
-		masterKey, vaultKey, err := crypto.DeriveKeys(pwd, *vaultParams)
-		if err != nil {
-			return
-		}
-
-		if err := crypto.VerifyMasterKey(dataDir, masterKey); err != nil {
-			crypto.WipeBytes(masterKey)
-			crypto.WipeBytes(vaultKey)
-			showLoginError("Wrong password.")
-			return
-		}
-
-		if err := crypto.VerifyCommitTag(dataDir, masterKey); err != nil {
-			crypto.WipeBytes(masterKey)
-			crypto.WipeBytes(vaultKey)
-			showLoginError("Wrong password.")
-			return
-		}
-		crypto.WipeBytes(masterKey)
-
-		if vaultParams.NeedsRehash() {
-			if newParams, err := crypto.RehashVault(dataDir, pwd, *vaultParams); err == nil && newParams != nil {
-				vaultParams = newParams
-				if _, vaultKey, err = crypto.DeriveKeys(pwd, *newParams); err != nil {
-					return
-				}
-			}
-		}
-
-		uiMasterKey = vaultKey
+		uiTempMasterKey = masterKey
+		showPinSetup()
+		return
 	}
 
-	refreshTree("")
+	masterKey, vaultKey, err := crypto.DeriveKeys(pwd, vaultParams)
+	if err != nil {
+		return
+	}
 
-	uiPages.SwitchToPage("main")
-	uiApp.SetFocus(uiTreeView)
+	if err := crypto.VerifyMasterKey(dataDir, masterKey); err != nil {
+		crypto.WipeBytes(masterKey)
+		crypto.WipeBytes(vaultKey)
+		showLoginError("Wrong password.")
+		return
+	}
+
+	if err := crypto.VerifyCommitTag(dataDir, masterKey); err != nil {
+		crypto.WipeBytes(masterKey)
+		crypto.WipeBytes(vaultKey)
+		showLoginError("Wrong password.")
+		return
+	}
+
+	if crypto.NeedsRehash(vaultParams) {
+		if newParams, err := crypto.RehashVault(dataDir, pwd, vaultParams); err == nil && newParams != nil {
+			vaultParams = newParams
+			crypto.WipeBytes(masterKey)
+			crypto.WipeBytes(vaultKey)
+			masterKey, vaultKey, err = crypto.DeriveKeys(pwd, newParams)
+			if err != nil {
+				return
+			}
+		}
+	}
+
+	uiMasterKey = vaultKey
+	uiTempMasterKey = masterKey
+
+	pinCfg, _ := crypto.ReadPinConfig(dataDir, masterKey)
+	if pinCfg != nil && pinCfg.Mode != "" {
+		showPinVerify(pinCfg)
+	} else {
+		showPinSetup()
+	}
 }
 
 func setupLogin() {
