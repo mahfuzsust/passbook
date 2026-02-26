@@ -59,7 +59,7 @@ func showChangePassword() {
 func doChangePassword() {
 	currentPwd := uiChangePwdForm.GetFormItem(0).(*tview.InputField).GetText()
 	newPwd := uiChangePwdForm.GetFormItem(1).(*tview.InputField).GetText()
-	confirmPwd := uiChangePwdForm.GetFormItem(2).(*tview.InputField).GetText()
+	confirmPwd := uiChangePwdForm.GetFormItem(3).(*tview.InputField).GetText()
 
 	if currentPwd == "" || newPwd == "" || confirmPwd == "" {
 		showChangePwdError("All fields are required.")
@@ -71,21 +71,9 @@ func doChangePassword() {
 		return
 	}
 
-	if currentPwd == newPwd {
-		showChangePwdError("New password must be different from current.")
-		return
-	}
-
-	_, level, _ := utils.PasswordStrength(newPwd)
-	if level < utils.StrengthGood {
-		showChangePwdError("New password is too weak.")
-		return
-	}
-
 	dataDir := config.ExpandPath(uiDataDir)
 
-	// Verify the current password and derive the old vault key.
-	var oldVaultKey []byte
+	// Verify the current password first.
 	vaultParams, err := crypto.LoadVaultParams(dataDir)
 	if err != nil || vaultParams == nil {
 		showChangePwdError("Failed to load vault params.")
@@ -96,16 +84,31 @@ func doChangePassword() {
 		showChangePwdError("Key derivation error: " + err.Error())
 		return
 	}
-	if _, err := crypto.EnsureSecret(dataDir, oldMasterKey, vaultParams); err != nil {
+	if err := crypto.VerifyMasterKey(dataDir, oldMasterKey); err != nil {
 		crypto.WipeBytes(oldMasterKey)
 		crypto.WipeBytes(vk)
 		showChangePwdError("Current password is incorrect.")
 		return
 	}
 
+	if currentPwd == newPwd {
+		crypto.WipeBytes(oldMasterKey)
+		crypto.WipeBytes(vk)
+		showChangePwdError("New password must be different from current.")
+		return
+	}
+
+	_, level, _ := utils.PasswordStrength(newPwd)
+	if level < utils.StrengthGood {
+		crypto.WipeBytes(oldMasterKey)
+		crypto.WipeBytes(vk)
+		showChangePwdError("New password is too weak.")
+		return
+	}
+
 	pinCfg, _ := crypto.ReadPinConfig(dataDir, oldMasterKey)
 	crypto.WipeBytes(oldMasterKey)
-	oldVaultKey = vk
+	oldVaultKey := vk
 
 	// Always use new HKDF scheme for the new password.
 	newParams, err := crypto.DefaultVaultParams()
@@ -117,6 +120,16 @@ func doChangePassword() {
 	newMasterKey, newVaultKey, err := crypto.DeriveKeys(newPwd, newParams)
 	if err != nil {
 		showChangePwdError("Key derivation error: " + err.Error())
+		return
+	}
+
+	// Save new vault params first so the AAD used for .secret encryption
+	// matches what future logins will compute from the file on disk.
+	if err := crypto.SaveVaultParams(dataDir, newParams); err != nil {
+		crypto.WipeBytes(newMasterKey)
+		crypto.WipeBytes(newVaultKey)
+		crypto.WipeBytes(oldVaultKey)
+		showChangePwdError("Failed to save vault params: " + err.Error())
 		return
 	}
 
@@ -139,7 +152,6 @@ func doChangePassword() {
 	}
 	crypto.WipeBytes(newMasterKey)
 
-	// Re-encrypt all entries and attachments.
 	if err := crypto.ReKeyEntries(dataDir, oldVaultKey, newVaultKey); err != nil {
 		crypto.WipeBytes(newVaultKey)
 		crypto.WipeBytes(oldVaultKey)
@@ -147,12 +159,6 @@ func doChangePassword() {
 		return
 	}
 	crypto.WipeBytes(oldVaultKey)
-
-	// Persist the new vault params and migration state.
-	if err := crypto.SaveVaultParams(dataDir, newParams); err != nil {
-		showChangePwdError("Failed to save vault params: " + err.Error())
-		return
-	}
 
 	// Update in-memory state.
 	crypto.WipeBytes(uiMasterKey)
@@ -167,7 +173,13 @@ func doChangePassword() {
 }
 
 func showChangePwdError(msg string) {
+	clearChangePwdForm()
 	uiErrorModal.SetText(msg)
+	uiErrorModal.SetDoneFunc(func(int, string) {
+		uiPages.SwitchToPage("main")
+		uiApp.SetFocus(uiTreeView)
+		uiErrorModal.SetDoneFunc(func(int, string) { uiPages.SwitchToPage("editor") })
+	})
 	uiPages.SwitchToPage("error")
 }
 

@@ -367,6 +367,10 @@ func RehashVault(dataDir string, password string, oldParams *pb.VaultParams) (*p
 
 	pinCfg, _ := ReadPinConfig(dataDir, oldMasterKey)
 
+	if err := SaveVaultParams(dataDir, newParams); err != nil {
+		return nil, fmt.Errorf("saving vault params: %w", err)
+	}
+
 	if err := WriteSecretWithParams(dataDir, newParams, newMasterKey); err != nil {
 		return nil, fmt.Errorf("re-keying vault secret: %w", err)
 	}
@@ -377,14 +381,8 @@ func RehashVault(dataDir string, password string, oldParams *pb.VaultParams) (*p
 		}
 	}
 
-	// Re-encrypt all entries and attachments.
 	if err := ReKeyEntries(dataDir, oldVaultKey, newVaultKey); err != nil {
 		return nil, fmt.Errorf("re-keying entries: %w", err)
-	}
-
-	// Persist the new parameters.
-	if err := SaveVaultParams(dataDir, newParams); err != nil {
-		return nil, fmt.Errorf("saving vault params: %w", err)
 	}
 
 	return newParams, nil
