@@ -11,8 +11,10 @@ import (
 
 var (
 	uiChangePwdForm     *tview.Form
+	uiChangePwdFlex     *tview.Flex
 	uiChangePwdModal    tview.Primitive
 	uiChangePwdStrength *strengthMeter
+	uiChangePwdStatus   *tview.TextView
 )
 
 func setupChangePassword() {
@@ -33,10 +35,16 @@ func setupChangePassword() {
 		uiApp.SetFocus(uiTreeView)
 	})
 
-	uiChangePwdForm.SetBorder(true).SetTitle(" Change Master Password ").SetTitleAlign(tview.AlignCenter)
 	styleForm(uiChangePwdForm)
 
-	uiChangePwdForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+	uiChangePwdStatus = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
+
+	uiChangePwdFlex = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(uiChangePwdForm, 0, 1, true).
+		AddItem(uiChangePwdStatus, 1, 0, false)
+	uiChangePwdFlex.SetBorder(true).SetTitle(" Change Master Password ").SetTitleAlign(tview.AlignCenter)
+
+	uiChangePwdFlex.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEsc {
 			clearChangePwdForm()
 			uiPages.SwitchToPage("main")
@@ -46,14 +54,14 @@ func setupChangePassword() {
 		return event
 	})
 
-	uiChangePwdModal = newResponsiveModal(uiChangePwdForm, 50, 14, 80, 18, 0.5, 0.4)
+	uiChangePwdModal = newResponsiveModal(uiChangePwdFlex, 50, 15, 80, 19, 0.5, 0.4)
 	uiPages.AddPage("changepwd", uiChangePwdModal, true, false)
 }
 
 func showChangePassword() {
 	clearChangePwdForm()
 	uiPages.SwitchToPage("changepwd")
-	uiApp.SetFocus(uiChangePwdForm)
+	uiApp.SetFocus(uiChangePwdForm.GetFormItem(0))
 }
 
 func doChangePassword() {
@@ -129,7 +137,7 @@ func doChangePassword() {
 		crypto.WipeBytes(newMasterKey)
 		crypto.WipeBytes(newVaultKey)
 		crypto.WipeBytes(oldVaultKey)
-		showChangePwdError("Failed to save vault params: " + err.Error())
+		showChangePwdFatal("Failed to save vault params: " + err.Error())
 		return
 	}
 
@@ -137,7 +145,7 @@ func doChangePassword() {
 		crypto.WipeBytes(newMasterKey)
 		crypto.WipeBytes(newVaultKey)
 		crypto.WipeBytes(oldVaultKey)
-		showChangePwdError("Failed to write new secret: " + err.Error())
+		showChangePwdFatal("Failed to write new secret: " + err.Error())
 		return
 	}
 
@@ -146,7 +154,7 @@ func doChangePassword() {
 			crypto.WipeBytes(newMasterKey)
 			crypto.WipeBytes(newVaultKey)
 			crypto.WipeBytes(oldVaultKey)
-			showChangePwdError("Failed to preserve PIN config: " + err.Error())
+			showChangePwdFatal("Failed to preserve PIN config: " + err.Error())
 			return
 		}
 	}
@@ -155,7 +163,7 @@ func doChangePassword() {
 	if err := crypto.ReKeyEntries(dataDir, oldVaultKey, newVaultKey); err != nil {
 		crypto.WipeBytes(newVaultKey)
 		crypto.WipeBytes(oldVaultKey)
-		showChangePwdError("Re-encrypt failed: " + err.Error())
+		showChangePwdFatal("Re-encrypt failed: " + err.Error())
 		return
 	}
 	crypto.WipeBytes(oldVaultKey)
@@ -173,6 +181,12 @@ func doChangePassword() {
 }
 
 func showChangePwdError(msg string) {
+	if uiChangePwdStatus != nil {
+		uiChangePwdStatus.SetText("[red]" + msg)
+	}
+}
+
+func showChangePwdFatal(msg string) {
 	clearChangePwdForm()
 	uiErrorModal.SetText(msg)
 	uiErrorModal.SetDoneFunc(func(int, string) {
@@ -194,5 +208,8 @@ func clearChangePwdForm() {
 	}
 	if uiChangePwdStrength != nil {
 		uiChangePwdStrength.Update("")
+	}
+	if uiChangePwdStatus != nil {
+		uiChangePwdStatus.SetText("")
 	}
 }

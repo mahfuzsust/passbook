@@ -24,6 +24,7 @@ tasks:
   build:
     desc: Build the passbook binary
     cmds:
+      - rm -f bin/passbook
       - go build -o bin/passbook ./cmd/passbook
 
   test:
@@ -37,3 +38,9 @@ tasks:
     desc: Run the passbook binary
     cmds:
       - ./bin/passbook
+  
+  run:clean:
+    desc: Run the passbook binary and clean up the binary
+    cmds:
+      - rm -rf ~/.passbook
+      - task run
