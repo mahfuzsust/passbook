@@ -177,6 +177,14 @@ func setupTotpSetup() {
 			uiPendingTotp = ""
 			showPinSetup()
 			return nil
+		case tcell.KeyCtrlY:
+			if uiPendingTotp != "" {
+				_ = clipboard.WriteAll(uiPendingTotp)
+				if uiTotpSetupStatus != nil {
+					uiTotpSetupStatus.SetText("[green]Secret copied!")
+				}
+			}
+			return nil
 		case tcell.KeyEnter:
 			focused := uiApp.GetFocus()
 			for i := 0; i < uiTotpSetupForm.GetButtonCount(); i++ {
@@ -215,14 +223,13 @@ func showTotpSetup() {
 		uiTotpSetupFlex.AddItem(qrTV, qrLines, 0, false)
 	}
 
-	uiTotpSetupForm.Clear(true)
+	secretRow := tview.NewFlex().SetDirection(tview.FlexColumn)
+	secretTV := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
+	secretTV.SetText("[yellow]" + formatTotpSecret(uiPendingTotp) + " [white]| [green::b]Ctrl+Y[white::B] to copy")
+	secretRow.AddItem(secretTV, 0, 1, false)
+	uiTotpSetupFlex.AddItem(secretRow, 1, 0, false)
 
-	secretTV := tview.NewTextView().SetDynamicColors(true)
-	secretTV.SetLabel("Secret ")
-	secretTV.SetText("[yellow]" + formatTotpSecret(uiPendingTotp))
-	secretTV.SetSize(1, 0)
-	secretTV.SetScrollable(false)
-	uiTotpSetupForm.AddFormItem(secretTV)
+	uiTotpSetupForm.Clear(true)
 
 	uiTotpSetupForm.AddInputField("Code", "", 12, pinDigitAccept, nil)
 
@@ -232,11 +239,7 @@ func showTotpSetup() {
 	uiTotpSetupStatus.SetScrollable(false)
 	uiTotpSetupForm.AddFormItem(uiTotpSetupStatus)
 
-	uiTotpSetupForm.AddButton("Verify & Save", doSaveTotp)
-	uiTotpSetupForm.AddButton("Copy Secret", func() {
-		_ = clipboard.WriteAll(uiPendingTotp)
-		uiTotpSetupStatus.SetText("[green]Secret copied to clipboard.")
-	})
+	uiTotpSetupForm.AddButton("Verify", doSaveTotp)
 	uiTotpSetupForm.AddButton("Back", func() {
 		uiPendingTotp = ""
 		showPinSetup()
@@ -388,16 +391,7 @@ func enterMain() {
 }
 
 func formatTotpSecret(secret string) string {
-	secret = strings.ToUpper(secret)
-	var parts []string
-	for i := 0; i < len(secret); i += 4 {
-		end := i + 4
-		if end > len(secret) {
-			end = len(secret)
-		}
-		parts = append(parts, secret[i:end])
-	}
-	return strings.Join(parts, " ")
+	return strings.ToUpper(secret)
 }
 
 func validateTOTP(code, secret string) bool {

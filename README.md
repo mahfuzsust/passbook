@@ -7,6 +7,7 @@ PassBook is a terminal-based password manager built in Go. It stores your vault 
 ## ✨ Features
 
 - Local encryption: Entries and attachments are encrypted at rest using AES-256-GCM.
+- Two-factor authentication: After login, an additional 6-digit PIN or TOTP authenticator app verification is required. Configurable on first use with QR code setup for authenticator apps.
 - Entry types: Logins, Cards, Notes, and Files.
 - Built-in TOTP: Generates 6-digit codes for Login entries with a live progress bar.
 - Smart clipboard handling:
@@ -175,8 +176,8 @@ Inside `<dataDir>` you'll see:
 - `notes/` — encrypted protobuf entries stored as `*.pb`
 - `files/` — encrypted protobuf entries stored as `*.pb` (plus attachment metadata)
 - `_attachments/` — encrypted attachment blobs keyed by attachment ID
-- `.secret` — vault-local KDF configuration (salt + Argon2id parameters)
-- `.vault_params` — versioned JSON file storing vault parameters (salt, Argon2id cost, KDF/cipher identifiers)
+- `.secret` — vault-local KDF configuration and 2FA settings (encrypted protobuf)
+- `.vault_params` — vault parameters: salt, Argon2id cost, KDF/cipher identifiers (protobuf)
 
 Notes:
 
@@ -192,10 +193,12 @@ For the full security architecture — encryption details, key derivation hierar
 
 - **Encryption**: AES-256-GCM with 12-byte random nonces.
 - **Key derivation**: Argon2id → HKDF-SHA256 hierarchy producing separate master and vault keys from a single password.
+- **Two-factor authentication**: 6-digit numeric PIN (verified via HMAC-SHA256) or TOTP authenticator app. Configuration is stored encrypted inside `.secret` and preserved across password changes.
 - **Wrong-password detection**: An HMAC commit tag (`HMAC-SHA256(masterKey, random_nonce)`) stored inside `.secret` provides explicit detection.
 - **Tamper detection**: Three layers — GCM AAD binding, SHA-256 hash verification, and HMAC commit tag.
 - **Auto-migration**: Legacy vaults, weaker Argon2id parameters, old HKDF purpose strings, and missing commit tags are all upgraded transparently on login.
 - **Key zeroization**: All ephemeral keys are wiped from memory as soon as they are no longer needed.
+- **Serialization**: Vault metadata (`.secret`, `.vault_params`) uses Protocol Buffers for compact, deterministic serialization.
 
 
 ## ⌨️ Keyboard shortcuts
@@ -247,7 +250,7 @@ Viewer behavior:
 
 ## Protobuf code generation
 
-This repo includes a simple command to regenerate `internal/pb/entry.pb.go` from `internal/pb/entry.proto`.
+This repo includes a simple command to regenerate Go code from the `.proto` files in `internal/pb/`.
 
 Prerequisites:
 

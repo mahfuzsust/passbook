@@ -18,6 +18,7 @@ This document describes PassBook's cryptographic design, key derivation hierarch
   - [Tamper Detection (Defense in Depth)](#tamper-detection-defense-in-depth)
 - [The `.vault_params` File](#the-vault_params-file)
 - [Entries and Attachments](#entries-and-attachments)
+- [Two-Factor Authentication (2FA)](#two-factor-authentication-2fa)
 - [Key Zeroization](#key-zeroization)
 - [Automatic Migrations](#automatic-migrations)
   - [Legacy Scheme Migration](#legacy-scheme-migration)
@@ -107,7 +108,7 @@ Storing the purpose strings in `.vault_params` ensures:
 
 Located at `<dataDir>/.secret`. This is the central trust anchor of the vault.
 
-The file contains a JSON document (versioned schema) encrypted with AES-256-GCM using the **master key**:
+The file contains a Protocol Buffer message (versioned schema) encrypted with AES-256-GCM using the **master key**:
 
 | Field              | Description                                                  |
 | ------------------ | ------------------------------------------------------------ |
@@ -121,6 +122,10 @@ The file contains a JSON document (versioned schema) encrypted with AES-256-GCM 
 | `vault_params_hash`| SHA-256 of `.vault_params` for tamper detection              |
 | `commit_nonce`     | 32-byte random nonce for HMAC commit tag                     |
 | `commit_tag`       | `hex(HMAC-SHA256(masterKey, commit_nonce))` for wrong-password detection |
+| `pin_mode`         | 2FA mode: `"pin"` or `"totp"` (empty if not configured)     |
+| `pin_key`          | 32-byte random key for PIN HMAC verification                 |
+| `pin_verify_tag`   | `hex(HMAC-SHA256(pin_key, PIN))` for PIN verification        |
+| `totp_secret`      | Base32-encoded TOTP shared secret for authenticator apps      |
 
 ### HMAC Commit Tag (Wrong-Password Detection)
 
@@ -133,7 +138,7 @@ commit_tag   = hex(HMAC-SHA256(master_key, commit_nonce))
 
 **How it works:**
 
-1. When `.secret` is created or rewritten, a fresh 32-byte random nonce is generated and `HMAC-SHA256(masterKey, nonce)` is computed. Both the nonce and the resulting tag are stored inside the encrypted `.secret` JSON.
+1. When `.secret` is created or rewritten, a fresh 32-byte random nonce is generated and `HMAC-SHA256(masterKey, nonce)` is computed. Both the nonce and the resulting tag are stored inside the encrypted `.secret` message.
 2. On login, after decrypting `.secret`, the stored `commit_nonce` is used to recompute the HMAC with the candidate master key. If the recomputed tag does not match `commit_tag`, the password is definitively wrong and `ErrWrongPassword` is returned.
 3. Old vaults without a commit tag (empty `commit_tag` or missing `commit_nonce`) are accepted for backward compatibility and automatically migrated on next login (see [Commit Tag Migration](#commit-tag-migration)).
 
@@ -151,7 +156,7 @@ The `.secret` file is encrypted with the SHA-256 hash of `.vault_params` as **GC
 
 ### Tamper Detection (Defense in Depth)
 
-The `vault_params_hash` field inside the decrypted `.secret` JSON is compared against the SHA-256 of the raw `.vault_params` bytes on disk. This provides a secondary check for vaults migrated from older versions that were encrypted without AAD.
+The `vault_params_hash` field inside the decrypted `.secret` message is compared against the SHA-256 of the raw `.vault_params` bytes on disk. This provides a secondary check for vaults migrated from older versions that were encrypted without AAD.
 
 ---
 
@@ -159,7 +164,7 @@ The `vault_params_hash` field inside the decrypted `.secret` JSON is compared ag
 
 Located at `<dataDir>/.vault_params`.
 
-Versioned JSON document (currently `version: 1`) storing all public vault parameters:
+Versioned Protocol Buffer message (currently `version: 1`) storing all public vault parameters:
 
 | Field              | Description                                         |
 | ------------------ | --------------------------------------------------- |
@@ -176,7 +181,7 @@ Versioned JSON document (currently `version: 1`) storing all public vault parame
 **Properties:**
 
 - These values are **not secret** — they are public parameters needed to re-derive keys from the password.
-- **Deterministic serialization**: Written as compact JSON with keys in Go's `json.Marshal` order. The same `VaultParams` value always produces identical bytes.
+- **Deterministic serialization**: Written as Protocol Buffer binary. The same `VaultParams` message always produces identical bytes.
 - A SHA-256 hash of the **exact bytes on disk** is stored inside the encrypted `.secret` file for integrity verification.
 
 ---
@@ -191,6 +196,31 @@ All vault data is encrypted with the **vault key**:
 
 ---
 
+## Two-Factor Authentication (2FA)
+
+After master password verification, PassBook requires a second factor before granting access to the vault. On first login, the user chooses one of two modes:
+
+### 6-Digit PIN
+
+- A 32-byte random `pin_key` is generated via `crypto/rand`.
+- The user's PIN is verified using `HMAC-SHA256(pin_key, PIN)`. The resulting tag is stored as `pin_verify_tag` in `.secret`.
+- The `pin_key` is independent of the master key, so PIN verification remains valid across password changes.
+
+### TOTP (Authenticator App)
+
+- A random TOTP secret is generated using the `github.com/pquerna/otp/totp` library.
+- A QR code is rendered in the terminal for scanning with authenticator apps (Google Authenticator, Authy, etc.), along with the text secret and a copy button.
+- TOTP codes are validated with `totp.ValidateCustom` using SHA1, 6 digits, 30-second period, and skew of 2 (allowing ±60 seconds for clock drift).
+- The TOTP shared secret is stored as `totp_secret` in `.secret`.
+
+### Security Properties
+
+- **Application-layer gate**: The PIN/TOTP is an authentication factor, not a cryptographic key derivation input. A 6-digit PIN has only ~20 bits of entropy and cannot provide meaningful protection against offline attacks. The master password (via Argon2id) remains the sole cryptographic security boundary.
+- **Encrypted storage**: All 2FA configuration (`pin_key`, `pin_verify_tag`, `totp_secret`) is stored inside the encrypted `.secret` file. An attacker without the master key cannot access or tamper with the 2FA settings.
+- **Preserved across password changes**: When the master password is changed or parameters are rehashed, the 2FA configuration is read with the old master key and rewritten with the new master key.
+
+---
+
 ## Key Zeroization
 
 All derived keys are ephemeral and zeroed from memory as soon as they are no longer needed:
@@ -198,7 +228,7 @@ All derived keys are ephemeral and zeroed from memory as soon as they are no lon
 | Key                | Lifetime                                                                 |
 | ------------------ | ------------------------------------------------------------------------ |
 | **Root key**       | Wiped immediately after HKDF expansion (inside `DeriveKeys()`)          |
-| **Master key**     | Wiped after `.secret` is verified. Never stored long-term.               |
+| **Master key**     | Held temporarily during 2FA setup/verification, then wiped. Never stored long-term. |
 | **Vault key**      | Held in memory while the app runs. Wiped on exit and on password change. |
 | **Migration keys** | Old and new master/vault keys wiped via `defer` after re-encryption.     |
 | **Decrypted plaintext** | Wiped immediately after re-encryption with new key.                 |
@@ -270,10 +300,11 @@ Vaults created before the HMAC commit tag was introduced have no `commit_nonce` 
 | 5 | **Portability** | Everything needed to unlock (except the password) lives under `<dataDir>`. Copy the directory to a new machine and it just works. |
 | 6 | **Auto-rehash** | Argon2id parameters are stored per-vault. When recommended parameters increase, PassBook automatically re-derives keys and re-encrypts the vault — no user intervention needed. |
 | 7 | **Key zeroization** | All ephemeral key material is wiped from memory as soon as it is no longer needed. |
-| 8 | **Tamper detection (three layers)** | **(a)** GCM AAD binds `.secret` to `.vault_params` at the cryptographic level. **(b)** A SHA-256 hash inside `.secret` provides a secondary JSON-level check. **(c)** The HMAC commit tag verifies the master key itself is correct. |
+| 8 | **Tamper detection (three layers)** | **(a)** GCM AAD binds `.secret` to `.vault_params` at the cryptographic level. **(b)** A SHA-256 hash inside `.secret` provides a secondary integrity check. **(c)** The HMAC commit tag verifies the master key itself is correct. |
 | 9 | **Nonce uniqueness** | Every AES-256-GCM encryption uses a fresh 12-byte nonce from `crypto/rand`, validated for full read and non-zero output. A new vault key is issued on every password change, resetting the per-key nonce counter well within the birthday bound. |
 | 10 | **Versioned purpose strings** | HKDF info strings are stored in `.vault_params` with explicit version tags (`passbook:master:v1`), enabling safe protocol evolution without breaking existing vaults. |
 | 11 | **Transparent migration** | All security upgrades (salt, rehash, purpose strings, commit tag) are applied automatically on login with atomic rollback on failure. |
+| 12 | **Two-factor authentication** | A second factor (PIN or TOTP) is required after master password verification. The PIN uses an independent HMAC key; the TOTP secret is stored encrypted. Both are preserved across password changes. |
 
 ---
 
@@ -292,8 +323,8 @@ Located at `~/.passbook/config.json`.
 
 ```
 <dataDir>/
-├── .vault_params          # Public vault parameters (JSON)
-├── .secret                # Encrypted vault secret (AES-256-GCM)
+├── .vault_params          # Public vault parameters (protobuf)
+├── .secret                # Encrypted vault secret + 2FA config (AES-256-GCM, protobuf)
 ├── logins/                # Encrypted login entries (*.pb)
 ├── cards/                 # Encrypted card entries (*.pb)
 ├── notes/                 # Encrypted note entries (*.pb)
