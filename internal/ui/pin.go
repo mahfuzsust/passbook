@@ -357,13 +357,14 @@ func doVerifyPin() {
 		return
 	}
 
-	if uiPinConfig.Mode == "pin" {
+	switch uiPinConfig.Mode {
+	case "pin":
 		if !crypto.VerifyPinTag(uiPinConfig.PinKey, code, uiPinConfig.PinTag) {
 			uiPinVerifyStatus.SetText("[red]Wrong PIN.")
 			uiPinVerifyForm.GetFormItem(0).(*tview.InputField).SetText("")
 			return
 		}
-	} else if uiPinConfig.Mode == "totp" {
+	case "totp":
 		if !validateTOTP(code, uiPinConfig.TotpSecret) {
 			uiPinVerifyStatus.SetText("[red]Invalid code.")
 			uiPinVerifyForm.GetFormItem(0).(*tview.InputField).SetText("")
@@ -402,8 +403,8 @@ func formatTotpSecret(secret string) string {
 func validateTOTP(code, secret string) bool {
 	ok, _ := totp.ValidateCustom(code, secret, time.Now().UTC(), totp.ValidateOpts{
 		Period:    30,
-		Skew:     2,
-		Digits:   otp.DigitsSix,
+		Skew:      2,
+		Digits:    otp.DigitsSix,
 		Algorithm: otp.AlgorithmSHA1,
 	})
 	return ok
