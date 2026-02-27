@@ -75,6 +75,7 @@ func setupUI() {
 	setupPin()
 	setupMainLayout()
 	setupModals()
+	setupQuickCopy()
 	setupEditor()
 	setupChangePassword()
 	setupFolderCreate()

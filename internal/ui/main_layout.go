@@ -84,6 +84,7 @@ func setupMainLayout() {
 		{"Ctrl+D", "Delete item / folder"},
 		{"Ctrl+N", "Create new folder"},
 		{"Ctrl+F", "Search vault"},
+		{"Ctrl+Y", "Quick copy to clipboard"},
 		{"Ctrl+P", "Change master password"},
 		{"Ctrl+Q", "Quit"},
 		{"Enter", "Open item / toggle folder"},
@@ -135,6 +136,9 @@ func setupMainLayout() {
 			return nil
 		case tcell.KeyCtrlF:
 			uiApp.SetFocus(uiSearchField)
+			return nil
+		case tcell.KeyCtrlY:
+			showQuickCopy()
 			return nil
 		case tcell.KeyCtrlP:
 			showChangePassword()
