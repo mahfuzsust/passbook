@@ -22,6 +22,7 @@ func setupModals() {
 			uiPages.SwitchToPage("main")
 			uiApp.SetFocus(uiTreeView)
 		})
+	enableModalButtonNav(uiDeleteModal)
 	uiPages.AddPage("delete", uiDeleteModal, true, false)
 
 	uiHistoryList = tview.NewList().ShowSecondaryText(true)

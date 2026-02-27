@@ -79,10 +79,12 @@ func setupCollisionModals() {
 				commitSave(newPath, uiPendingSaveData)
 			}
 		})
+	enableModalButtonNav(uiCollisionModal)
 	uiPages.AddPage("collision", uiCollisionModal, true, false)
 
 	uiErrorModal = tview.NewModal().AddButtons([]string{"OK"}).
 		SetDoneFunc(func(i int, l string) { uiPages.SwitchToPage("editor") })
+	enableModalButtonNav(uiErrorModal)
 	uiPages.AddPage("error", uiErrorModal, true, false)
 }
 
@@ -186,6 +188,7 @@ func openEditor(ent *Entry) {
 		}()
 		return event
 	})
+	enableButtonNav(uiEditorForm)
 	uiPages.SwitchToPage("editor")
 }
 

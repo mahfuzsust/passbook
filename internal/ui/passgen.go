@@ -51,6 +51,7 @@ func setupPassGen() {
 		}
 	})
 	styleForm(uiPassGenForm)
+	enableButtonNav(uiPassGenForm)
 
 	uiPassGenLayout = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tview.NewTextView().SetText("Generated:").SetTextColor(tcell.ColorYellow), 1, 0, false).

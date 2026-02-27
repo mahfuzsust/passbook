@@ -63,6 +63,7 @@ func setupPinSetupMenu() {
 		}
 		return event
 	})
+	enableButtonNav(uiPinSetupForm)
 
 	uiPages.AddPage("pin_setup",
 		newResponsiveModal(uiPinSetupForm, 50, 7, 70, 10, 0.5, 0.35), true, false)
@@ -115,6 +116,7 @@ func setupPinCreate() {
 		}
 		return event
 	})
+	enableButtonNav(uiPinCreateForm)
 
 	uiPages.AddPage("pin_create",
 		newResponsiveModal(uiPinCreateForm, 45, 12, 65, 16, 0.45, 0.4), true, false)
@@ -197,6 +199,8 @@ func setupTotpSetup() {
 		}
 		return event
 	})
+
+	enableButtonNav(uiTotpSetupForm)
 
 	uiPages.AddPage("totp_setup",
 		newResponsiveModal(uiTotpSetupFlex, 55, 34, 75, 44, 0.8, 0.9), true, false)
@@ -309,6 +313,7 @@ func setupPinVerify() {
 		}
 		return event
 	})
+	enableButtonNav(uiPinVerifyForm)
 
 	uiPages.AddPage("pin_verify",
 		newResponsiveModal(uiPinVerifyForm, 45, 10, 65, 14, 0.45, 0.35), true, false)

@@ -36,6 +36,7 @@ func setupChangePassword() {
 	})
 
 	styleForm(uiChangePwdForm)
+	enableButtonNav(uiChangePwdForm)
 
 	uiChangePwdStatus = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 

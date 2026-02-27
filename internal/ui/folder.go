@@ -73,6 +73,7 @@ func setupFolderCreate() {
 		}
 		return event
 	})
+	enableButtonNav(uiFolderForm)
 	uiPages.AddPage("folder_create", newResponsiveModal(uiFolderForm, 45, 9, 65, 13, 0.45, 0.3), true, false)
 }
 
@@ -102,6 +103,7 @@ func setupFolderRename() {
 		}
 		return event
 	})
+	enableButtonNav(uiFolderRenameForm)
 	uiPages.AddPage("folder_rename", newResponsiveModal(uiFolderRenameForm, 45, 9, 65, 13, 0.45, 0.3), true, false)
 }
 
@@ -146,6 +148,7 @@ func setupFolderDelete() {
 			uiPages.SwitchToPage("main")
 			uiApp.SetFocus(uiTreeView)
 		})
+	enableModalButtonNav(uiFolderDeleteModal)
 	uiPages.AddPage("folder_delete", uiFolderDeleteModal, true, false)
 }
 
