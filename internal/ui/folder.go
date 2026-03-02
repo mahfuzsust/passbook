@@ -2,19 +2,14 @@ package ui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-
-	"passbook/internal/config"
-	"passbook/internal/crypto"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
 var (
-	uiCurrentFolder     string
+	uiCurrentFolderID   int64
 	uiFolderForm        *tview.Form
 	uiFolderRenameForm  *tview.Form
 	uiFolderDeleteModal *tview.Modal
@@ -23,8 +18,6 @@ var (
 func isValidFolderName(name string) bool {
 	return name != "" &&
 		!strings.ContainsAny(name, `<>:"/\|?*`) &&
-		!strings.Contains(name, "/") &&
-		!strings.Contains(name, string(filepath.Separator)) &&
 		name != "." && name != ".." &&
 		!strings.HasPrefix(name, ".") &&
 		!strings.HasPrefix(name, "_")
@@ -43,9 +36,7 @@ func setupFolderCreate() {
 		if !isValidFolderName(name) {
 			return
 		}
-		basePath := config.ExpandPath(uiDataDir)
-		folderPath := filepath.Join(basePath, name)
-		if err := os.MkdirAll(folderPath, 0700); err != nil {
+		if _, err := uiStore.CreateFolder(name); err != nil {
 			return
 		}
 		refreshTree(uiSearchField.GetText())
@@ -108,11 +99,15 @@ func setupFolderRename() {
 }
 
 func showFolderRename() {
-	if uiFolderRenameForm == nil || uiCurrentFolder == "" {
+	if uiFolderRenameForm == nil || uiCurrentFolderID == 0 {
+		return
+	}
+	folder, _ := uiStore.GetFolder(uiCurrentFolderID)
+	if folder == nil {
 		return
 	}
 	nameField := uiFolderRenameForm.GetFormItemByLabel("Folder Name").(*tview.InputField)
-	nameField.SetText(filepath.Base(uiCurrentFolder))
+	nameField.SetText(folder.Name)
 	uiPages.SwitchToPage("folder_rename")
 }
 
@@ -122,17 +117,9 @@ func doFolderRename() {
 	if !isValidFolderName(name) {
 		return
 	}
-	basePath := config.ExpandPath(uiDataDir)
-	newPath := filepath.Join(basePath, name)
-	if newPath == uiCurrentFolder {
-		uiPages.SwitchToPage("main")
-		uiApp.SetFocus(uiTreeView)
+	if err := uiStore.RenameFolder(uiCurrentFolderID, name); err != nil {
 		return
 	}
-	if err := os.Rename(uiCurrentFolder, newPath); err != nil {
-		return
-	}
-	uiCurrentFolder = newPath
 	refreshTree(uiSearchField.GetText())
 	uiPages.SwitchToPage("main")
 	uiApp.SetFocus(uiTreeView)
@@ -153,57 +140,32 @@ func setupFolderDelete() {
 }
 
 func showFolderDeleteModal() {
-	if uiCurrentFolder == "" {
+	if uiCurrentFolderID == 0 {
 		return
 	}
-	folderName := filepath.Base(uiCurrentFolder)
-	files, _ := os.ReadDir(uiCurrentFolder)
-	count := 0
-	for _, f := range files {
-		if !f.IsDir() && strings.HasSuffix(f.Name(), ".pb") {
-			count++
-		}
+	folder, _ := uiStore.GetFolder(uiCurrentFolderID)
+	if folder == nil {
+		return
 	}
+	count := uiStore.CountEntriesInFolder(uiCurrentFolderID)
 
 	if count > 0 {
 		uiFolderDeleteModal.SetText(fmt.Sprintf(
 			"Folder \"%s\" contains %d item(s).\nAll items inside will be permanently deleted.\n\nAre you sure?",
-			folderName, count))
+			folder.Name, count))
 	} else {
-		uiFolderDeleteModal.SetText(fmt.Sprintf("Delete empty folder \"%s\"?", folderName))
+		uiFolderDeleteModal.SetText(fmt.Sprintf("Delete empty folder \"%s\"?", folder.Name))
 	}
 	uiPages.SwitchToPage("folder_delete")
 }
 
 func doFolderDelete() {
-	if uiCurrentFolder == "" {
+	if uiCurrentFolderID == 0 {
 		return
 	}
-	files, _ := os.ReadDir(uiCurrentFolder)
-	for _, f := range files {
-		if f.IsDir() || !strings.HasSuffix(f.Name(), ".pb") {
-			continue
-		}
-		path := filepath.Join(uiCurrentFolder, f.Name())
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		dec, err := crypto.Decrypt(uiMasterKey, data)
-		if err != nil {
-			continue
-		}
-		ent, err := unmarshalEntry(dec)
-		if err != nil {
-			continue
-		}
-		for _, att := range ent.Attachments {
-			_ = os.Remove(filepath.Join(getAttachmentDir(), att.Id))
-		}
-	}
-	_ = os.RemoveAll(uiCurrentFolder)
-	uiCurrentFolder = ""
-	uiCurrentPath = ""
+	_ = uiStore.DeleteFolder(uiCurrentFolderID)
+	uiCurrentFolderID = 0
+	uiCurrentEntryID = 0
 	uiCurrentEnt = nil
 	refreshTree(uiSearchField.GetText())
 }

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"passbook/internal/config"
 	"passbook/internal/crypto"
+	"passbook/internal/store"
 
 	"github.com/atotto/clipboard"
 	"github.com/gdamore/tcell/v2"
@@ -16,8 +16,6 @@ import (
 )
 
 var (
-	uiTempMasterKey []byte
-
 	uiPinSetupForm *tview.Form
 
 	uiPinCreateForm   *tview.Form
@@ -30,7 +28,7 @@ var (
 
 	uiPinVerifyForm   *tview.Form
 	uiPinVerifyStatus *tview.TextView
-	uiPinConfig       *crypto.PinConfig
+	uiPinConfig       *store.PinConfig
 )
 
 func pinDigitAccept(text string, ch rune) bool {
@@ -149,18 +147,16 @@ func doSavePin() {
 		return
 	}
 
-	dataDir := config.ExpandPath(uiDataDir)
-	cfg := crypto.PinConfig{
+	cfg := store.PinConfig{
 		Mode:   "pin",
 		PinKey: pinKey,
 		PinTag: crypto.ComputePinTag(pinKey, pin),
 	}
-	if err := crypto.WritePinConfig(dataDir, uiTempMasterKey, cfg); err != nil {
+	if err := uiStore.WritePinConfig(&cfg); err != nil {
 		uiPinCreateStatus.SetText("[red]Failed to save PIN.")
 		return
 	}
 
-	wipeTempMasterKey()
 	enterMain()
 }
 
@@ -274,18 +270,16 @@ func doSaveTotp() {
 		return
 	}
 
-	dataDir := config.ExpandPath(uiDataDir)
-	cfg := crypto.PinConfig{
+	cfg := store.PinConfig{
 		Mode:       "totp",
 		TotpSecret: uiPendingTotp,
 	}
-	if err := crypto.WritePinConfig(dataDir, uiTempMasterKey, cfg); err != nil {
+	if err := uiStore.WritePinConfig(&cfg); err != nil {
 		uiTotpSetupStatus.SetText("[red]Failed to save TOTP config.")
 		return
 	}
 
 	uiPendingTotp = ""
-	wipeTempMasterKey()
 	enterMain()
 }
 
@@ -319,7 +313,7 @@ func setupPinVerify() {
 		newResponsiveModal(uiPinVerifyForm, 45, 10, 65, 14, 0.45, 0.35), true, false)
 }
 
-func showPinVerify(cfg *crypto.PinConfig) {
+func showPinVerify(cfg *store.PinConfig) {
 	uiPinConfig = cfg
 	uiPinVerifyForm.Clear(true)
 
@@ -372,7 +366,6 @@ func doVerifyPin() {
 		}
 	}
 
-	wipeTempMasterKey()
 	enterMain()
 }
 
@@ -381,13 +374,6 @@ func doVerifyPin() {
 func setPinAcceptance(form *tview.Form, idx int) {
 	field := form.GetFormItem(idx).(*tview.InputField)
 	field.SetAcceptanceFunc(pinDigitAccept)
-}
-
-func wipeTempMasterKey() {
-	if uiTempMasterKey != nil {
-		crypto.WipeBytes(uiTempMasterKey)
-		uiTempMasterKey = nil
-	}
 }
 
 func enterMain() {
@@ -403,8 +389,8 @@ func formatTotpSecret(secret string) string {
 func validateTOTP(code, secret string) bool {
 	ok, _ := totp.ValidateCustom(code, secret, time.Now().UTC(), totp.ValidateOpts{
 		Period:    30,
-		Skew:      2,
-		Digits:    otp.DigitsSix,
+		Skew:     2,
+		Digits:   otp.DigitsSix,
 		Algorithm: otp.AlgorithmSHA1,
 	})
 	return ok

@@ -1,10 +1,10 @@
 package ui
 
-import "passbook/internal/pb"
+import "passbook/internal/store"
 
-type Entry = pb.Entry
-type Attachment = pb.Attachment
-type PasswordHistory = pb.PasswordHistory
+type Entry = store.EntryFull
+type Attachment = store.AttachmentMeta
+type PasswordHistory = store.PasswordHistory
 type EntryType string
 
 const (

@@ -2,19 +2,20 @@ package ui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
-	"passbook/internal/config"
-	"passbook/internal/crypto"
+	"passbook/internal/store"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
-func selectTreePath(path string) {
+type nodeRef struct {
+	IsFolder bool
+	ID       int64
+}
+
+func selectTreeNode(ref nodeRef) {
 	if uiTreeView == nil {
 		return
 	}
@@ -28,8 +29,8 @@ func selectTreePath(path string) {
 		if n == nil {
 			return nil
 		}
-		if ref := n.GetReference(); ref != nil {
-			if s, ok := ref.(string); ok && s == path {
+		if r := n.GetReference(); r != nil {
+			if nr, ok := r.(nodeRef); ok && nr == ref {
 				return n
 			}
 		}
@@ -64,53 +65,39 @@ func entryTypeIcon(t string) string {
 	}
 }
 
-func readEntryType(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	dec, err := crypto.Decrypt(uiMasterKey, data)
-	if err != nil {
-		return ""
-	}
-	ent, err := unmarshalEntry(dec)
-	if err != nil {
-		return ""
-	}
-	return ent.Type
-}
-
 func listFolders() []string {
-	basePath := config.ExpandPath(uiDataDir)
-	entries, err := os.ReadDir(basePath)
+	folders, err := uiStore.ListFolders()
 	if err != nil {
 		return nil
 	}
-	var folders []string
-	for _, e := range entries {
-		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && !strings.HasPrefix(e.Name(), "_") {
-			folders = append(folders, e.Name())
-		}
+	names := make([]string, len(folders))
+	for i, f := range folders {
+		names[i] = f.Name
 	}
-	sort.Strings(folders)
+	return names
+}
+
+func listFolderInfos() []store.FolderInfo {
+	folders, err := uiStore.ListFolders()
+	if err != nil {
+		return nil
+	}
 	return folders
 }
 
-func addItemNodes(parent *tview.TreeNode, dir string, filter string) int {
-	files, _ := os.ReadDir(dir)
+func addItemNodes(parent *tview.TreeNode, folderID int64, filter string) int {
+	entries, err := uiStore.ListEntries(folderID)
+	if err != nil {
+		return 0
+	}
 	count := 0
-	for _, f := range files {
-		if f.IsDir() || !strings.HasSuffix(f.Name(), ".pb") {
+	for _, e := range entries {
+		if filter != "" && !strings.Contains(strings.ToLower(e.Title), strings.ToLower(filter)) {
 			continue
 		}
-		name := strings.TrimSuffix(f.Name(), ".pb")
-		if filter != "" && !strings.Contains(strings.ToLower(name), strings.ToLower(filter)) {
-			continue
-		}
-		fullPath := filepath.Join(dir, f.Name())
-		icon := entryTypeIcon(readEntryType(fullPath))
-		child := tview.NewTreeNode(fmt.Sprintf("%s %s", icon, name)).
-			SetReference(fullPath).
+		icon := entryTypeIcon(e.EntryType)
+		child := tview.NewTreeNode(fmt.Sprintf("%s %s", icon, e.Title)).
+			SetReference(nodeRef{IsFolder: false, ID: e.ID}).
 			SetSelectable(true)
 		parent.AddChild(child)
 		count++
@@ -121,63 +108,40 @@ func addItemNodes(parent *tview.TreeNode, dir string, filter string) int {
 func refreshTree(filter string) {
 	root := uiTreeView.GetRoot()
 	root.ClearChildren()
-	basePath := config.ExpandPath(uiDataDir)
 
-	entries, err := os.ReadDir(basePath)
-	if err != nil {
-		return
-	}
+	folders := listFolderInfos()
 
-	var folders []os.DirEntry
-	for _, e := range entries {
-		name := e.Name()
-		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
-			continue
-		}
-		if e.IsDir() {
-			folders = append(folders, e)
-		}
-	}
-
-	for _, d := range folders {
-		folderPath := filepath.Join(basePath, d.Name())
-		folderNode := tview.NewTreeNode(fmt.Sprintf("📁 %s", d.Name())).
-			SetReference(folderPath).
+	for _, f := range folders {
+		folderNode := tview.NewTreeNode(fmt.Sprintf("📁 %s", f.Name)).
+			SetReference(nodeRef{IsFolder: true, ID: f.ID}).
 			SetColor(tcell.ColorSkyblue).
 			SetSelectable(true).
 			SetExpanded(true)
 
-		count := addItemNodes(folderNode, folderPath, filter)
+		count := addItemNodes(folderNode, f.ID, filter)
 		if count > 0 || filter == "" {
 			root.AddChild(folderNode)
 		}
 	}
 
-	addItemNodes(root, basePath, filter)
+	addItemNodes(root, 0, filter)
 
-	if uiCurrentPath == "" {
+	if uiCurrentEntryID == 0 {
 		uiRightPages.SetTitle(" Keybindings ")
 		uiRightPages.SwitchToPage("empty")
 	}
 }
 
-func loadEntry(path string) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return
-	}
-	decrypted, err := crypto.Decrypt(uiMasterKey, data)
+func loadEntry(id int64) {
+	ent, err := uiStore.LoadEntry(id)
 	if err != nil {
 		return
 	}
 
-	ent, err := unmarshalEntry(decrypted)
-	if err == nil {
-		uiCurrentEnt = ent
-		uiCurrentPath = path
-		uiShowSensitive = false
-		updateViewPane()
-		uiRightPages.SetTitle(" " + entryTypeIcon(ent.Type) + " " + ent.Title + " ")
-		uiRightPages.SwitchToPage("content")
-	}
+	uiCurrentEnt = ent
+	uiCurrentEntryID = id
+	uiShowSensitive = false
+	updateViewPane()
+	uiRightPages.SetTitle(" " + entryTypeIcon(ent.Type) + " " + ent.Title + " ")
+	uiRightPages.SwitchToPage("content")
 }

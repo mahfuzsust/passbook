@@ -35,7 +35,7 @@ func TestUpdateViewPaneSetsTitle(t *testing.T) {
 func TestUpdateViewPaneMasksCardNumber(t *testing.T) {
 	resetEditorTestState()
 	initViewTestState()
-	uiCurrentEnt = &Entry{Type: string(TypeCard), Title: "Card", CardNumber: "1234567812345678", Expiry: "12/34", Cvv: "123"}
+	uiCurrentEnt = &Entry{Type: string(TypeCard), Title: "Card", CardNumber: "1234567812345678", Expiry: "12/34", CVV: "123"}
 
 	updateViewPane()
 	got := uiViewSubtitle.GetText(false)
@@ -62,7 +62,7 @@ func TestUpdateViewPaneAddsAttachments(t *testing.T) {
 	uiCurrentEnt = &Entry{
 		Type:        string(TypeFile),
 		Title:       "Files",
-		Attachments: []*Attachment{{Id: "1", FileName: "a.txt", Size: 10}},
+		Attachments: []Attachment{{ID: "1", FileName: "a.txt", Size: 10}},
 	}
 
 	updateViewPane()

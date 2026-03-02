@@ -2,8 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -90,18 +88,13 @@ func updateViewPane() {
 }
 
 func deleteEntry() {
-	if uiCurrentPath != "" {
-		for _, att := range uiCurrentEnt.Attachments {
-			err := os.Remove(filepath.Join(getAttachmentDir(), att.Id))
-			if err != nil {
-				return
-			}
-		}
-		err := os.Remove(uiCurrentPath)
+	if uiCurrentEntryID != 0 {
+		err := uiStore.DeleteEntry(uiCurrentEntryID)
 		if err != nil {
 			return
 		}
-		uiCurrentPath = ""
+		uiCurrentEntryID = 0
+		uiCurrentEnt = nil
 		refreshTree(uiSearchField.GetText())
 	}
 }

@@ -13,9 +13,7 @@ const (
 
 func NewEntry(t EntryType) *Entry {
 	return &Entry{
-		Type:        string(t),
-		Attachments: make([]*Attachment, 0),
-		History:     make([]*PasswordHistory, 0),
+		Type: string(t),
 	}
 }
 

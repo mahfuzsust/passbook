@@ -3,20 +3,14 @@ package ui
 import (
 	"fmt"
 	"os"
-	"passbook/internal/crypto"
 	"path/filepath"
 	"runtime"
 )
 
-func downloadAttachment(att *Attachment) {
-	data, err := os.ReadFile(filepath.Join(getAttachmentDir(), att.Id))
+func downloadAttachment(att Attachment) {
+	data, err := uiStore.ReadAttachment(att.ID)
 	if err != nil {
 		uiViewStatus.SetText("[red]Failed to read attachment[-]")
-		return
-	}
-	dec, err := crypto.Decrypt(uiMasterKey, data)
-	if err != nil {
-		uiViewStatus.SetText("[red]Failed to decrypt attachment (wrong key?)[-]")
 		return
 	}
 
@@ -29,13 +23,12 @@ func downloadAttachment(att *Attachment) {
 	}
 
 	dest := filepath.Join(downDir, att.FileName)
-	err = os.WriteFile(dest, dec, 0644)
+	err = os.WriteFile(dest, data, 0644)
 	if err != nil {
 		uiViewStatus.SetText("[red]Failed to save to Downloads[-]")
 		return
 	}
 	uiViewStatus.SetText(fmt.Sprintf("[green]✓ Saved to Downloads: %s[-]", att.FileName))
 
-	// Clear selection to prevent persistent highlighting
 	uiAttachmentList.SetCurrentItem(-1)
 }

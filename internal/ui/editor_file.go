@@ -66,7 +66,7 @@ func addFileFields(_ *Entry) {
 		}
 
 		id := fmt.Sprintf("%d", time.Now().UnixNano())
-		att := &Attachment{Id: id, FileName: filepath.Base(cleanPath), Size: fi.Size()}
+		att := Attachment{ID: id, FileName: filepath.Base(cleanPath), Size: fi.Size()}
 		uiPendingAttachments = append(uiPendingAttachments, att)
 		uiPendingFilePaths[id] = cleanPath
 
@@ -136,7 +136,7 @@ func openFileBrowser(path string) {
 			node.SetExpanded(!node.IsExpanded())
 		} else {
 			id := fmt.Sprintf("%d", time.Now().UnixNano())
-			att := &Attachment{Id: id, FileName: filepath.Base(path), Size: fi.Size()}
+			att := Attachment{ID: id, FileName: filepath.Base(path), Size: fi.Size()}
 			uiPendingAttachments = append(uiPendingAttachments, att)
 			uiPendingFilePaths[id] = path
 			refreshAttachmentList(TypeFile)
@@ -174,7 +174,7 @@ func refreshAttachmentList(t EntryType) {
 			size = 6
 			for i, att := range uiPendingAttachments {
 				label := att.FileName
-				if _, isNew := uiPendingFilePaths[att.Id]; isNew {
+				if _, isNew := uiPendingFilePaths[att.ID]; isNew {
 					label += " [green](New)[-]"
 				}
 				idx := i

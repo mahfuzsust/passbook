@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"strings"
-
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -31,20 +29,23 @@ func setupMainLayout() {
 	uiTreeView.SetChangedFunc(func(node *tview.TreeNode) {
 		ref := node.GetReference()
 		if ref == nil {
-			uiCurrentFolder = ""
-			uiCurrentPath = ""
+			uiCurrentFolderID = 0
+			uiCurrentEntryID = 0
 			uiCurrentEnt = nil
 			uiRightPages.SetTitle(" Keybindings ")
 			uiRightPages.SwitchToPage("empty")
 			return
 		}
-		path := ref.(string)
-		if strings.HasSuffix(path, ".pb") {
-			uiCurrentFolder = ""
-			loadEntry(path)
+		nr, ok := ref.(nodeRef)
+		if !ok {
+			return
+		}
+		if !nr.IsFolder {
+			uiCurrentFolderID = 0
+			loadEntry(nr.ID)
 		} else {
-			uiCurrentFolder = path
-			uiCurrentPath = ""
+			uiCurrentFolderID = nr.ID
+			uiCurrentEntryID = 0
 			uiCurrentEnt = nil
 			uiRightPages.SetTitle(" Keybindings ")
 			uiRightPages.SwitchToPage("empty")
@@ -56,7 +57,11 @@ func setupMainLayout() {
 			node.SetExpanded(!node.IsExpanded())
 			return
 		}
-		if !strings.HasSuffix(ref.(string), ".pb") {
+		nr, ok := ref.(nodeRef)
+		if !ok {
+			return
+		}
+		if nr.IsFolder {
 			node.SetExpanded(!node.IsExpanded())
 		}
 	})
@@ -118,16 +123,16 @@ func setupMainLayout() {
 			showCreateMenu()
 			return nil
 		case tcell.KeyCtrlE:
-			if uiCurrentFolder != "" {
+			if uiCurrentFolderID != 0 {
 				showFolderRename()
-			} else if uiCurrentEnt != nil && uiCurrentPath != "" {
+			} else if uiCurrentEnt != nil && uiCurrentEntryID != 0 {
 				openEditor(uiCurrentEnt)
 			}
 			return nil
 		case tcell.KeyCtrlD:
-			if uiCurrentFolder != "" {
+			if uiCurrentFolderID != 0 {
 				showFolderDeleteModal()
-			} else if uiCurrentPath != "" {
+			} else if uiCurrentEntryID != 0 {
 				showDeleteModal()
 			}
 			return nil

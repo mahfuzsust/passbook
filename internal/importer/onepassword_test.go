@@ -54,10 +54,8 @@ func TestImport1PasswordLogin(t *testing.T) {
 		t.Fatalf("Import1Password: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "GitHub.pb")
-	key := deriveTestKey(t, dir, password)
-
-	entry := decryptEntry(t, entryPath, key)
+	s := openTestStore(t, dir, password)
+	entry := loadEntryFromStore(t, s, "GitHub")
 	if entry.Type != "Login" {
 		t.Fatalf("expected Login type, got %s", entry.Type)
 	}
@@ -99,18 +97,16 @@ func TestImport1PasswordCard(t *testing.T) {
 		t.Fatalf("Import1Password: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "Visa.pb")
-	key := deriveTestKey(t, dir, password)
-
-	entry := decryptEntry(t, entryPath, key)
+	s := openTestStore(t, dir, password)
+	entry := loadEntryFromStore(t, s, "Visa")
 	if entry.Type != "Card" {
 		t.Fatalf("expected Card type, got %s", entry.Type)
 	}
 	if entry.CardNumber != "4111111111111111" {
 		t.Fatalf("expected card number, got %s", entry.CardNumber)
 	}
-	if entry.Cvv != "123" {
-		t.Fatalf("expected CVV, got %s", entry.Cvv)
+	if entry.CVV != "123" {
+		t.Fatalf("expected CVV, got %s", entry.CVV)
 	}
 	if entry.Expiry != "12/2028" {
 		t.Fatalf("expected expiry, got %s", entry.Expiry)
@@ -136,10 +132,8 @@ func TestImport1PasswordSecureNote(t *testing.T) {
 		t.Fatalf("Import1Password: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "My Note.pb")
-	key := deriveTestKey(t, dir, password)
-
-	entry := decryptEntry(t, entryPath, key)
+	s := openTestStore(t, dir, password)
+	entry := loadEntryFromStore(t, s, "My Note")
 	if entry.Type != "Note" {
 		t.Fatalf("expected Note type, got %s", entry.Type)
 	}
@@ -172,10 +166,8 @@ func TestImport1PasswordExtraFields(t *testing.T) {
 		t.Fatalf("Import1Password: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "WithExtra.pb")
-	key := deriveTestKey(t, dir, password)
-
-	entry := decryptEntry(t, entryPath, key)
+	s := openTestStore(t, dir, password)
+	entry := loadEntryFromStore(t, s, "WithExtra")
 	if !strings.Contains(entry.CustomText, "API Key: abc123") {
 		t.Fatalf("expected extra field in notes, got %q", entry.CustomText)
 	}
@@ -197,10 +189,8 @@ func TestImport1PasswordUnknownCategoryAsNote(t *testing.T) {
 		t.Fatalf("Import1Password: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "Identity.pb")
-	key := deriveTestKey(t, dir, password)
-
-	entry := decryptEntry(t, entryPath, key)
+	s := openTestStore(t, dir, password)
+	entry := loadEntryFromStore(t, s, "Identity")
 	if entry.Type != "Note" {
 		t.Fatalf("expected Note type for unknown category, got %s", entry.Type)
 	}

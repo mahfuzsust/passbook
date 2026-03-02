@@ -6,10 +6,9 @@ import (
 	"os"
 
 	"passbook/internal/config"
-	"passbook/internal/pb"
+	"passbook/internal/store"
 )
 
-// bitwardenExport represents the top-level Bitwarden JSON export.
 type bitwardenExport struct {
 	Items []bitwardenItem `json:"items"`
 }
@@ -54,7 +53,6 @@ type bitwardenField struct {
 	Type  int    `json:"type"`
 }
 
-// ImportBitwarden reads a Bitwarden JSON export and creates encrypted entries.
 func ImportBitwarden(jsonPath, masterPassword string, cfg config.AppConfig) error {
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
@@ -66,7 +64,7 @@ func ImportBitwarden(jsonPath, masterPassword string, cfg config.AppConfig) erro
 		return fmt.Errorf("parsing JSON: %w", err)
 	}
 
-	var entries []*pb.Entry
+	var entries []*store.EntryFull
 	var names []string
 
 	for _, item := range export.Items {
@@ -78,12 +76,12 @@ func ImportBitwarden(jsonPath, masterPassword string, cfg config.AppConfig) erro
 	return saveEntries(entries, names, masterPassword, cfg)
 }
 
-func convertBitwardenItem(item bitwardenItem) *pb.Entry {
+func convertBitwardenItem(item bitwardenItem) *store.EntryFull {
 	fields := convertBitwardenFields(item.Fields)
 
 	switch item.Type {
 	case 1: // Login
-		entry := &pb.Entry{
+		entry := &store.EntryFull{
 			Type:       "Login",
 			Title:      item.Name,
 			CustomText: item.Notes,
@@ -97,7 +95,7 @@ func convertBitwardenItem(item bitwardenItem) *pb.Entry {
 			}
 		}
 		for _, h := range item.PasswordHistory {
-			entry.History = append(entry.History, &pb.PasswordHistory{
+			entry.History = append(entry.History, store.PasswordHistory{
 				Password: h.Password,
 				Date:     h.LastUsedDate,
 			})
@@ -106,7 +104,7 @@ func convertBitwardenItem(item bitwardenItem) *pb.Entry {
 		return entry
 
 	case 2: // Secure Note
-		entry := &pb.Entry{
+		entry := &store.EntryFull{
 			Type:       "Note",
 			Title:      item.Name,
 			CustomText: item.Notes,
@@ -115,14 +113,14 @@ func convertBitwardenItem(item bitwardenItem) *pb.Entry {
 		return entry
 
 	case 3: // Card
-		entry := &pb.Entry{
+		entry := &store.EntryFull{
 			Type:       "Card",
 			Title:      item.Name,
 			CustomText: item.Notes,
 		}
 		if item.Card != nil {
 			entry.CardNumber = item.Card.Number
-			entry.Cvv = item.Card.Code
+			entry.CVV = item.Card.Code
 			if item.Card.ExpMonth != "" && item.Card.ExpYear != "" {
 				entry.Expiry = fmt.Sprintf("%s/%s", item.Card.ExpMonth, item.Card.ExpYear)
 			} else if item.Card.ExpMonth != "" {

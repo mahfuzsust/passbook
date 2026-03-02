@@ -28,10 +28,8 @@ https://github.com,user@example.com,secret123,JBSWY3DPEHPK3PXP,My GitHub account
 		t.Fatalf("ImportLastPass: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "GitHub.pb")
-	key := deriveTestKey(t, dir, password)
-
-	entry := decryptEntry(t, entryPath, key)
+	s := openTestStore(t, dir, password)
+	entry := loadEntryFromStore(t, s, "GitHub")
 	if entry.Type != "Login" {
 		t.Fatalf("expected Login type, got %s", entry.Type)
 	}
@@ -65,10 +63,8 @@ http://sn,,,,"Secret note content",My Note,,0
 		t.Fatalf("ImportLastPass: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "My Note.pb")
-	key := deriveTestKey(t, dir, password)
-
-	entry := decryptEntry(t, entryPath, key)
+	s := openTestStore(t, dir, password)
+	entry := loadEntryFromStore(t, s, "My Note")
 	if entry.Type != "Note" {
 		t.Fatalf("expected Note type, got %s", entry.Type)
 	}
@@ -91,14 +87,13 @@ https://b.com,u2,p2,,,Site B,,0
 		t.Fatalf("ImportLastPass: %v", err)
 	}
 
-	key := deriveTestKey(t, dir, password)
-
-	entryA := decryptEntry(t, filepath.Join(dir, "Site A.pb"), key)
+	s := openTestStore(t, dir, password)
+	entryA := loadEntryFromStore(t, s, "Site A")
 	if entryA.Username != "u1" {
 		t.Fatalf("expected u1, got %s", entryA.Username)
 	}
 
-	entryB := decryptEntry(t, filepath.Join(dir, "Site B.pb"), key)
+	entryB := loadEntryFromStore(t, s, "Site B")
 	if entryB.Username != "u2" {
 		t.Fatalf("expected u2, got %s", entryB.Username)
 	}
@@ -118,11 +113,13 @@ https://b.com,u2,p2,,,Dup,,0
 		t.Fatalf("ImportLastPass: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "Dup.pb")); err != nil {
-		t.Fatalf("expected Dup.pb: %v", err)
+	s := openTestStore(t, dir, password)
+	entries, err := s.ListAllEntries()
+	if err != nil {
+		t.Fatalf("ListAllEntries: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "Dup_1.pb")); err != nil {
-		t.Fatalf("expected Dup_1.pb: %v", err)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
 }
 
@@ -152,17 +149,12 @@ https://example.com,user,pass,,,,, 0
 		t.Fatalf("ImportLastPass: %v", err)
 	}
 
-	files, err := os.ReadDir(dir)
+	s := openTestStore(t, dir, password)
+	entries, err := s.ListAllEntries()
 	if err != nil {
-		t.Fatalf("ReadDir: %v", err)
+		t.Fatalf("ListAllEntries: %v", err)
 	}
-	pbCount := 0
-	for _, f := range files {
-		if filepath.Ext(f.Name()) == ".pb" {
-			pbCount++
-		}
-	}
-	if pbCount != 1 {
-		t.Fatalf("expected 1 .pb file, got %d", pbCount)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
 	}
 }

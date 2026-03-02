@@ -2,42 +2,22 @@ package importer
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"passbook/internal/config"
-	"passbook/internal/crypto"
-	"passbook/internal/pb"
-
-	"google.golang.org/protobuf/proto"
+	"passbook/internal/store"
 )
 
-// saveEntries encrypts and writes a slice of entries to the vault root.
-func saveEntries(entries []*pb.Entry, names []string, masterPassword string, cfg config.AppConfig) error {
+func saveEntries(entries []*store.EntryFull, names []string, masterPassword string, cfg config.AppConfig) error {
 	dataDir := config.ExpandPath(cfg.DataDir)
+	dbPath := filepath.Join(dataDir, "passbook.db")
 
-	if err := os.MkdirAll(dataDir, 0700); err != nil {
-		return fmt.Errorf("creating data dir: %w", err)
-	}
-
-	var encKey []byte
-	vaultParams, err := crypto.LoadVaultParams(dataDir)
-	if err != nil || vaultParams == nil {
-		return fmt.Errorf("failed to load vault params: vault may not be initialized")
-	}
-	masterKey, vaultKey, err := crypto.DeriveKeys(masterPassword, vaultParams)
+	s, err := store.Open(dbPath, masterPassword)
 	if err != nil {
-		return fmt.Errorf("key derivation error: %w", err)
+		return fmt.Errorf("opening store: %w", err)
 	}
-	if _, err := crypto.EnsureSecret(dataDir, masterKey, vaultParams); err != nil {
-		crypto.WipeBytes(masterKey)
-		crypto.WipeBytes(vaultKey)
-		return fmt.Errorf("wrong master password or vault error: %w", err)
-	}
-	crypto.WipeBytes(masterKey)
-	encKey = vaultKey
-	defer crypto.WipeBytes(encKey)
+	defer s.Close()
 
 	var imported, skipped int
 	for i, entry := range entries {
@@ -54,35 +34,20 @@ func saveEntries(entries []*pb.Entry, names []string, masterPassword string, cfg
 		}
 		entry.Title = title
 
-		filename := title + ".pb"
-		path := filepath.Join(dataDir, filename)
-
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
+		finalTitle := title
+		if s.EntryExistsInFolder(0, finalTitle) {
 			counter := 1
 			for {
-				path = filepath.Join(dataDir, fmt.Sprintf("%s_%d.pb", title, counter))
-				if _, err := os.Stat(path); os.IsNotExist(err) {
+				finalTitle = fmt.Sprintf("%s_%d", title, counter)
+				if !s.EntryExistsInFolder(0, finalTitle) {
 					break
 				}
 				counter++
 			}
+			entry.Title = finalTitle
 		}
 
-		bytes, err := proto.Marshal(entry)
-		if err != nil {
-			fmt.Printf("  ⚠ skipping %q: marshal error: %v\n", origName, err)
-			skipped++
-			continue
-		}
-
-		enc, err := crypto.Encrypt(encKey, bytes)
-		if err != nil {
-			fmt.Printf("  ⚠ skipping %q: encrypt error: %v\n", origName, err)
-			skipped++
-			continue
-		}
-
-		if err := os.WriteFile(path, enc, 0600); err != nil {
+		if _, err := s.SaveEntry(0, entry); err != nil {
 			fmt.Printf("  ⚠ skipping %q: write error: %v\n", origName, err)
 			skipped++
 			continue

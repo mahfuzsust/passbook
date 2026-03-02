@@ -31,7 +31,7 @@ func setupQuickCopy() {
 }
 
 func showQuickCopy() {
-	if uiCurrentEnt == nil || uiCurrentPath == "" {
+	if uiCurrentEnt == nil || uiCurrentEntryID == 0 {
 		return
 	}
 
@@ -70,10 +70,10 @@ func showQuickCopy() {
 				copySensitive(uiCurrentEnt.CardNumber, "Card Number")
 			})
 		}
-		if uiCurrentEnt.Cvv != "" {
+		if uiCurrentEnt.CVV != "" {
 			uiQuickCopyList.AddItem("CVV", "", 'v', func() {
 				dismissQuickCopy()
-				copySensitive(uiCurrentEnt.Cvv, "CVV")
+				copySensitive(uiCurrentEnt.CVV, "CVV")
 			})
 		}
 

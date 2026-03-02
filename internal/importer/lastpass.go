@@ -7,10 +7,9 @@ import (
 	"strings"
 
 	"passbook/internal/config"
-	"passbook/internal/pb"
+	"passbook/internal/store"
 )
 
-// ImportLastPass reads a LastPass CSV export and creates encrypted entries.
 func ImportLastPass(csvPath, masterPassword string, cfg config.AppConfig) error {
 	f, err := os.Open(csvPath)
 	if err != nil {
@@ -38,7 +37,7 @@ func ImportLastPass(csvPath, masterPassword string, cfg config.AppConfig) error 
 	header := records[0]
 	colIndex := buildColumnIndex(header)
 
-	var entries []*pb.Entry
+	var entries []*store.EntryFull
 	var names []string
 
 	for _, row := range records[1:] {
@@ -65,12 +64,12 @@ func colVal(row []string, idx map[string]int, col string) string {
 	return ""
 }
 
-func convertLastPassRow(row []string, colIndex map[string]int) *pb.Entry {
+func convertLastPassRow(row []string, colIndex map[string]int) *store.EntryFull {
 	name := colVal(row, colIndex, "name")
 	url := colVal(row, colIndex, "url")
 	username := colVal(row, colIndex, "username")
 	password := colVal(row, colIndex, "password")
-	totp := colVal(row, colIndex, "totp")
+	totpVal := colVal(row, colIndex, "totp")
 	extra := colVal(row, colIndex, "extra")
 	grouping := colVal(row, colIndex, "grouping")
 
@@ -79,20 +78,20 @@ func convertLastPassRow(row []string, colIndex map[string]int) *pb.Entry {
 	}
 
 	if isLastPassSecureNote(url, grouping) {
-		return &pb.Entry{
+		return &store.EntryFull{
 			Type:       "Note",
 			Title:      name,
 			CustomText: extra,
 		}
 	}
 
-	entry := &pb.Entry{
+	entry := &store.EntryFull{
 		Type:       "Login",
 		Title:      name,
 		Username:   username,
 		Password:   password,
 		Link:       url,
-		TotpSecret: totp,
+		TotpSecret: totpVal,
 		CustomText: extra,
 	}
 

@@ -7,10 +7,7 @@ import (
 	"testing"
 
 	"passbook/internal/config"
-	"passbook/internal/crypto"
-	"passbook/internal/pb"
-
-	"google.golang.org/protobuf/proto"
+	"passbook/internal/store"
 )
 
 func setupTestVault(t *testing.T, password string) (string, config.AppConfig) {
@@ -18,22 +15,43 @@ func setupTestVault(t *testing.T, password string) (string, config.AppConfig) {
 	dir := t.TempDir()
 	cfg := config.AppConfig{DataDir: dir}
 
-	vp, err := crypto.DefaultVaultParams()
+	dbPath := filepath.Join(dir, "passbook.db")
+	s, err := store.Open(dbPath, password)
 	if err != nil {
-		t.Fatalf("DefaultVaultParams: %v", err)
+		t.Fatalf("store.Open: %v", err)
 	}
-	masterKey, _, err := crypto.DeriveKeys(password, vp)
-	if err != nil {
-		t.Fatalf("DeriveKeys: %v", err)
-	}
-	if err := crypto.SaveVaultParams(dir, vp); err != nil {
-		t.Fatalf("SaveVaultParams: %v", err)
-	}
-	if _, err := crypto.EnsureSecret(dir, masterKey, vp); err != nil {
-		t.Fatalf("EnsureSecret: %v", err)
-	}
-	crypto.WipeBytes(masterKey)
+	s.Close()
 	return dir, cfg
+}
+
+func openTestStore(t *testing.T, dir, password string) *store.Store {
+	t.Helper()
+	dbPath := filepath.Join(dir, "passbook.db")
+	s, err := store.Open(dbPath, password)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s
+}
+
+func loadEntryFromStore(t *testing.T, s *store.Store, title string) *store.EntryFull {
+	t.Helper()
+	entries, err := s.ListAllEntries()
+	if err != nil {
+		t.Fatalf("ListAllEntries: %v", err)
+	}
+	for _, e := range entries {
+		if e.Title == title {
+			full, err := s.LoadEntry(e.ID)
+			if err != nil {
+				t.Fatalf("LoadEntry: %v", err)
+			}
+			return full
+		}
+	}
+	t.Fatalf("entry %q not found in store", title)
+	return nil
 }
 
 func writeBitwardenJSON(t *testing.T, items []bitwardenItem) string {
@@ -48,36 +66,6 @@ func writeBitwardenJSON(t *testing.T, items []bitwardenItem) string {
 		t.Fatalf("write: %v", err)
 	}
 	return path
-}
-
-func decryptEntry(t *testing.T, path string, key []byte) *pb.Entry {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	plain, err := crypto.Decrypt(key, data)
-	if err != nil {
-		t.Fatalf("decrypt: %v", err)
-	}
-	entry := &pb.Entry{}
-	if err := proto.Unmarshal(plain, entry); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	return entry
-}
-
-func deriveTestKey(t *testing.T, dir, password string) []byte {
-	t.Helper()
-	vp, err := crypto.LoadVaultParams(dir)
-	if err != nil || vp == nil {
-		t.Fatalf("LoadVaultParams: %v", err)
-	}
-	_, vaultKey, err := crypto.DeriveKeys(password, vp)
-	if err != nil {
-		t.Fatalf("DeriveKeys: %v", err)
-	}
-	return vaultKey
 }
 
 func TestImportBitwardenLogin(t *testing.T) {
@@ -102,14 +90,8 @@ func TestImportBitwardenLogin(t *testing.T) {
 		t.Fatalf("ImportBitwarden: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "GitHub.pb")
-	if _, err := os.Stat(entryPath); err != nil {
-		t.Fatalf("expected entry file: %v", err)
-	}
-
-	key := deriveTestKey(t, dir, password)
-
-	entry := decryptEntry(t, entryPath, key)
+	s := openTestStore(t, dir, password)
+	entry := loadEntryFromStore(t, s, "GitHub")
 	if entry.Type != "Login" {
 		t.Fatalf("expected Login type, got %s", entry.Type)
 	}
@@ -156,10 +138,8 @@ func TestImportBitwardenPasswordHistory(t *testing.T) {
 		t.Fatalf("ImportBitwarden: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "WithHistory.pb")
-	key := deriveTestKey(t, dir, password)
-
-	entry := decryptEntry(t, entryPath, key)
+	s := openTestStore(t, dir, password)
+	entry := loadEntryFromStore(t, s, "WithHistory")
 	if len(entry.History) != 2 {
 		t.Fatalf("expected 2 history entries, got %d", len(entry.History))
 	}
@@ -196,10 +176,8 @@ func TestImportBitwardenCard(t *testing.T) {
 		t.Fatalf("ImportBitwarden: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "Visa.pb")
-	key := deriveTestKey(t, dir, password)
-
-	entry := decryptEntry(t, entryPath, key)
+	s := openTestStore(t, dir, password)
+	entry := loadEntryFromStore(t, s, "Visa")
 	if entry.Type != "Card" {
 		t.Fatalf("expected Card type, got %s", entry.Type)
 	}
@@ -209,8 +187,8 @@ func TestImportBitwardenCard(t *testing.T) {
 	if entry.Expiry != "12/2028" {
 		t.Fatalf("expected expiry 12/2028, got %s", entry.Expiry)
 	}
-	if entry.Cvv != "123" {
-		t.Fatalf("expected CVV, got %s", entry.Cvv)
+	if entry.CVV != "123" {
+		t.Fatalf("expected CVV, got %s", entry.CVV)
 	}
 }
 
@@ -230,10 +208,8 @@ func TestImportBitwardenNote(t *testing.T) {
 		t.Fatalf("ImportBitwarden: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "Secret Note.pb")
-	key := deriveTestKey(t, dir, password)
-
-	entry := decryptEntry(t, entryPath, key)
+	s := openTestStore(t, dir, password)
+	entry := loadEntryFromStore(t, s, "Secret Note")
 	if entry.Type != "Note" {
 		t.Fatalf("expected Note type, got %s", entry.Type)
 	}
@@ -255,11 +231,13 @@ func TestImportBitwardenDuplicateTitles(t *testing.T) {
 		t.Fatalf("ImportBitwarden: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "Dup.pb")); err != nil {
-		t.Fatalf("expected Dup.pb: %v", err)
+	s := openTestStore(t, dir, password)
+	entries, err := s.ListAllEntries()
+	if err != nil {
+		t.Fatalf("ListAllEntries: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "Dup_1.pb")); err != nil {
-		t.Fatalf("expected Dup_1.pb: %v", err)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
 }
 
@@ -295,10 +273,8 @@ func TestImportBitwardenCustomFields(t *testing.T) {
 		t.Fatalf("ImportBitwarden: %v", err)
 	}
 
-	entryPath := filepath.Join(dir, "WithFields.pb")
-	key := deriveTestKey(t, dir, password)
-
-	entry := decryptEntry(t, entryPath, key)
+	s := openTestStore(t, dir, password)
+	entry := loadEntryFromStore(t, s, "WithFields")
 	if entry.CustomText == "" || !contains(entry.CustomText, "API Key: abc123") {
 		t.Fatalf("expected custom fields in notes, got %q", entry.CustomText)
 	}

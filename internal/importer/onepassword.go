@@ -6,10 +6,9 @@ import (
 	"os"
 
 	"passbook/internal/config"
-	"passbook/internal/pb"
+	"passbook/internal/store"
 )
 
-// onePasswordExport represents the top-level 1Password JSON export.
 type onePasswordExport struct {
 	Accounts []onePasswordAccount `json:"accounts"`
 }
@@ -48,7 +47,6 @@ type onePasswordSection struct {
 	Fields []onePasswordField `json:"fields"`
 }
 
-// Import1Password reads a 1Password JSON export (.1pux) and creates encrypted entries.
 func Import1Password(jsonPath, masterPassword string, cfg config.AppConfig) error {
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
@@ -60,7 +58,7 @@ func Import1Password(jsonPath, masterPassword string, cfg config.AppConfig) erro
 		return fmt.Errorf("parsing JSON: %w", err)
 	}
 
-	var entries []*pb.Entry
+	var entries []*store.EntryFull
 	var names []string
 
 	for _, acct := range export.Accounts {
@@ -76,10 +74,10 @@ func Import1Password(jsonPath, masterPassword string, cfg config.AppConfig) erro
 	return saveEntries(entries, names, masterPassword, cfg)
 }
 
-func convert1PasswordItem(item onePasswordItem) *pb.Entry {
+func convert1PasswordItem(item onePasswordItem) *store.EntryFull {
 	switch item.Category {
 	case "001": // Login
-		entry := &pb.Entry{
+		entry := &store.EntryFull{
 			Type:       "Login",
 			Title:      item.Title,
 			CustomText: item.Notes,
@@ -111,7 +109,7 @@ func convert1PasswordItem(item onePasswordItem) *pb.Entry {
 		return entry
 
 	case "002": // Credit Card
-		entry := &pb.Entry{
+		entry := &store.EntryFull{
 			Type:       "Card",
 			Title:      item.Title,
 			CustomText: item.Notes,
@@ -123,7 +121,7 @@ func convert1PasswordItem(item onePasswordItem) *pb.Entry {
 			case "ccnum":
 				entry.CardNumber = f.Value
 			case "cvv":
-				entry.Cvv = f.Value
+				entry.CVV = f.Value
 			case "expiry":
 				entry.Expiry = f.Value
 			case "cardholder":
@@ -138,8 +136,8 @@ func convert1PasswordItem(item onePasswordItem) *pb.Entry {
 						entry.CardNumber = f.Value
 					}
 				case "cvv":
-					if entry.Cvv == "" {
-						entry.Cvv = f.Value
+					if entry.CVV == "" {
+						entry.CVV = f.Value
 					}
 				case "expiry":
 					if entry.Expiry == "" {
@@ -161,7 +159,7 @@ func convert1PasswordItem(item onePasswordItem) *pb.Entry {
 		return entry
 
 	case "003": // Secure Note
-		entry := &pb.Entry{
+		entry := &store.EntryFull{
 			Type:       "Note",
 			Title:      item.Title,
 			CustomText: item.Notes,
@@ -172,7 +170,7 @@ func convert1PasswordItem(item onePasswordItem) *pb.Entry {
 		return entry
 
 	case "006": // Document
-		entry := &pb.Entry{
+		entry := &store.EntryFull{
 			Type:       "Note",
 			Title:      item.Title,
 			CustomText: item.Notes,
@@ -186,7 +184,7 @@ func convert1PasswordItem(item onePasswordItem) *pb.Entry {
 		if item.Title == "" {
 			return nil
 		}
-		entry := &pb.Entry{
+		entry := &store.EntryFull{
 			Type:       "Note",
 			Title:      item.Title,
 			CustomText: item.Notes,
@@ -197,8 +195,6 @@ func convert1PasswordItem(item onePasswordItem) *pb.Entry {
 	}
 }
 
-// collect1PasswordExtraFields gathers non-designation fields from sections
-// that aren't already mapped to standard entry fields.
 func collect1PasswordExtraFields(item onePasswordItem) [][2]string {
 	skip := map[string]bool{
 		"username": true, "password": true,

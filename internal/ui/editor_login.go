@@ -48,7 +48,7 @@ func collectLoginFields(ent *Entry, priorPassword string) {
 	ent.TotpSecret = uiEditorForm.GetFormItemByLabel("TOTP Secret").(*tview.InputField).GetText()
 
 	if priorPassword != "" && priorPassword != ent.Password {
-		ent.History = append(ent.History, &PasswordHistory{
+		ent.History = append(ent.History, PasswordHistory{
 			Password: priorPassword,
 			Date:     time.Now().Format("2006-01-02 15:04"),
 		})

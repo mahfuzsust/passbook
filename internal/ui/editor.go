@@ -3,25 +3,19 @@ package ui
 import (
 	"fmt"
 	"os"
-	"passbook/internal/config"
-	"passbook/internal/crypto"
-	"path/filepath"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
-	"google.golang.org/protobuf/proto"
 )
 
 var (
-	uiCurrentPath string
-	uiCurrentEnt  *Entry
-	uiEditingEnt  *Entry
+	uiCurrentEntryID int64
+	uiCurrentEnt     *Entry
+	uiEditingEnt     *Entry
 
-	uiPendingAttachments []*Attachment
+	uiPendingAttachments []Attachment
 	uiPendingFilePaths   map[string]string
-	uiPendingSaveData    []byte
-	uiPendingPath        string
 	uiLastGeneratedPass  string
 
 	uiEditorForm          *tview.Form
@@ -58,30 +52,6 @@ func setupEditor() {
 }
 
 func setupCollisionModals() {
-	uiCollisionModal = tview.NewModal().
-		AddButtons([]string{"Replace", "Add Suffix", "Cancel"}).
-		SetDoneFunc(func(index int, label string) {
-			if label == "Cancel" {
-				uiPages.SwitchToPage("editor")
-			} else if label == "Replace" {
-				commitSave(uiPendingPath, uiPendingSaveData)
-			} else if label == "Add Suffix" {
-				dir, base := filepath.Dir(uiPendingPath), strings.TrimSuffix(filepath.Base(uiPendingPath), ".pb")
-				counter := 1
-				var newPath string
-				for {
-					newPath = filepath.Join(dir, fmt.Sprintf("%s_%d.pb", base, counter))
-					if _, err := os.Stat(newPath); os.IsNotExist(err) {
-						break
-					}
-					counter++
-				}
-				commitSave(newPath, uiPendingSaveData)
-			}
-		})
-	enableModalButtonNav(uiCollisionModal)
-	uiPages.AddPage("collision", uiCollisionModal, true, false)
-
 	uiErrorModal = tview.NewModal().AddButtons([]string{"OK"}).
 		SetDoneFunc(func(i int, l string) { uiPages.SwitchToPage("editor") })
 	enableModalButtonNav(uiErrorModal)
@@ -89,14 +59,14 @@ func setupCollisionModals() {
 }
 
 func newEntry(t EntryType) {
-	uiCurrentPath = ""
+	uiCurrentEntryID = 0
 	ent := NewEntry(t)
 	openEditor(ent)
 }
 
 func openEditor(ent *Entry) {
 	uiEditingEnt = ent
-	uiPendingAttachments = append([]*Attachment{}, ent.Attachments...)
+	uiPendingAttachments = append([]Attachment{}, ent.Attachments...)
 	uiPendingFilePaths = make(map[string]string)
 
 	uiEditorForm.Clear(true)
@@ -104,7 +74,7 @@ func openEditor(ent *Entry) {
 	uiEditorCardNumber, uiEditorExpiry, uiEditorCVV = nil, nil, nil
 	uiEditorFolderField = nil
 
-	if uiCurrentPath == "" {
+	if uiCurrentEntryID == 0 {
 		uiEditorLayout.SetTitle(" Add Entry ")
 	} else {
 		uiEditorLayout.SetTitle(" Edit Entry ")
@@ -119,24 +89,27 @@ func openEditor(ent *Entry) {
 	folderOptions := []string{"— (root)"}
 	folderOptions = append(folderOptions, folders...)
 	currentFolderIdx := 0
-	if uiCurrentPath != "" {
-		dir := filepath.Dir(uiCurrentPath)
-		base := config.ExpandPath(uiDataDir)
-		if dir != base {
-			folderName := filepath.Base(dir)
-			for i, opt := range folderOptions {
-				if opt == folderName {
-					currentFolderIdx = i
-					break
+	if uiCurrentEntryID != 0 {
+		meta, _ := uiStore.GetEntryMeta(uiCurrentEntryID)
+		if meta != nil && meta.FolderID != 0 {
+			folder, _ := uiStore.GetFolder(meta.FolderID)
+			if folder != nil {
+				for i, opt := range folderOptions {
+					if opt == folder.Name {
+						currentFolderIdx = i
+						break
+					}
 				}
 			}
 		}
-	} else if uiCurrentFolder != "" {
-		folderName := filepath.Base(uiCurrentFolder)
-		for i, opt := range folderOptions {
-			if opt == folderName {
-				currentFolderIdx = i
-				break
+	} else if uiCurrentFolderID != 0 {
+		folder, _ := uiStore.GetFolder(uiCurrentFolderID)
+		if folder != nil {
+			for i, opt := range folderOptions {
+				if opt == folder.Name {
+					currentFolderIdx = i
+					break
+				}
 			}
 		}
 	}
@@ -201,9 +174,6 @@ func validateTitleField() (string, error) {
 	if title == "" {
 		return "", fmt.Errorf("title is required")
 	}
-	if strings.ContainsAny(title, `<>:"/\\|?*`) || title == "." || title == ".." {
-		return "", fmt.Errorf("title contains invalid characters")
-	}
 
 	return title, nil
 }
@@ -231,7 +201,7 @@ func saveEntry(eType EntryType) {
 	}
 
 	var priorPassword string
-	var priorHistory []*PasswordHistory
+	var priorHistory []PasswordHistory
 	if uiEditingEnt != nil {
 		priorPassword = uiEditingEnt.Password
 		priorHistory = uiEditingEnt.History
@@ -252,60 +222,90 @@ func saveEntry(eType EntryType) {
 		number, expiry, cvv := collectCardFields()
 		ent.CardNumber = number
 		ent.Expiry = expiry
-		ent.Cvv = cvv
+		ent.CVV = cvv
 	case TypeNote:
 		collectNoteFields(ent)
 	case TypeFile:
 		collectFileFields(ent)
 	}
 
-	bytes, _ := proto.Marshal(ent)
-	enc, _ := crypto.Encrypt(uiMasterKey, bytes)
-
-	basePath := config.ExpandPath(uiDataDir)
-	fullDir := basePath
+	var folderID int64
 	if uiEditorFolderField != nil {
 		_, folderName := uiEditorFolderField.GetCurrentOption()
 		if folderName != "— (root)" {
-			fullDir = filepath.Join(basePath, folderName)
-		}
-	}
-	if err := os.MkdirAll(fullDir, 0700); err != nil {
-		return
-	}
-	filename := ent.Title + ".pb"
-	newPath := filepath.Join(fullDir, filename)
-
-	if _, err := os.Stat(newPath); !os.IsNotExist(err) && uiCurrentPath != newPath {
-		uiErrorModal.SetText("Title already exists in this folder. Please change the title.")
-		uiPages.SwitchToPage("error")
-		return
-	}
-	commitSave(newPath, enc)
-}
-
-func commitSave(newPath string, enc []byte) {
-	for id, localPath := range uiPendingFilePaths {
-		data, err := os.ReadFile(localPath)
-		if err == nil {
-			encData, _ := crypto.Encrypt(uiMasterKey, data)
-			if err := os.WriteFile(filepath.Join(getAttachmentDir(), id), encData, 0600); err != nil {
-				return
+			f, _ := uiStore.GetFolderByName(folderName)
+			if f != nil {
+				folderID = f.ID
 			}
 		}
 	}
-	if uiCurrentPath != "" && uiCurrentPath != newPath {
-		if err := os.Remove(uiCurrentPath); err != nil {
+
+	if uiCurrentEntryID != 0 {
+		if uiStore.EntryExistsInFolderExcluding(folderID, title, uiCurrentEntryID) {
+			uiErrorModal.SetText("Title already exists in this folder. Please change the title.")
+			uiPages.SwitchToPage("error")
 			return
 		}
+		commitSave(uiCurrentEntryID, folderID, ent)
+	} else {
+		if uiStore.EntryExistsInFolder(folderID, title) {
+			uiErrorModal.SetText("Title already exists in this folder. Please change the title.")
+			uiPages.SwitchToPage("error")
+			return
+		}
+		commitSaveNew(folderID, ent)
 	}
-	if err := os.WriteFile(newPath, enc, 0600); err != nil {
+}
+
+func commitSaveNew(folderID int64, ent *Entry) {
+	entryID, err := uiStore.SaveEntry(folderID, ent)
+	if err != nil {
 		return
 	}
+
+	saveAttachments(entryID)
+
 	refreshTree(uiSearchField.GetText())
-	selectTreePath(newPath)
+	selectTreeNode(nodeRef{IsFolder: false, ID: entryID})
 	uiPages.SwitchToPage("main")
-	loadEntry(newPath)
+	loadEntry(entryID)
+}
+
+func commitSave(entryID int64, folderID int64, ent *Entry) {
+	saveAttachments(entryID)
+
+	if err := uiStore.UpdateEntryFull(entryID, folderID, ent); err != nil {
+		return
+	}
+
+	refreshTree(uiSearchField.GetText())
+	selectTreeNode(nodeRef{IsFolder: false, ID: entryID})
+	uiPages.SwitchToPage("main")
+	loadEntry(entryID)
+}
+
+func saveAttachments(entryID int64) {
+	for id, localPath := range uiPendingFilePaths {
+		data, err := os.ReadFile(localPath)
+		if err != nil {
+			continue
+		}
+		var fileName string
+		var size int64
+		for _, att := range uiPendingAttachments {
+			if att.ID == id {
+				fileName = att.FileName
+				size = att.Size
+				break
+			}
+		}
+		if fileName == "" {
+			parts := strings.Split(localPath, "/")
+			fileName = parts[len(parts)-1]
+			size = int64(len(data))
+		}
+		_ = uiStore.WriteAttachment(id, entryID, fileName, size, data)
+	}
 }
 
 func highlightFocusedEditorItem() {

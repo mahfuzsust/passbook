@@ -56,7 +56,7 @@ func addCardFields(ent *Entry) {
 	uiEditorExpiry = expiryField
 	uiEditorForm.AddFormItem(expiryField)
 
-	cvvField := tview.NewInputField().SetLabel("CVV").SetText(ent.Cvv).SetFieldWidth(5)
+	cvvField := tview.NewInputField().SetLabel("CVV").SetText(ent.CVV).SetFieldWidth(5)
 	cvvField.SetAcceptanceFunc(func(text string, last rune) bool {
 		if last == 0 {
 			return len(text) <= 4
@@ -156,7 +156,7 @@ func renderCardView() {
 
 	cvv := "***"
 	if uiShowSensitive {
-		cvv = uiCurrentEnt.Cvv
+		cvv = uiCurrentEnt.CVV
 	}
 	uiViewPassword.SetText(cvv)
 	uiViewFlex.AddItem(makeRow("CVV:", uiViewPassword), 1, 0, false)

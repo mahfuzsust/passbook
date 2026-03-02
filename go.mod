@@ -5,12 +5,11 @@ go 1.24.0
 require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/gdamore/tcell/v2 v2.13.8
+	github.com/mutecomm/go-sqlcipher/v4 v4.4.2
 	github.com/pquerna/otp v1.5.0
 	github.com/rivo/tview v0.42.1-0.20250929082832-e113793670e2
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
-	golang.org/x/crypto v0.48.0
 	golang.org/x/term v0.40.0
-	google.golang.org/protobuf v1.36.11
 )
 
 require (

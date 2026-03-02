@@ -1,8 +1,9 @@
 package ui
 
 import (
-	"passbook/internal/config"
-	"passbook/internal/crypto"
+	"os"
+
+	"passbook/internal/store"
 	"passbook/internal/utils"
 
 	"github.com/gdamore/tcell/v2"
@@ -20,89 +21,45 @@ func goToMain(pwd string) {
 		return
 	}
 
-	dataDir := config.ExpandPath(uiDataDir)
+	dbExisted := store.DBExists(uiDBPath)
 
-	vaultParams, err := crypto.LoadVaultParams(dataDir)
+	s, err := store.Open(uiDBPath, pwd)
 	if err != nil {
+		showLoginError("Wrong password.")
 		return
 	}
+	uiStore = s
 
-	existingVault := vaultParams != nil && crypto.SecretExists(dataDir)
+	isNewVault := !uiStore.HasEntries() && !uiStore.PinConfigExists()
 
-	if !existingVault {
+	if isNewVault {
 		_, level, _ := utils.PasswordStrength(pwd)
 		if level < utils.StrengthGood {
+			closeAndCleanupStore(!dbExisted)
 			showLoginError("Password is too weak.")
 			return
 		}
-
-		newParams, err := crypto.DefaultVaultParams()
-		if err != nil {
-			return
-		}
-
-		masterKey, vaultKey, err := crypto.DeriveKeys(pwd, newParams)
-		if err != nil {
-			return
-		}
-
-		if err := crypto.SaveVaultParams(dataDir, newParams); err != nil {
-			crypto.WipeBytes(masterKey)
-			crypto.WipeBytes(vaultKey)
-			return
-		}
-
-		if _, err := crypto.EnsureSecret(dataDir, masterKey, newParams); err != nil {
-			crypto.WipeBytes(masterKey)
-			crypto.WipeBytes(vaultKey)
-			return
-		}
-
-		uiMasterKey = vaultKey
-		uiTempMasterKey = masterKey
 		showPinSetup()
 		return
 	}
 
-	masterKey, vaultKey, err := crypto.DeriveKeys(pwd, vaultParams)
-	if err != nil {
-		return
-	}
-
-	if err := crypto.VerifyMasterKey(dataDir, masterKey); err != nil {
-		crypto.WipeBytes(masterKey)
-		crypto.WipeBytes(vaultKey)
-		showLoginError("Wrong password.")
-		return
-	}
-
-	if err := crypto.VerifyCommitTag(dataDir, masterKey); err != nil {
-		crypto.WipeBytes(masterKey)
-		crypto.WipeBytes(vaultKey)
-		showLoginError("Wrong password.")
-		return
-	}
-
-	if crypto.NeedsRehash(vaultParams) {
-		if newParams, err := crypto.RehashVault(dataDir, pwd, vaultParams); err == nil && newParams != nil {
-			vaultParams = newParams
-			crypto.WipeBytes(masterKey)
-			crypto.WipeBytes(vaultKey)
-			masterKey, vaultKey, err = crypto.DeriveKeys(pwd, newParams)
-			if err != nil {
-				return
-			}
-		}
-	}
-
-	uiMasterKey = vaultKey
-	uiTempMasterKey = masterKey
-
-	pinCfg, _ := crypto.ReadPinConfig(dataDir, masterKey)
+	pinCfg, _ := uiStore.ReadPinConfig()
 	if pinCfg != nil && pinCfg.Mode != "" {
 		showPinVerify(pinCfg)
 	} else {
 		showPinSetup()
+	}
+}
+
+func closeAndCleanupStore(removeDB bool) {
+	if uiStore != nil {
+		uiStore.Close()
+		uiStore = nil
+	}
+	if removeDB {
+		os.Remove(uiDBPath)
+		os.Remove(uiDBPath + "-wal")
+		os.Remove(uiDBPath + "-shm")
 	}
 }
 
