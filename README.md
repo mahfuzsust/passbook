@@ -104,15 +104,15 @@ On first run, PassBook creates:
 
 ## ☁️ iCloud sync
 
-PassBook stores the vault under `data_dir` from `~/.passbook/config.json`. To sync via iCloud Drive, set `data_dir` to something like:
-
-`~/Library/Mobile Documents/com~apple~CloudDocs/PassBook`
+PassBook stores the vault under `data_dir` from `~/.passbook/config.json`. To sync via iCloud Drive (macOS only), run:
 
 ```bash
-sed -i '' 's|"data_dir":[[:space:]]*"[^"]*"|"data_dir": "~/Library/Mobile Documents/com~apple~CloudDocs/PassBook"|' ~/.passbook/config.json
+passbook --icloud
 ```
 
-Paths starting with `~/` are expanded.
+This moves your existing database to `~/Library/Mobile Documents/com~apple~CloudDocs/PassBook` and updates the config. Run the same command on another Mac to point both machines at the same vault.
+
+To use a different cloud provider (Dropbox, Google Drive, etc.), edit `~/.passbook/config.json` and set `data_dir` to any synced folder path. Paths starting with `~/` are expanded.
 
 ## 📥 Importing
 
