@@ -111,5 +111,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd assets
-          sha256sum * > checksums.txt
-          gh release upload "${GITHUB_REF_NAME}" checksums.txt --repo "${GITHUB_REPOSITORY}" --clobber
+          version="${GITHUB_REF_NAME#v}"
+          checksum_file="passbook_${version}_checksums.txt"
+          sha256sum * > "${checksum_file}"
+          gh release upload "${GITHUB_REF_NAME}" "${checksum_file}" --repo "${GITHUB_REPOSITORY}" --clobber

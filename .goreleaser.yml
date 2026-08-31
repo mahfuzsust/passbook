@@ -87,6 +87,9 @@ archives:
         format: zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
+checksum:
+  disable: true
+
 release:
   github:
     owner: mahfuzsust
