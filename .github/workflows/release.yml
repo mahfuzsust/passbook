@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  build-linux:
-    name: Build (Linux)
+  release-linux:
+    name: Release (Linux)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,23 +27,19 @@ jobs:
       - name: Install CGO dependencies
         run: sudo apt-get update && sudo apt-get install -yq --no-install-recommends gcc g++ gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
-      - name: Build Linux binaries
+      - name: Release Linux assets
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: build --clean --id linux-amd64 --id linux-arm64
+          args: release --clean --skip=homebrew
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          GORELEASER_GOOS: linux
 
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-linux
-          path: dist/
-          retention-days: 1
-
-  build-macos:
-    name: Build (macOS)
+  release-macos:
+    name: Release (macOS)
+    needs: release-linux
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -57,23 +53,20 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build macOS binaries
+      - name: Release macOS assets
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: build --clean --id darwin-amd64 --id darwin-arm64
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          GORELEASER_GOOS: darwin
 
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-macos
-          path: dist/
-          retention-days: 1
-
-  build-windows:
-    name: Build (Windows)
+  release-windows:
+    name: Release (Windows)
+    needs: release-linux
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -87,61 +80,36 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build Windows binaries
+      - name: Release Windows assets
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: build --clean --id windows-amd64
+          args: release --clean --skip=homebrew
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          GORELEASER_GOOS: windows
 
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-windows
-          path: dist/
-          retention-days: 1
-
-  release:
-    name: Release
-    needs: [build-linux, build-macos, build-windows]
+  release-checksums:
+    name: Release (Checksums)
+    needs: [release-linux, release-macos, release-windows]
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Download Linux artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-linux
-          path: dist/
-
-      - name: Download macOS artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-macos
-          path: dist/
-
-      - name: Download Windows artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-windows
-          path: dist/
-
-      - name: Publish release
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: "~> v2"
-          args: release --clean --skip=build
+      - name: Download release assets
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir assets
+          gh release download "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir assets \
+            --pattern '*.tar.gz' \
+            --pattern '*.zip'
+
+      - name: Upload checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd assets
+          sha256sum * > checksums.txt
+          gh release upload "${GITHUB_REF_NAME}" checksums.txt --repo "${GITHUB_REPOSITORY}" --clobber
