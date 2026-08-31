@@ -9,7 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  goreleaser:
+  build-linux:
+    name: Build (Linux)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,14 +21,126 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version-file: go.mod
           cache: true
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+      - name: Install CGO dependencies
+        run: sudo apt-get update && sudo apt-get install -yq --no-install-recommends gcc g++ gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Build Linux binaries
+        uses: goreleaser/goreleaser-action@v6
         with:
-          version: latest
-          args: release --clean
+          version: "~> v2"
+          args: build --clean --id linux-amd64 --id linux-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux
+          path: dist/
+          retention-days: 1
+
+  build-macos:
+    name: Build (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build macOS binaries
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: build --clean --id darwin-amd64 --id darwin-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos
+          path: dist/
+          retention-days: 1
+
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build Windows binaries
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: build --clean --id windows-amd64 --id windows-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
+          path: dist/
+          retention-days: 1
+
+  release:
+    name: Release
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-linux
+          path: dist/
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-macos
+          path: dist/
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-windows
+          path: dist/
+
+      - name: Publish release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean --skip=build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

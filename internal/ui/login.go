@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"os"
-
 	"passbook/internal/store"
 	"passbook/internal/utils"
 
@@ -23,14 +21,14 @@ func goToMain(pwd string) {
 	}
 
 	dbExisted := store.DBExists(uiDBPath)
+	freshInstall := !dbExisted
 
 	s, err := store.Open(uiDBPath, pwd)
 	if err != nil {
-		if uiFreshInstall {
-			showLoginError("Could not create vault.")
-		} else {
-			showLoginError("Wrong password.")
+		if freshInstall {
+			store.RemoveDBFiles(uiDBPath)
 		}
+		showLoginError(loginErrorMessage(err, freshInstall))
 		return
 	}
 	uiStore = s
@@ -62,10 +60,18 @@ func closeAndCleanupStore(removeDB bool) {
 		uiStore = nil
 	}
 	if removeDB {
-		os.Remove(uiDBPath)
-		os.Remove(uiDBPath + "-wal")
-		os.Remove(uiDBPath + "-shm")
+		store.RemoveDBFiles(uiDBPath)
 	}
+}
+
+func loginErrorMessage(err error, freshInstall bool) string {
+	if store.IsCGODisabled(err) {
+		return "Database unavailable. Reinstall a CGO-enabled build."
+	}
+	if freshInstall {
+		return "Could not create vault."
+	}
+	return "Wrong password."
 }
 
 func submitLogin() {

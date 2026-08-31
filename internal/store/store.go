@@ -111,6 +111,16 @@ func DBExists(dbPath string) bool {
 	return err == nil
 }
 
+func IsCGODisabled(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "CGO_ENABLED=0")
+}
+
+func RemoveDBFiles(dbPath string) {
+	for _, path := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
+		_ = os.Remove(path)
+	}
+}
+
 func VerifyKey(dbPath string, key string) error {
 	s, err := Open(dbPath, key)
 	if err != nil {

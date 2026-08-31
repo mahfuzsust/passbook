@@ -1,3 +1,5 @@
+version: 2
+
 project_name: passbook
 
 before:
@@ -5,17 +7,76 @@ before:
     - go mod tidy
 
 builds:
-  - id: passbook
+  - id: linux-amd64
     main: ./cmd/passbook
     binary: passbook
     env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
     goos:
       - linux
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+  - id: linux-arm64
+    main: ./cmd/passbook
+    binary: passbook
+    env:
+      - CGO_ENABLED=1
+      - CC=aarch64-linux-gnu-gcc
+      - CXX=aarch64-linux-gnu-g++
+    goos:
+      - linux
+    goarch:
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+  - id: darwin-amd64
+    main: ./cmd/passbook
+    binary: passbook
+    env:
+      - CGO_ENABLED=1
+    goos:
       - darwin
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+  - id: darwin-arm64
+    main: ./cmd/passbook
+    binary: passbook
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - darwin
+    goarch:
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+  - id: windows-amd64
+    main: ./cmd/passbook
+    binary: passbook
+    env:
+      - CGO_ENABLED=1
+    goos:
       - windows
     goarch:
       - amd64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+  - id: windows-arm64
+    main: ./cmd/passbook
+    binary: passbook
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - windows
+    goarch:
       - arm64
     ldflags:
       - -s -w -X main.version={{.Version}}
@@ -23,7 +84,12 @@ builds:
 archives:
   - id: default
     builds:
-      - passbook
+      - linux-amd64
+      - linux-arm64
+      - darwin-amd64
+      - darwin-arm64
+      - windows-amd64
+      - windows-arm64
     format_overrides:
       - goos: windows
         format: zip
@@ -54,4 +120,4 @@ brews:
     install: |
       bin.install "passbook"
     test: |
-      system "#{bin}/passbook", "--help"
+      system "#{bin}/passbook", "--version"
