@@ -24,6 +24,11 @@ func configPath() string {
 	return filepath.Join(home, ".passbook", "config.json")
 }
 
+func Exists() bool {
+	_, err := os.Stat(configPath())
+	return err == nil
+}
+
 func LoadOrInit() AppConfig {
 	cfg := AppConfig{DataDir: "~/.passbook/data"}
 

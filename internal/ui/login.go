@@ -14,6 +14,7 @@ var (
 	uiLoginForm     *tview.Form
 	uiLoginModal    tview.Primitive
 	uiLoginStrength *strengthMeter
+	uiFreshInstall  bool
 )
 
 func goToMain(pwd string) {
@@ -25,7 +26,11 @@ func goToMain(pwd string) {
 
 	s, err := store.Open(uiDBPath, pwd)
 	if err != nil {
-		showLoginError("Wrong password.")
+		if uiFreshInstall {
+			showLoginError("Could not create vault.")
+		} else {
+			showLoginError("Wrong password.")
+		}
 		return
 	}
 	uiStore = s
@@ -63,7 +68,26 @@ func closeAndCleanupStore(removeDB bool) {
 	}
 }
 
+func submitLogin() {
+	uiLoginHasError = false
+	pwd := uiLoginForm.GetFormItem(0).(*tview.InputField).GetText()
+	goToMain(pwd)
+}
+
+func loginFormEnterPressed() bool {
+	focused := uiApp.GetFocus()
+	for i := 0; i < uiLoginForm.GetButtonCount(); i++ {
+		if focused == uiLoginForm.GetButton(i) {
+			return false
+		}
+	}
+	submitLogin()
+	return uiLoginHasError
+}
+
 func setupLogin() {
+	uiFreshInstall = !store.DBExists(uiDBPath)
+
 	uiLoginStrength = newStrengthMeter()
 
 	uiLoginForm = tview.NewForm()
@@ -71,25 +95,30 @@ func setupLogin() {
 		uiLoginStrength.Update(text)
 	})
 	uiLoginStrength.AddTo(uiLoginForm)
-	uiLoginForm.AddButton("Login", func() {
-		uiLoginHasError = false
-		pwd := uiLoginForm.GetFormItem(0).(*tview.InputField).GetText()
-		goToMain(pwd)
-	})
+
+	submitLabel := "Login"
+	title := " PassBook Login "
+	if uiFreshInstall {
+		submitLabel = "Create Vault"
+		title = " PassBook Setup "
+	}
+
+	uiLoginForm.AddButton(submitLabel, submitLogin)
+	uiLoginForm.AddButton("Quit", func() { uiApp.Stop() })
 
 	uiLoginForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEnter {
-			uiLoginHasError = false
-			pwd := uiLoginForm.GetFormItem(0).(*tview.InputField).GetText()
-			goToMain(pwd)
-			if uiLoginHasError {
+		switch event.Key() {
+		case tcell.KeyEsc:
+			uiApp.Stop()
+			return nil
+		case tcell.KeyEnter:
+			if loginFormEnterPressed() {
 				return nil
 			}
 		}
 		return event
 	})
-	uiLoginForm.AddButton("Quit", func() { uiApp.Stop() })
-	uiLoginForm.SetBorder(true).SetTitle(" PassBook Login ").SetTitleAlign(tview.AlignCenter)
+	uiLoginForm.SetBorder(true).SetTitle(title).SetTitleAlign(tview.AlignCenter)
 	styleForm(uiLoginForm)
 	enableButtonNav(uiLoginForm)
 
