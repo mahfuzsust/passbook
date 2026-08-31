@@ -69,18 +69,6 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}}
 
-  - id: windows-arm64
-    main: ./cmd/passbook
-    binary: passbook
-    env:
-      - CGO_ENABLED=1
-    goos:
-      - windows
-    goarch:
-      - arm64
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-
 archives:
   - id: default
     builds:
@@ -89,7 +77,6 @@ archives:
       - darwin-amd64
       - darwin-arm64
       - windows-amd64
-      - windows-arm64
     format_overrides:
       - goos: windows
         format: zip

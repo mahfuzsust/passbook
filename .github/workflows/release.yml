@@ -91,7 +91,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: build --clean --id windows-amd64 --id windows-arm64
+          args: build --clean --id windows-amd64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
