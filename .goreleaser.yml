@@ -95,16 +95,22 @@ release:
     owner: mahfuzsust
     name: passbook
   draft: false
-  prerelease: auto
+  prerelease: false
 
 brews:
   - name: passbook
     ids:
       - default
+    skip_upload: false
+    goarm64: "v8.0"
     repository:
       owner: mahfuzsust
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    commit_author:
+      name: github-actions[bot]
+      email: 41898282+github-actions[bot]@users.noreply.github.com
+    commit_msg_template: "chore: update passbook to {{ .Tag }}"
     directory: Formula
     homepage: "https://github.com/mahfuzsust/passbook"
     description: "Terminal-based password manager built in Go"

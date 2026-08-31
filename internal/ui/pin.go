@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -205,9 +206,10 @@ func setupTotpSetup() {
 func showTotpSetup() {
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      "PassBook",
-		AccountName: "vault",
+		AccountName: "v",
 		Period:      30,
 		Digits:      otp.DigitsSix,
+		SecretSize:  10,
 	})
 	if err != nil {
 		return
@@ -216,11 +218,18 @@ func showTotpSetup() {
 
 	uiTotpSetupFlex.Clear()
 
-	qrStr, qrLines := renderQRCode(key.URL())
+	qrStr, qrLines, qrCols := renderQRCode(totpQRURL(key.Secret()))
 	if qrLines > 0 {
 		qrTV := tview.NewTextView().SetDynamicColors(true)
+		qrTV.SetWrap(false)
 		qrTV.SetText(qrStr)
-		uiTotpSetupFlex.AddItem(qrTV, qrLines, 0, false)
+
+		qrRow := tview.NewFlex().SetDirection(tview.FlexColumn)
+		qrRow.AddItem(nil, 0, 1, false)
+		qrRow.AddItem(qrTV, qrCols, 0, false)
+		qrRow.AddItem(nil, 0, 1, false)
+
+		uiTotpSetupFlex.AddItem(qrRow, qrLines, 0, false)
 	}
 
 	secretRow := tview.NewFlex().SetDirection(tview.FlexColumn)
@@ -396,41 +405,72 @@ func validateTOTP(code, secret string) bool {
 	return ok
 }
 
-func renderQRCode(url string) (string, int) {
+func totpQRURL(secret string) string {
+	return fmt.Sprintf("otpauth://totp/PassBook:v?secret=%s&issuer=PassBook", secret)
+}
+
+func renderQRCode(url string) (string, int, int) {
 	qr, err := qrcode.New(url, qrcode.Low)
 	if err != nil {
-		return "", 0
+		return "", 0, 0
 	}
+	qr.DisableBorder = true
 
 	bmp := qr.Bitmap()
 	rows := len(bmp)
 	if rows == 0 {
-		return "", 0
+		return "", 0, 0
 	}
 	cols := len(bmp[0])
+	displayCols := (cols + 1) / 2
 
 	var buf strings.Builder
 	lines := 0
 
-	for y := 0; y < rows; y += 2 {
-		for x := 0; x < cols; x++ {
-			top := bmp[y][x]
-			bot := y+1 < rows && bmp[y+1][x]
-
-			switch {
-			case top && bot:
-				buf.WriteString("[black:black] [-:-]")
-			case top && !bot:
-				buf.WriteString("[black:white]▀[-:-]")
-			case !top && bot:
-				buf.WriteString("[white:black]▀[-:-]")
-			default:
-				buf.WriteString("[white:white] [-:-]")
+	for y := 0; y < rows; y += 4 {
+		for x := 0; x < cols; x += 2 {
+			ch := brailleAt(bmp, x, y)
+			if ch == '\u2800' {
+				buf.WriteRune(' ')
+			} else {
+				buf.WriteString("[black:black]")
+				buf.WriteRune(ch)
+				buf.WriteString("[-:-]")
 			}
 		}
 		buf.WriteString("\n")
 		lines++
 	}
 
-	return buf.String(), lines
+	return buf.String(), lines, displayCols
+}
+
+func brailleAt(bmp [][]bool, x, y int) rune {
+	set := func(bit, bx, by int, bits *rune) {
+		if qrBitmapAt(bmp, bx, by) {
+			*bits |= 1 << bit
+		}
+	}
+
+	var bits rune
+	set(0, x, y, &bits)
+	set(1, x, y+1, &bits)
+	set(2, x, y+2, &bits)
+	set(3, x+1, y, &bits)
+	set(4, x+1, y+1, &bits)
+	set(5, x+1, y+2, &bits)
+	set(6, x, y+3, &bits)
+	set(7, x+1, y+3, &bits)
+	return '\u2800' + bits
+}
+
+func qrBitmapAt(bmp [][]bool, x, y int) bool {
+	if y < 0 || y >= len(bmp) {
+		return false
+	}
+	row := bmp[y]
+	if x < 0 || x >= len(row) {
+		return false
+	}
+	return row[x]
 }
