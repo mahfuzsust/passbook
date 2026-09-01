@@ -15,7 +15,7 @@ import (
 	"golang.org/x/term"
 )
 
-var version = "3.0.9"
+var version = "7.0.0"
 
 const iCloudDataDir = "~/Library/Mobile Documents/com~apple~CloudDocs/PassBook"
 

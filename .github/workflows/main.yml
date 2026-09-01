@@ -46,19 +46,41 @@ jobs:
 
       - name: Create and push tag
         id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v-$(git rev-parse --short HEAD)"
+          set -euo pipefail
+
+          LATEST_TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || true)
+          if [ -n "$LATEST_TAG" ]; then
+            BASE_VERSION="${LATEST_TAG#v}"
+            BASE_VERSION="${BASE_VERSION%%-*}"
+          else
+            BASE_VERSION=$(grep -oE 'version = "[^"]+"' cmd/passbook/main.go | head -1 | cut -d'"' -f2)
+          fi
+
+          IFS='.' read -r major minor patch <<< "$BASE_VERSION"
+          if ! [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ && "$patch" =~ ^[0-9]+$ ]]; then
+            echo "Invalid base version: ${BASE_VERSION}"
+            exit 1
+          fi
+
+          NEXT_VERSION="${major}.${minor}.$((patch + 1))"
+          TAG="v${NEXT_VERSION}"
+
           if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
             echo "Tag ${TAG} already exists, skipping"
             echo "created=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag "${TAG}"
           git push origin "${TAG}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "Created ${TAG} (from latest release ${LATEST_TAG:-none}, base ${BASE_VERSION})"
 
       - name: Trigger release workflow
         if: steps.tag.outputs.created == 'true'
