@@ -26,12 +26,26 @@ PassBook is a terminal-based password manager built in Go. It stores your vault 
 
 ## 🚀 Installation
 
-### Option A: Homebrew (macOS/Linux)
+### Option A: Homebrew (macOS)
+
+PassBook is distributed as a [Homebrew cask](https://docs.brew.sh/Cask-Cookbook) (pre-built binary). Linux users should use [Option B](#option-b-download-from-github-releases-recommended) or [build from source](#option-c-build-from-source).
 
 ```bash
-brew install mahfuzsust/tap/passbook
+brew install --cask mahfuzsust/tap/passbook
 ```
 
+If you previously installed the old formula (`brew install mahfuzsust/tap/passbook`), uninstall it first:
+
+```bash
+brew uninstall passbook
+brew install --cask mahfuzsust/tap/passbook
+```
+
+Upgrade:
+
+```bash
+brew upgrade --cask passbook
+```
 
 ### Option B: Download from GitHub Releases (recommended)
 
@@ -86,6 +100,34 @@ Or install into your Go bin:
 ```bash
 go install ./cmd/passbook
 passbook
+```
+
+## 📦 Releases
+
+Every push to `main` runs CI, then automatically:
+
+1. Bumps the patch version from the latest [GitHub release](https://github.com/mahfuzsust/passbook/releases) (e.g. `v7.0.1` → `v7.0.2`)
+2. Creates and pushes that semver tag
+3. Builds and publishes release assets for Linux, macOS, and Windows via [GoReleaser](https://goreleaser.com/)
+4. Updates the Homebrew cask in [mahfuzsust/homebrew-tap](https://github.com/mahfuzsust/homebrew-tap)
+
+Binaries are built with **CGO enabled** (required for SQLCipher). Do not distribute builds compiled with `CGO_ENABLED=0`.
+
+### Maintainer setup
+
+Repository secrets required for full releases:
+
+| Secret | Purpose |
+| --- | --- |
+| `GITHUB_TOKEN` | Provided automatically; publishes GitHub releases |
+| `HOMEBREW_TAP_TOKEN` | PAT with `contents:write` on `mahfuzsust/homebrew-tap` |
+
+When migrating from the legacy Homebrew formula to the cask, `tap_migrations.json` is in the homebrew-tap repo (see [`packaging/homebrew-tap/tap_migrations.json`](packaging/homebrew-tap/tap_migrations.json) for the source). Remove `Formula/passbook.rb` after the first cask release lands in `Casks/`.
+
+Manual release for an existing tag:
+
+```bash
+gh workflow run Release --ref vX.Y.Z
 ```
 
 ## ▶️ Usage
@@ -241,7 +283,8 @@ Viewer behavior:
 
 | Context | Shortcut | Action |
 | --- | --- | --- |
-| Login screen | `Enter` | Login |
+| Login / setup screen | `Enter` | Login or create vault |
+| Login / setup screen | `Esc` | Quit |
 | Editor | `Esc` | Close editor |
 | File browser | `Esc` | Cancel file picker |
 | Password generator | `Esc` | Close generator |

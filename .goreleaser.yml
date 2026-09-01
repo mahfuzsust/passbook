@@ -76,7 +76,7 @@ builds:
 
 archives:
   - id: default
-    builds:
+    ids:
       - linux-amd64
       - linux-arm64
       - darwin-amd64
@@ -84,7 +84,7 @@ archives:
       - windows-amd64
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
@@ -97,11 +97,13 @@ release:
   draft: false
   prerelease: false
 
-brews:
+homebrew_casks:
   - name: passbook
     ids:
       - default
     skip_upload: false
+    binaries:
+      - passbook
     repository:
       owner: mahfuzsust
       name: homebrew-tap
@@ -110,11 +112,14 @@ brews:
       name: github-actions[bot]
       email: 41898282+github-actions[bot]@users.noreply.github.com
     commit_msg_template: "chore: update passbook to {{ .Tag }}"
-    directory: Formula
     homepage: "https://github.com/mahfuzsust/passbook"
     description: "Terminal-based password manager built in Go"
     license: "MIT"
-    install: |
-      bin.install "passbook"
-    test: |
-      system "#{bin}/passbook", "--version"
+    url:
+      verified: github.com/mahfuzsust/passbook
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/passbook"]
+          end

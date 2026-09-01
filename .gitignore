@@ -28,5 +28,6 @@ data/
 config.json
 
 
-.task
-bin/
+dist/
+dist-parts/
+prebuilt-dist/
