@@ -102,7 +102,6 @@ brews:
     ids:
       - default
     skip_upload: false
-    goarm64: "v8.0"
     repository:
       owner: mahfuzsust
       name: homebrew-tap
