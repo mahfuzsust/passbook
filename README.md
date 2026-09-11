@@ -2,19 +2,20 @@
 
 ![Downloads](https://img.shields.io/github/downloads/mahfuzsust/passbook/total)
 
-PassBook is a terminal-based password manager built in Go. It stores your vault locally in a single encrypted SQLite database (via SQLCipher), provides a TUI for browsing/editing entries, and includes built-in TOTP generation with a live countdown.
+PassBook is a terminal-based password manager built in Go. It stores your vault locally in a single encrypted SQLite database (via SQLCipher), provides a [Bubble Tea](https://github.com/charmbracelet/bubbletea)-powered TUI for browsing/editing entries, and includes built-in TOTP generation with a live countdown.
 
 ## ✨ Features
 
 - Local encryption: The entire vault is stored in a single SQLCipher-encrypted database file.
 - Two-factor authentication: After login, an additional 6-digit PIN or TOTP authenticator app verification is required. Configurable on first use with QR code setup for authenticator apps.
 - Entry types: Logins, Cards, Notes, and Files.
-- Built-in TOTP: Generates 6-digit codes for Login entries with a live progress bar.
+- Built-in TOTP: Generates 6-digit codes for Login entries with a smooth, color-coded live progress bar.
 - Smart clipboard handling:
   - Copying sensitive values clears the clipboard after 30 seconds if it still contains the copied value.
   - Copying non-sensitive values shows a quick status.
 - Password history: Login entries keep prior passwords + timestamps when the password changes.
-- Password generator: Generate a password and insert it into the editor.
+- Password generator: Configure length and character classes, preview live, and insert into the editor.
+- Folder picker: Assigning an entry to a folder opens a searchable list overlay instead of free-text entry.
 - Change master password: Re-encrypts the database with a new key via SQLCipher's `PRAGMA rekey`.
 - Import from Bitwarden: Import your vault from a Bitwarden JSON export via the CLI.
 - Import from 1Password: Import your vault from a 1Password `.1pux` export via the CLI.
@@ -113,16 +114,6 @@ Every push to `main` runs CI, then automatically:
 
 Binaries are built with **CGO enabled** (required for SQLCipher). Do not distribute builds compiled with `CGO_ENABLED=0`.
 
-### Maintainer setup
-
-Repository secrets required for full releases:
-
-| Secret | Purpose |
-| --- | --- |
-| `GITHUB_TOKEN` | Provided automatically; publishes GitHub releases |
-| `HOMEBREW_TAP_TOKEN` | PAT with `contents:write` on `mahfuzsust/homebrew-tap` |
-
-When migrating from the legacy Homebrew formula to the cask, `tap_migrations.json` is in the homebrew-tap repo (see [`packaging/homebrew-tap/tap_migrations.json`](packaging/homebrew-tap/tap_migrations.json) for the source). Remove `Formula/passbook.rb` after the first cask release lands in `Casks/`.
 
 Manual release for an existing tag:
 
@@ -248,52 +239,71 @@ For the full security architecture — encryption details, authentication flow, 
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl+A` | Create a new entry |
-| `Ctrl+E` | Edit selected entry |
-| `Ctrl+D` | Delete selected entry |
+| `Ctrl+A` | Create a new entry / folder |
+| `Ctrl+E` | Edit selected entry, or rename selected folder |
+| `Ctrl+D` | Delete selected entry, or delete selected folder |
+| `Ctrl+N` | Create a new folder |
 | `Ctrl+F` | Focus search |
+| `Ctrl+Y` | Quick copy (jump straight to a copy action for the selected entry) |
 | `Ctrl+P` | Change master password |
 | `Ctrl+Q` | Quit |
+| `↑`/`↓` or `j`/`k` | Move selection in the vault tree |
+| `Enter` | Open entry / expand-collapse folder |
 | `Esc` | Focus vault tree |
 
-### Viewer actions
+### Viewer actions (entry detail pane)
 
-Buttons are compact ASCII labels:
+| Key | Action |
+| --- | --- |
+| `u` | Copy username (Login) |
+| `c` | Copy password (Login) or card number (Card) |
+| `l` | Copy link (Login) |
+| `t` | Copy current TOTP code (Login) |
+| `v` | Reveal/mask sensitive value |
+| `o` | Open link in browser (Login) |
+| `h` | View password history (Login) |
+| `1`-`9` | Download the corresponding attachment to `~/Downloads` |
 
-- `cp` = copy
-- `vw` = view/toggle visibility
-- `his` = history
-- `open` = open URL
+Each action key only appears/works when the relevant field exists on the entry (e.g. `l` does nothing without a Link).
 
-Viewer behavior:
+### Editor
 
-- Login:
-  - Username shows `cp` only when a username exists.
-  - Password row shows `vw`, `cp`, `his` only when a password exists.
-  - Link row shows `open` + `cp` only when a link exists.
-  - TOTP shows `cp` only when a TOTP secret exists.
-- Card:
-  - Number shows `vw` + `cp`.
-- Notes:
-  - Notes header shows `cp` only when notes exist.
-- File:
-  - Selecting an attachment downloads it to your Downloads folder.
+| Key | Action |
+| --- | --- |
+| `Tab` / `Shift+Tab` | Move between fields |
+| `Enter` | Insert a newline in Notes; otherwise advance to the next field/button |
+| `Ctrl+G` | Open the password generator (Login entries) |
+| `Ctrl+B` | Browse the filesystem to attach a file (File entries) |
+| `Esc` | Close the editor |
 
-### Modals / editor
+Tabbing onto the **Folder** field automatically opens a folder-picker overlay (`↑`/`↓` to choose, `Enter` to confirm, `Esc` to cancel) — there's no free-text folder input.
+
+### Password generator
+
+| Key | Action |
+| --- | --- |
+| `Tab` / `↑`/`↓` | Move between length, character-class checkboxes, Refresh, and Use |
+| `Space` | Toggle a character class |
+| `r` | Regenerate the preview |
+| `Enter` | Regenerate (on Refresh) or apply the password (on Use) |
+| `Esc` | Close without applying |
+
+### Modals
 
 | Context | Shortcut | Action |
 | --- | --- | --- |
 | Login / setup screen | `Enter` | Login or create vault |
 | Login / setup screen | `Esc` | Quit |
-| Editor | `Esc` | Close editor |
+| File browser | `Enter` | Open folder / attach selected file |
 | File browser | `Esc` | Cancel file picker |
-| Password generator | `Esc` | Close generator |
+| Quick copy | letter shown next to each item | Run that copy action |
 | History | `Esc` | Close history |
 
 ## 🧰 Built with
 
-- tview: https://github.com/rivo/tview
-- tcell: https://github.com/gdamore/tcell
+- bubbletea: https://github.com/charmbracelet/bubbletea
+- bubbles: https://github.com/charmbracelet/bubbles
+- lipgloss: https://github.com/charmbracelet/lipgloss
 - go-sqlcipher: https://github.com/mutecomm/go-sqlcipher
 - otp: https://github.com/pquerna/otp
 - go-qrcode: https://github.com/skip2/go-qrcode
