@@ -7,183 +7,112 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-var (
-	uiFileBrowser      *tview.TreeView
-	uiFileBrowserModal tview.Primitive
-)
+type fileBrowserModel struct {
+	rootPath string
+	items    []fileBrowserItem
+	cursor   int
+	err      string
+}
 
-// addFileFields adds file-specific form fields to the editor.
-func addFileFields(_ *Entry) {
-	uiEditorLayout.AddItem(uiAttachFlex, 0, 0, false)
+type fileBrowserItem struct {
+	name  string
+	path  string
+	isDir bool
+}
 
-	uiEditorForm.AddButton("Browse Filesystem", func() {
-		home, _ := os.UserHomeDir()
-		openFileBrowser(home)
-	})
+func newFileBrowserModel(path string) fileBrowserModel {
+	var fb fileBrowserModel
+	fb.refresh(path)
+	return fb
+}
 
-	dropZone := tview.NewTextArea().
-		SetLabel("Drag File Here").
-		SetPlaceholder("Click here, then drop/paste a file path, then press Enter to attach").
-		SetSize(5, 40)
-
-	dropZone.SetBorder(true)
-	dropZone.SetTitle(" Dropzone ")
-	dropZone.SetTitleColor(tcell.ColorYellow)
-	dropZone.SetBackgroundColor(tcell.ColorBlack)
-
-	resetDropZone := func() {
-		dropZone.SetText("", true)
-		dropZone.SetLabel("Drag File Here")
-		dropZone.SetPlaceholder("Click here, then drop/paste a file path, then press Enter to attach")
-		dropZone.SetBorder(true)
-		dropZone.SetTitle(" Dropzone ")
-		dropZone.SetTitleColor(tcell.ColorYellow)
-		dropZone.SetBackgroundColor(tcell.ColorBlack)
+func (fb *fileBrowserModel) refresh(path string) {
+	fb.items = nil
+	fb.err = ""
+	fb.rootPath = path
+	if parent := filepath.Dir(path); parent != path {
+		fb.items = append(fb.items, fileBrowserItem{name: "..", path: parent, isDir: true})
 	}
-
-	attachFromDropZone := func() {
-		rawPath := dropZone.GetText()
-		cleanPath := strings.Trim(rawPath, "\"' \n\r\t")
-		if cleanPath == "" {
-			return
-		}
-
-		if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
-			cleanPath = strings.ReplaceAll(cleanPath, "\\ ", " ")
-		}
-
-		if strings.Contains(cleanPath, "\n") || strings.Contains(cleanPath, "\r") {
-			return
-		}
-
-		fi, err := os.Stat(cleanPath)
-		if err != nil || fi.IsDir() {
-			return
-		}
-
-		id := fmt.Sprintf("%d", time.Now().UnixNano())
-		att := Attachment{ID: id, FileName: filepath.Base(cleanPath), Size: fi.Size()}
-		uiPendingAttachments = append(uiPendingAttachments, att)
-		uiPendingFilePaths[id] = cleanPath
-
-		resetDropZone()
-		refreshAttachmentList(TypeFile)
-		uiApp.SetFocus(uiAttachList)
-	}
-
-	dropZone.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEnter {
-			attachFromDropZone()
-			return nil
-		}
-		return event
-	})
-
-	uiEditorForm.AddFormItem(dropZone)
-
-	resetDropZone()
-	refreshAttachmentList(TypeFile)
-}
-
-// collectFileFields reads file form values into the entry (no-op beyond shared).
-func collectFileFields(_ *Entry) {}
-
-// renderFileView renders the file-type view pane content.
-// File entries have no type-specific rows; attachments are rendered by the shared section.
-func renderFileView() {}
-
-// setupFileBrowser sets up the file browser modal for picking files.
-func setupFileBrowser() {
-	uiFileBrowser = tview.NewTreeView()
-	uiFileBrowser.SetBorder(true).SetTitle(" Select File (Enter to Pick, Esc Cancel) ")
-	uiFileBrowser.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEsc {
-			uiPages.SwitchToPage("editor")
-		}
-		return event
-	})
-
-	uiFileBrowserModal = newResponsiveModal(uiFileBrowser, 50, 20, 100, 40, 0.7, 0.75)
-	uiPages.AddPage("filebrowser", uiFileBrowserModal, true, false)
-}
-
-// openFileBrowser opens the file browser at the given path.
-func openFileBrowser(path string) {
-	rootDir, _ := filepath.Abs(path)
-	rootNode := tview.NewTreeNode(rootDir).SetColor(tcell.ColorYellow).SetReference(rootDir)
-	uiFileBrowser.SetRoot(rootNode).SetCurrentNode(rootNode)
-	addNodes(rootNode, rootDir)
-
-	uiFileBrowser.SetSelectedFunc(func(node *tview.TreeNode) {
-		ref := node.GetReference()
-		if ref == nil {
-			return
-		}
-		path := ref.(string)
-		fi, err := os.Stat(path)
-		if err != nil {
-			return
-		}
-
-		if fi.IsDir() {
-			if len(node.GetChildren()) == 0 {
-				addNodes(node, path)
-			}
-			node.SetExpanded(!node.IsExpanded())
-		} else {
-			id := fmt.Sprintf("%d", time.Now().UnixNano())
-			att := Attachment{ID: id, FileName: filepath.Base(path), Size: fi.Size()}
-			uiPendingAttachments = append(uiPendingAttachments, att)
-			uiPendingFilePaths[id] = path
-			refreshAttachmentList(TypeFile)
-			uiPages.SwitchToPage("editor")
-		}
-	})
-	uiPages.SwitchToPage("filebrowser")
-}
-
-// addNodes adds directory entries as children of the given tree node.
-func addNodes(target *tview.TreeNode, path string) {
-	files, err := os.ReadDir(path)
+	entries, err := os.ReadDir(path)
 	if err != nil {
+		fb.err = err.Error()
 		return
 	}
-	for _, f := range files {
-		if strings.HasPrefix(f.Name(), ".") {
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		node := tview.NewTreeNode(f.Name()).SetReference(filepath.Join(path, f.Name()))
-		if f.IsDir() {
-			node.SetColor(tcell.ColorSkyblue)
-		}
-		target.AddChild(node)
+		fb.items = append(fb.items, fileBrowserItem{
+			name:  e.Name(),
+			path:  filepath.Join(path, e.Name()),
+			isDir: e.IsDir(),
+		})
 	}
 }
 
-// refreshAttachmentList rebuilds the attachment list in the editor.
-func refreshAttachmentList(t EntryType) {
-	uiAttachList.Clear()
-	size := 0
-
-	if t == TypeFile || len(uiPendingAttachments) > 0 {
-		if len(uiPendingAttachments) > 0 {
-			size = 6
-			for i, att := range uiPendingAttachments {
-				label := att.FileName
-				if _, isNew := uiPendingFilePaths[att.ID]; isNew {
-					label += " [green](New)[-]"
+func (m *Model) updateFileBrowser(key string) (Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.overlay = overlayEditor
+	case "up", "k":
+		if m.fileBrowser.cursor > 0 {
+			m.fileBrowser.cursor--
+		}
+	case "down", "j":
+		if m.fileBrowser.cursor < len(m.fileBrowser.items)-1 {
+			m.fileBrowser.cursor++
+		}
+	case "enter":
+		if m.fileBrowser.cursor < len(m.fileBrowser.items) {
+			item := m.fileBrowser.items[m.fileBrowser.cursor]
+			if item.isDir {
+				m.fileBrowser.refresh(item.path)
+				m.fileBrowser.cursor = 0
+			} else {
+				id := fmt.Sprintf("%d", time.Now().UnixNano())
+				fi, err := os.Stat(item.path)
+				if err != nil {
+					return *m, nil
 				}
-				idx := i
-				uiAttachList.AddItem(label, "Press Enter to Remove", 0, func() {
-					uiPendingAttachments = append(uiPendingAttachments[:idx], uiPendingAttachments[idx+1:]...)
-					refreshAttachmentList(t)
-				})
+				att := Attachment{ID: id, FileName: filepath.Base(item.path), Size: fi.Size()}
+				m.editor.pendingAttach = append(m.editor.pendingAttach, att)
+				m.editor.pendingPaths[id] = item.path
+				m.overlay = overlayEditor
 			}
 		}
 	}
-	uiEditorLayout.ResizeItem(uiAttachFlex, size, 0)
+	return *m, nil
+}
+
+func (m Model) viewFileBrowser() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(" Select File "))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render(m.fileBrowser.rootPath))
+	b.WriteString("\n\n")
+	if m.fileBrowser.err != "" {
+		b.WriteString(errorStyle.Render("⚠ " + m.fileBrowser.err))
+		b.WriteString("\n")
+	} else if len(m.fileBrowser.items) == 0 {
+		b.WriteString(dimStyle.Render("(empty directory)"))
+		b.WriteString("\n")
+	}
+	for i, item := range m.fileBrowser.items {
+		prefix := "📄 "
+		if item.isDir {
+			prefix = "📁 "
+		}
+		line := prefix + item.name
+		if i == m.fileBrowser.cursor {
+			line = selectedStyle.Render(line)
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("Enter to pick/expand, Esc to cancel"))
+	return centerModal(b.String(), m.width, m.height, 50, 20, 100, 40, 0.7, 0.75)
 }

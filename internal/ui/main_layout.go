@@ -1,88 +1,187 @@
 package ui
 
 import (
-	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+
+	"passbook/internal/store"
 )
 
-var (
-	uiSearchField *tview.InputField
-	uiTreeView    *tview.TreeView
-	uiRightPages  *tview.Pages
-)
+type mainModel struct {
+	search            textinput.Model
+	searchFocused     bool
+	tree              treeState
+	currentFolderID   int64
+	currentEntryID    int64
+	currentEnt        *Entry
+	showSensitive     bool
+	viewStatus        string
+	viewStatusClearAt time.Time
+	totpCode          string
+	totpBar           string
+	showContent       bool
+}
 
-func setupMainLayout() {
-	uiSearchField = styleInput(tview.NewInputField().SetLabel("Search: ")).SetPlaceholder("Ctrl+F")
-	uiSearchField.SetChangedFunc(func(text string) { refreshTree(text) })
-	uiSearchField.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEnter {
-			uiApp.SetFocus(uiTreeView)
-			return nil
-		}
-		return event
-	})
+func newMainModel() mainModel {
+	s := textinput.New()
+	s.Placeholder = "Ctrl+F"
+	s.Width = 30
+	return mainModel{search: s, tree: treeState{}}
+}
 
-	root := tview.NewTreeNode("").SetSelectable(false).SetExpanded(true)
-	uiTreeView = tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
-	uiTreeView.SetTopLevel(1)
-	uiTreeView.SetBorder(true).SetTitle(" Vault ")
-	uiTreeView.SetChangedFunc(func(node *tview.TreeNode) {
-		ref := node.GetReference()
-		if ref == nil {
-			uiCurrentFolderID = 0
-			uiCurrentEntryID = 0
-			uiCurrentEnt = nil
-			uiRightPages.SetTitle(" Keybindings ")
-			uiRightPages.SwitchToPage("empty")
-			return
+func (m *mainModel) refreshTree(s *store.Store, filter string) {
+	m.tree.refreshTree(s, filter)
+}
+
+func (m *mainModel) updateTOTP() {
+	if m.currentEnt == nil || EntryType(m.currentEnt.Type) != TypeLogin {
+		m.totpCode = ""
+		m.totpBar = ""
+		return
+	}
+	secret := strings.ReplaceAll(m.currentEnt.TotpSecret, " ", "")
+	if secret == "" {
+		m.totpCode = ""
+		m.totpBar = ""
+		return
+	}
+	m.totpCode, m.totpBar = formatTOTPDisplay(secret)
+}
+
+func (m *Model) updateMainKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	key := msg.String()
+
+	if m.main.searchFocused {
+		switch key {
+		case "enter", "esc":
+			m.main.searchFocused = false
+			m.main.search.Blur()
+			return *m, nil
+		default:
+			var cmd tea.Cmd
+			m.main.search, cmd = m.main.search.Update(msg)
+			m.main.refreshTree(m.store, m.main.search.Value())
+			return *m, cmd
 		}
-		nr, ok := ref.(nodeRef)
-		if !ok {
-			return
+	}
+
+	if handled, cmd := m.handleViewAction(key); handled {
+		return *m, cmd
+	}
+
+	switch key {
+	case "ctrl+a":
+		m.overlay = overlayCreateMenu
+		m.createMenu = newCreateMenuModel()
+	case "ctrl+e":
+		if m.main.currentFolderID != 0 {
+			m.overlay = overlayFolderRename
+			m.folder = newFolderRenameModel(m.store, m.main.currentFolderID)
+		} else if m.main.currentEnt != nil && m.main.currentEntryID != 0 {
+			return *m, m.openEditor(m.main.currentEnt)
 		}
-		if !nr.IsFolder {
-			uiCurrentFolderID = 0
-			loadEntry(nr.ID)
+	case "ctrl+d":
+		if m.main.currentFolderID != 0 {
+			m.overlay = overlayFolderDelete
+			m.folder = newFolderDeleteModel(m.store, m.main.currentFolderID)
+		} else if m.main.currentEntryID != 0 {
+			m.overlay = overlayDelete
+			m.modals = newDeleteModal(m.main.currentEnt.Title)
+		}
+	case "ctrl+n":
+		m.overlay = overlayFolderCreate
+		m.folder = newFolderCreateModel()
+	case "ctrl+f":
+		m.main.searchFocused = true
+		return *m, focusInput(&m.main.search)
+	case "ctrl+y":
+		m.showQuickCopy()
+	case "ctrl+p":
+		m.overlay = overlayChangePwd
+		m.changePwd = newChangePwdModel()
+	case "ctrl+q":
+		return *m, tea.Quit
+	case "esc":
+		m.main.searchFocused = false
+		m.main.search.Blur()
+	case "up", "k":
+		m.main.tree.moveUp()
+		m.syncSelectionFromTree()
+	case "down", "j":
+		m.main.tree.moveDown()
+		m.syncSelectionFromTree()
+	case "enter":
+		ref, isToggle := m.main.tree.toggleOrSelect()
+		if isToggle && ref.IsFolder {
+			m.main.currentFolderID = ref.ID
+			m.main.currentEntryID = 0
+			m.main.currentEnt = nil
+			m.main.showContent = false
+			m.main.refreshTree(m.store, m.main.search.Value())
+		} else if !ref.IsFolder && ref.ID != 0 {
+			m.loadEntry(ref.ID)
+		}
+	}
+	return *m, nil
+}
+
+func (m *Model) syncSelectionFromTree() {
+	ref := m.main.tree.currentRef()
+	if ref.IsFolder {
+		m.main.currentFolderID = ref.ID
+		m.main.currentEntryID = 0
+		m.main.currentEnt = nil
+		m.main.showContent = false
+	} else if ref.ID != 0 {
+		m.loadEntry(ref.ID)
+	}
+}
+
+func (m *Model) loadEntry(id int64) {
+	ent, err := m.store.LoadEntry(id)
+	if err != nil {
+		return
+	}
+	m.main.currentEnt = ent
+	m.main.currentEntryID = id
+	m.main.currentFolderID = 0
+	m.main.showSensitive = false
+	m.main.showContent = true
+	m.main.updateTOTP()
+}
+
+func (m Model) viewMain() string {
+	leftH := m.height - 2
+	searchLine := "Search: "
+	if m.main.searchFocused {
+		searchLine += m.main.search.View()
+	} else {
+		q := m.main.search.Value()
+		if q == "" {
+			searchLine += dimStyle.Render("Ctrl+F")
 		} else {
-			uiCurrentFolderID = nr.ID
-			uiCurrentEntryID = 0
-			uiCurrentEnt = nil
-			uiRightPages.SetTitle(" Keybindings ")
-			uiRightPages.SwitchToPage("empty")
+			searchLine += q
 		}
-	})
-	uiTreeView.SetSelectedFunc(func(node *tview.TreeNode) {
-		ref := node.GetReference()
-		if ref == nil {
-			node.SetExpanded(!node.IsExpanded())
-			return
-		}
-		nr, ok := ref.(nodeRef)
-		if !ok {
-			return
-		}
-		if nr.IsFolder {
-			node.SetExpanded(!node.IsExpanded())
-		}
-	})
+	}
 
-	leftFlex := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(uiSearchField, 1, 0, false).
-		AddItem(tview.NewTextView().SetText(""), 1, 0, false).
-		AddItem(uiTreeView, 0, 1, true)
+	treeH := leftH - 3
+	left := searchLine + "\n\n" + m.main.tree.render(treeH)
 
-	uiViewFlex = tview.NewFlex().SetDirection(tview.FlexRow)
-	uiViewTitle = tview.NewTextView().SetDynamicColors(true)
-	uiViewSubtitle = tview.NewTextView().SetDynamicColors(true)
-	uiViewPassword = tview.NewTextView().SetDynamicColors(true)
-	uiViewDetails = tview.NewTextView().SetDynamicColors(true)
-	uiViewTOTP = tview.NewTextView().SetDynamicColors(true)
-	uiViewTOTPBar = tview.NewTextView().SetDynamicColors(true)
-	uiViewCustom = tview.NewTextView().SetDynamicColors(true)
-	uiViewStatus = tview.NewTextView().SetDynamicColors(true)
-	uiAttachmentList = tview.NewList().ShowSecondaryText(false).SetMainTextColor(tcell.ColorSkyblue)
+	right := m.viewDetailPane()
+	return splitView(left, right, m.width, m.height, 0.30, 24, 40)
+}
 
-	keybindTable := tview.NewTable().SetBorders(false).SetSelectable(false, false)
+func (m Model) viewDetailPane() string {
+	if !m.main.showContent || m.main.currentEnt == nil {
+		return renderKeybindings()
+	}
+	return renderEntryView(m)
+}
+
+func renderKeybindings() string {
 	bindings := [][2]string{
 		{"Ctrl+A", "Create new item"},
 		{"Ctrl+E", "Edit item / rename folder"},
@@ -90,74 +189,25 @@ func setupMainLayout() {
 		{"Ctrl+N", "Create new folder"},
 		{"Ctrl+F", "Search vault"},
 		{"Ctrl+Y", "Quick copy to clipboard"},
+		{"u/c/l/t", "Copy username/password/link/TOTP"},
 		{"Ctrl+P", "Change master password"},
 		{"Ctrl+Q", "Quit"},
 		{"Enter", "Open item / toggle folder"},
 		{"Esc", "Focus tree view"},
 	}
-	keybindTable.SetCell(0, 0, tview.NewTableCell("[yellow::b]Key[-::-]").SetExpansion(1).SetAlign(tview.AlignRight))
-	keybindTable.SetCell(0, 1, tview.NewTableCell("  "))
-	keybindTable.SetCell(0, 2, tview.NewTableCell("[yellow::b]Action[-::-]").SetExpansion(2))
-	for i, b := range bindings {
-		row := i + 1
-		keybindTable.SetCell(row, 0, tview.NewTableCell("[skyblue]"+b[0]+"[-]").SetAlign(tview.AlignRight).SetExpansion(1))
-		keybindTable.SetCell(row, 1, tview.NewTableCell("  "))
-		keybindTable.SetCell(row, 2, tview.NewTableCell("[white]"+b[1]+"[-]").SetExpansion(2))
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(" Keybindings "))
+	b.WriteString("\n\n")
+	for _, bind := range bindings {
+		b.WriteString(skyStyle.Render(bind[0]))
+		b.WriteString("  ")
+		b.WriteString(bind[1])
+		b.WriteString("\n")
 	}
+	return b.String()
+}
 
-	emptyView := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(nil, 0, 1, false).
-		AddItem(keybindTable, len(bindings)+2, 0, false).
-		AddItem(nil, 0, 1, false)
-
-	uiRightPages = tview.NewPages()
-	uiRightPages.SetBorder(true).SetTitle(" Keybindings ")
-	uiRightPages.AddPage("empty", emptyView, true, true)
-	uiRightPages.AddPage("content", uiViewFlex, true, false)
-
-	mainFlex := newResponsiveSplit(leftFlex, uiRightPages, 0.30, 24, 40)
-
-	mainFlex.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Key() {
-		case tcell.KeyCtrlA:
-			showCreateMenu()
-			return nil
-		case tcell.KeyCtrlE:
-			if uiCurrentFolderID != 0 {
-				showFolderRename()
-			} else if uiCurrentEnt != nil && uiCurrentEntryID != 0 {
-				openEditor(uiCurrentEnt)
-			}
-			return nil
-		case tcell.KeyCtrlD:
-			if uiCurrentFolderID != 0 {
-				showFolderDeleteModal()
-			} else if uiCurrentEntryID != 0 {
-				showDeleteModal()
-			}
-			return nil
-		case tcell.KeyCtrlN:
-			showFolderCreate()
-			return nil
-		case tcell.KeyCtrlF:
-			uiApp.SetFocus(uiSearchField)
-			return nil
-		case tcell.KeyCtrlY:
-			showQuickCopy()
-			return nil
-		case tcell.KeyCtrlP:
-			showChangePassword()
-			return nil
-		case tcell.KeyCtrlQ:
-			uiApp.Stop()
-			return nil
-		case tcell.KeyEsc:
-			uiApp.SetFocus(uiTreeView)
-			return nil
-		default:
-			return event
-		}
-	})
-
-	uiPages.AddPage("main", mainFlex, true, false)
+func (m *Model) notifyCopied(item string) {
+	m.main.viewStatus = successStyle.Render("✓ " + item + " copied!")
+	m.main.viewStatusClearAt = time.Now().Add(3 * time.Second)
 }

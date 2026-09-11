@@ -1,140 +1,202 @@
 package ui
 
 import (
+	"strings"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+
 	"passbook/internal/store"
 	"passbook/internal/utils"
-
-	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
 )
 
-var (
-	uiChangePwdForm     *tview.Form
-	uiChangePwdFlex     *tview.Flex
-	uiChangePwdModal    tview.Primitive
-	uiChangePwdStrength *strengthMeter
-	uiChangePwdStatus   *tview.TextView
+type changePwdFocus int
+
+const (
+	cpfCurrent  changePwdFocus = 0
+	cpfNew      changePwdFocus = 1
+	cpfConfirm  changePwdFocus = 2
+	cpfButtons  changePwdFocus = 3
 )
 
-func setupChangePassword() {
-	uiChangePwdStrength = newStrengthMeter()
+type changePwdModel struct {
+	current  textinput.Model
+	newPwd   textinput.Model
+	confirm  textinput.Model
+	strength string
+	status   string
+	focus    changePwdFocus
+	btnFocus int
+}
 
-	uiChangePwdForm = tview.NewForm()
-	uiChangePwdForm.AddPasswordField("Current Password", "", 0, '*', nil)
-	uiChangePwdForm.AddPasswordField("New Password", "", 0, '*', func(text string) {
-		uiChangePwdStrength.Update(text)
-	})
-	uiChangePwdStrength.AddTo(uiChangePwdForm)
-	uiChangePwdForm.AddPasswordField("Confirm Password", "", 0, '*', nil)
+func newChangePwdModel() changePwdModel {
+	c := changePwdModel{focus: cpfCurrent}
+	c.current = newTextInput("Current Password", true)
+	c.newPwd = newTextInput("New Password", true)
+	c.confirm = newTextInput("Confirm Password", true)
+	c.current.Focus()
+	return c
+}
 
-	uiChangePwdForm.AddButton("Change", doChangePassword)
-	uiChangePwdForm.AddButton("Cancel", func() {
-		clearChangePwdForm()
-		uiPages.SwitchToPage("main")
-		uiApp.SetFocus(uiTreeView)
-	})
+func (c *changePwdModel) blurAll() {
+	c.current.Blur()
+	c.newPwd.Blur()
+	c.confirm.Blur()
+}
 
-	styleForm(uiChangePwdForm)
-	enableButtonNav(uiChangePwdForm)
+func (c *changePwdModel) applyFocus() tea.Cmd {
+	c.blurAll()
+	switch c.focus {
+	case cpfCurrent:
+		c.current.Focus()
+		return textinput.Blink
+	case cpfNew:
+		c.newPwd.Focus()
+		return textinput.Blink
+	case cpfConfirm:
+		c.confirm.Focus()
+		return textinput.Blink
+	}
+	return nil
+}
 
-	uiChangePwdStatus = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
+func (c *changePwdModel) focusNext() tea.Cmd {
+	if c.focus < cpfButtons {
+		c.focus++
+	} else {
+		c.focus = cpfCurrent
+	}
+	return c.applyFocus()
+}
 
-	uiChangePwdFlex = tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(uiChangePwdForm, 0, 1, true).
-		AddItem(uiChangePwdStatus, 1, 0, false)
-	uiChangePwdFlex.SetBorder(true).SetTitle(" Change Master Password ").SetTitleAlign(tview.AlignCenter)
+func (c *changePwdModel) focusPrev() tea.Cmd {
+	if c.focus > cpfCurrent {
+		c.focus--
+	} else {
+		c.focus = cpfButtons
+	}
+	return c.applyFocus()
+}
 
-	uiChangePwdFlex.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEsc {
-			clearChangePwdForm()
-			uiPages.SwitchToPage("main")
-			uiApp.SetFocus(uiTreeView)
-			return nil
+func (c *changePwdModel) updateFocused(msg tea.Msg) tea.Cmd {
+	switch c.focus {
+	case cpfCurrent:
+		c.current, _ = c.current.Update(msg)
+		return textinput.Blink
+	case cpfNew:
+		c.newPwd, _ = c.newPwd.Update(msg)
+		c.strength = formatStrengthBar(c.newPwd.Value())
+		return textinput.Blink
+	case cpfConfirm:
+		c.confirm, _ = c.confirm.Update(msg)
+		return textinput.Blink
+	}
+	return nil
+}
+
+func (m *Model) updateChangePwdKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	key := msg.String()
+
+	if isTabForward(msg) {
+		return *m, m.changePwd.focusNext()
+	}
+	if isTabBackward(msg) {
+		return *m, m.changePwd.focusPrev()
+	}
+
+	switch key {
+	case "esc":
+		m.overlay = overlayNone
+	case "down":
+		return *m, m.changePwd.focusNext()
+	case "up":
+		return *m, m.changePwd.focusPrev()
+	case "enter":
+		if m.changePwd.focus == cpfButtons {
+			if m.changePwd.btnFocus == 0 {
+				m.doChangePassword()
+			} else {
+				m.overlay = overlayNone
+			}
+		} else {
+			return *m, m.changePwd.focusNext()
 		}
-		return event
-	})
-
-	uiChangePwdModal = newResponsiveModal(uiChangePwdFlex, 50, 15, 80, 19, 0.5, 0.4)
-	uiPages.AddPage("changepwd", uiChangePwdModal, true, false)
+	case "left":
+		if m.changePwd.focus == cpfButtons && m.changePwd.btnFocus > 0 {
+			m.changePwd.btnFocus--
+		}
+	case "right":
+		if m.changePwd.focus == cpfButtons && m.changePwd.btnFocus < 1 {
+			m.changePwd.btnFocus++
+		}
+	default:
+		return *m, m.changePwd.updateFocused(msg)
+	}
+	return *m, nil
 }
 
-func showChangePassword() {
-	clearChangePwdForm()
-	uiPages.SwitchToPage("changepwd")
-	uiApp.SetFocus(uiChangePwdForm.GetFormItem(0))
-}
-
-func doChangePassword() {
-	currentPwd := uiChangePwdForm.GetFormItem(0).(*tview.InputField).GetText()
-	newPwd := uiChangePwdForm.GetFormItem(1).(*tview.InputField).GetText()
-	confirmPwd := uiChangePwdForm.GetFormItem(3).(*tview.InputField).GetText()
+func (m *Model) doChangePassword() {
+	currentPwd := m.changePwd.current.Value()
+	newPwd := m.changePwd.newPwd.Value()
+	confirmPwd := m.changePwd.confirm.Value()
 
 	if currentPwd == "" || newPwd == "" || confirmPwd == "" {
-		showChangePwdError("All fields are required.")
+		m.changePwd.status = "All fields are required."
 		return
 	}
-
 	if newPwd != confirmPwd {
-		showChangePwdError("New passwords do not match.")
+		m.changePwd.status = "New passwords do not match."
 		return
 	}
-
-	if err := store.VerifyKey(uiDBPath, currentPwd); err != nil {
-		showChangePwdError("Current password is incorrect.")
+	if err := store.VerifyKey(m.dbPath, currentPwd); err != nil {
+		m.changePwd.status = "Current password is incorrect."
 		return
 	}
-
 	if currentPwd == newPwd {
-		showChangePwdError("New password must be different from current.")
+		m.changePwd.status = "New password must be different from current."
 		return
 	}
-
 	_, level, _ := utils.PasswordStrength(newPwd)
 	if level < utils.StrengthGood {
-		showChangePwdError("New password is too weak.")
+		m.changePwd.status = "New password is too weak."
 		return
 	}
-
-	if err := uiStore.Rekey(newPwd); err != nil {
-		showChangePwdFatal("Failed to change encryption key: " + err.Error())
+	if err := m.store.Rekey(newPwd); err != nil {
+		m.overlay = overlayError
+		m.modals = newErrorModal("Failed to change encryption key.")
 		return
 	}
-
-	clearChangePwdForm()
-	uiPages.SwitchToPage("main")
-	uiApp.SetFocus(uiTreeView)
+	m.overlay = overlayNone
 }
 
-func showChangePwdError(msg string) {
-	if uiChangePwdStatus != nil {
-		uiChangePwdStatus.SetText("[red]" + msg)
+func (m Model) viewChangePwd() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(" Change Master Password "))
+	b.WriteString("\n\n")
+	b.WriteString(labelStyle.Render("Current:"))
+	b.WriteString(" ")
+	b.WriteString(m.changePwd.current.View())
+	b.WriteString("\n")
+	b.WriteString(labelStyle.Render("New:"))
+	b.WriteString(" ")
+	b.WriteString(m.changePwd.newPwd.View())
+	b.WriteString("\n")
+	if m.changePwd.strength != "" {
+		b.WriteString(m.changePwd.strength)
+		b.WriteString("\n")
 	}
-}
-
-func showChangePwdFatal(msg string) {
-	clearChangePwdForm()
-	uiErrorModal.SetText(msg)
-	uiErrorModal.SetDoneFunc(func(int, string) {
-		uiPages.SwitchToPage("main")
-		uiApp.SetFocus(uiTreeView)
-		uiErrorModal.SetDoneFunc(func(int, string) { uiPages.SwitchToPage("editor") })
-	})
-	uiPages.SwitchToPage("error")
-}
-
-func clearChangePwdForm() {
-	if uiChangePwdForm == nil {
-		return
+	b.WriteString(labelStyle.Render("Confirm:"))
+	b.WriteString(" ")
+	b.WriteString(m.changePwd.confirm.View())
+	b.WriteString("\n")
+	if m.changePwd.status != "" {
+		b.WriteString(errorStyle.Render(m.changePwd.status))
+		b.WriteString("\n")
 	}
-	for i := 0; i < uiChangePwdForm.GetFormItemCount(); i++ {
-		if input, ok := uiChangePwdForm.GetFormItem(i).(*tview.InputField); ok {
-			input.SetText("")
-		}
-	}
-	if uiChangePwdStrength != nil {
-		uiChangePwdStrength.Update("")
-	}
-	if uiChangePwdStatus != nil {
-		uiChangePwdStatus.SetText("")
-	}
+	b.WriteString("\n")
+	onButtons := m.changePwd.focus == cpfButtons
+	b.WriteString(renderButton("Change", onButtons && m.changePwd.btnFocus == 0, false))
+	b.WriteString("  ")
+	b.WriteString(renderButton("Cancel", onButtons && m.changePwd.btnFocus == 1, false))
+	return centerModal(b.String(), m.width, m.height, 50, 15, 80, 19, 0.5, 0.4)
 }

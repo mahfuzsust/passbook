@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"time"
 
 	"passbook/internal/config"
 	"passbook/internal/importer"
@@ -46,12 +45,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	go func() {
-		for range time.Tick(1 * time.Second) {
-			h.QueueUpdateDraw(func() { h.DrawTOTP() })
-		}
-	}()
 
 	if err := h.Run(); err != nil {
 		panic(err)

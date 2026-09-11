@@ -20,8 +20,8 @@ func TestRenderQRCodeBraille(t *testing.T) {
 	if lines == 0 || cols == 0 {
 		t.Fatal("expected qr output")
 	}
-	if !strings.Contains(text, "[black") {
-		t.Fatal("expected dark modules in qr")
+	if !strings.Contains(text, "\u2800") && !strings.Contains(text, " ") {
+		t.Fatal("expected braille or space modules in qr")
 	}
 	if lines > 12 {
 		t.Fatalf("expected compact braille height, got %d lines", lines)

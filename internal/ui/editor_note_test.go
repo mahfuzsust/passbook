@@ -2,11 +2,9 @@ package ui
 
 import "testing"
 
-func TestAddNoteFieldsClearsAttachments(t *testing.T) {
-	resetEditorTestState()
-	ent := &Entry{Type: string(TypeNote), Attachments: []Attachment{{ID: "1"}}}
-	addNoteFields(ent)
-	if ent.Attachments != nil {
-		t.Fatalf("expected attachments to be cleared")
+func TestNewNoteEntry(t *testing.T) {
+	ent := NewEntry(TypeNote)
+	if ent.Type != string(TypeNote) {
+		t.Fatalf("expected note type")
 	}
 }

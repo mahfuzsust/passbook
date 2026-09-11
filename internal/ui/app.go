@@ -4,63 +4,42 @@ import (
 	"path/filepath"
 
 	"passbook/internal/config"
-	"passbook/internal/store"
 
-	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-var (
-	uiApp   = tview.NewApplication()
-	uiPages = tview.NewPages()
-
-	uiCfg     config.AppConfig
-	uiDataDir string
-	uiDBPath  string
-	uiStore   *store.Store
-)
-
-func NewApp(c config.AppConfig) (*AppHandle, error) {
-	uiCfg = c
-	uiDataDir = config.ExpandPath(uiCfg.DataDir)
-	uiDBPath = filepath.Join(uiDataDir, "passbook.db")
-
-	setupUI()
-	uiPages.SwitchToPage("login")
-	return &AppHandle{}, nil
+type AppHandle struct {
+	program *tea.Program
+	model   *Model
 }
 
-type AppHandle struct{}
+func NewApp(c config.AppConfig) (*AppHandle, error) {
+	dataDir := config.ExpandPath(c.DataDir)
+	dbPath := filepath.Join(dataDir, "passbook.db")
+	m := newModel(c, dataDir, dbPath)
+	p := tea.NewProgram(&m, tea.WithAltScreen())
+	return &AppHandle{program: p, model: &m}, nil
+}
 
 func (a *AppHandle) Run() error {
 	defer a.cleanup()
-	return uiApp.SetRoot(uiPages, true).EnableMouse(true).Run()
+	_, err := a.program.Run()
+	return err
 }
 
 func (a *AppHandle) cleanup() {
-	if uiStore != nil {
-		uiStore.Close()
+	if a.model != nil && a.model.store != nil {
+		a.model.store.Close()
 	}
 }
 
 func (a *AppHandle) QueueUpdateDraw(f func()) {
-	uiApp.QueueUpdateDraw(f)
+	a.program.Send(redrawMsg{})
+	if f != nil {
+		f()
+	}
 }
 
-func (a *AppHandle) DrawTOTP() { drawTOTP() }
-
-func setupUI() {
-	tview.Styles.ContrastBackgroundColor = colorUnfocusedBg
-	tview.Styles.TitleColor = tcell.ColorLightSkyBlue
-
-	setupLogin()
-	setupPin()
-	setupMainLayout()
-	setupModals()
-	setupQuickCopy()
-	setupEditor()
-	setupChangePassword()
-	setupFolderCreate()
-	setupFolderRename()
-	setupFolderDelete()
+func (a *AppHandle) DrawTOTP() {
+	a.program.Send(tickMsg{})
 }

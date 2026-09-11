@@ -5,98 +5,128 @@ import (
 	"time"
 
 	"github.com/atotto/clipboard"
-	"github.com/gdamore/tcell/v2"
 	"github.com/pquerna/otp/totp"
-	"github.com/rivo/tview"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-var uiQuickCopyList *tview.List
-
-func setupQuickCopy() {
-	uiQuickCopyList = tview.NewList().ShowSecondaryText(false)
-	uiQuickCopyList.SetBorder(true).SetTitle(" Quick Copy ")
-	uiQuickCopyList.SetHighlightFullLine(true)
-	uiQuickCopyList.SetMainTextColor(tcell.ColorWhite)
-	uiQuickCopyList.SetSelectedTextColor(tcell.ColorBlack)
-	uiQuickCopyList.SetSelectedBackgroundColor(tcell.ColorSkyblue)
-	uiQuickCopyList.SetShortcutColor(tcell.ColorYellow)
-	uiQuickCopyList.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEsc {
-			dismissQuickCopy()
-			return nil
-		}
-		return event
-	})
-	uiPages.AddPage("quick_copy", newResponsiveModal(uiQuickCopyList, 35, 8, 50, 14, 0.35, 0.35), true, false)
+type quickCopyItem struct {
+	label  string
+	key    string
+	action func(*Model) tea.Cmd
 }
 
-func showQuickCopy() {
-	if uiCurrentEnt == nil || uiCurrentEntryID == 0 {
+type quickCopyModel struct {
+	items  []quickCopyItem
+	cursor int
+}
+
+func (m *Model) showQuickCopy() {
+	if m.main.currentEnt == nil || m.main.currentEntryID == 0 {
 		return
 	}
+	qc := quickCopyModel{}
+	ent := m.main.currentEnt
 
-	uiQuickCopyList.Clear()
-
-	switch EntryType(uiCurrentEnt.Type) {
+	switch EntryType(ent.Type) {
 	case TypeLogin:
-		if uiCurrentEnt.Username != "" {
-			uiQuickCopyList.AddItem("Username", "", 'u', func() {
-				_ = clipboard.WriteAll(uiCurrentEnt.Username)
-				dismissQuickCopy()
-				notifyCopied("Username")
-			})
+		if ent.Username != "" {
+			qc.items = append(qc.items, quickCopyItem{"Username", "u", func(m *Model) tea.Cmd {
+				_ = clipboard.WriteAll(ent.Username)
+				m.notifyCopied("Username")
+				return nil
+			}})
 		}
-		if uiCurrentEnt.Password != "" {
-			uiQuickCopyList.AddItem("Password", "", 'p', func() {
-				dismissQuickCopy()
-				copySensitive(uiCurrentEnt.Password, "Password")
-			})
+		if ent.Password != "" {
+			qc.items = append(qc.items, quickCopyItem{"Password", "c", func(m *Model) tea.Cmd {
+				return m.copySensitiveWithClear(ent.Password, "Password")
+			}})
 		}
-		secret := strings.ReplaceAll(uiCurrentEnt.TotpSecret, " ", "")
+		if strings.TrimSpace(ent.Link) != "" {
+			qc.items = append(qc.items, quickCopyItem{"Link", "l", func(m *Model) tea.Cmd {
+				_ = clipboard.WriteAll(ent.Link)
+				m.notifyCopied("Link")
+				return nil
+			}})
+		}
+		secret := strings.ReplaceAll(ent.TotpSecret, " ", "")
 		if secret != "" {
-			uiQuickCopyList.AddItem("TOTP Code", "", 't', func() {
+			qc.items = append(qc.items, quickCopyItem{"TOTP Code", "t", func(m *Model) tea.Cmd {
 				code, err := totp.GenerateCode(secret, time.Now())
-				if err == nil {
-					dismissQuickCopy()
-					copySensitive(code, "TOTP")
+				if err != nil {
+					return nil
 				}
-			})
+				return m.copySensitiveWithClear(code, "TOTP")
+			}})
 		}
-
 	case TypeCard:
-		if uiCurrentEnt.CardNumber != "" {
-			uiQuickCopyList.AddItem("Card Number", "", 'c', func() {
-				dismissQuickCopy()
-				copySensitive(uiCurrentEnt.CardNumber, "Card Number")
-			})
+		if ent.CardNumber != "" {
+			qc.items = append(qc.items, quickCopyItem{"Card Number", "c", func(m *Model) tea.Cmd {
+				return m.copySensitiveWithClear(ent.CardNumber, "Card Number")
+			}})
 		}
-		if uiCurrentEnt.CVV != "" {
-			uiQuickCopyList.AddItem("CVV", "", 'v', func() {
-				dismissQuickCopy()
-				copySensitive(uiCurrentEnt.CVV, "CVV")
-			})
+		if ent.CVV != "" {
+			qc.items = append(qc.items, quickCopyItem{"CVV", "v", func(m *Model) tea.Cmd {
+				return m.copySensitiveWithClear(ent.CVV, "CVV")
+			}})
 		}
-
 	case TypeNote:
-		if strings.TrimSpace(uiCurrentEnt.CustomText) != "" {
-			uiQuickCopyList.AddItem("Note", "", 'n', func() {
-				_ = clipboard.WriteAll(uiCurrentEnt.CustomText)
-				dismissQuickCopy()
-				notifyCopied("Note")
-			})
+		if strings.TrimSpace(ent.CustomText) != "" {
+			qc.items = append(qc.items, quickCopyItem{"Note", "n", func(m *Model) tea.Cmd {
+				_ = clipboard.WriteAll(ent.CustomText)
+				m.notifyCopied("Note")
+				return nil
+			}})
 		}
 	}
 
-	if uiQuickCopyList.GetItemCount() == 0 {
+	if len(qc.items) == 0 {
 		return
 	}
-
-	uiQuickCopyList.SetCurrentItem(0)
-	uiPages.SwitchToPage("quick_copy")
-	uiApp.SetFocus(uiQuickCopyList)
+	m.quickCopy = qc
+	m.overlay = overlayQuickCopy
 }
 
-func dismissQuickCopy() {
-	uiPages.SwitchToPage("main")
-	uiApp.SetFocus(uiTreeView)
+func (m *Model) updateQuickCopy(key string) (Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.overlay = overlayNone
+	case "up", "k":
+		if m.quickCopy.cursor > 0 {
+			m.quickCopy.cursor--
+		}
+	case "down", "j":
+		if m.quickCopy.cursor < len(m.quickCopy.items)-1 {
+			m.quickCopy.cursor++
+		}
+	case "enter":
+		if len(m.quickCopy.items) > 0 {
+			cmd := m.quickCopy.items[m.quickCopy.cursor].action(m)
+			m.overlay = overlayNone
+			return *m, cmd
+		}
+	default:
+		for _, item := range m.quickCopy.items {
+			if key == item.key {
+				cmd := item.action(m)
+				m.overlay = overlayNone
+				return *m, cmd
+			}
+		}
+	}
+	return *m, nil
+}
+
+func (m Model) viewQuickCopy() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(" Quick Copy "))
+	b.WriteString("\n\n")
+	for i, item := range m.quickCopy.items {
+		line := item.label + " (" + item.key + ")"
+		if i == m.quickCopy.cursor {
+			line = selectedStyle.Render(line)
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return centerModal(b.String(), m.width, m.height, 35, 8, 50, 14, 0.35, 0.35)
 }

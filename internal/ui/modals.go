@@ -1,54 +1,87 @@
 package ui
 
 import (
-	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-var (
-	uiDeleteModal    *tview.Modal
-	uiCollisionModal *tview.Modal
-	uiErrorModal     *tview.Modal
-	uiHistoryList    *tview.List
-)
+type modalModel struct {
+	mode       string // delete, history, error
+	text       string
+	history    []PasswordHistory
+	btnFocus   int
+}
 
-func setupModals() {
-	uiDeleteModal = tview.NewModal().
-		AddButtons([]string{"Delete", "Cancel"}).
-		SetDoneFunc(func(index int, label string) {
-			if label == "Delete" {
-				deleteEntry()
-			}
-			uiPages.SwitchToPage("main")
-			uiApp.SetFocus(uiTreeView)
-		})
-	enableModalButtonNav(uiDeleteModal)
-	uiPages.AddPage("delete", uiDeleteModal, true, false)
+func newDeleteModal(title string) modalModel {
+	return modalModel{mode: "delete", text: "Delete " + title + "?"}
+}
 
-	uiHistoryList = tview.NewList().ShowSecondaryText(true)
-	uiHistoryList.SetBorder(true).SetTitle(" History (Esc to close) ")
-	uiHistoryList.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEsc {
-			uiPages.SwitchToPage("main")
-			uiApp.SetFocus(uiRightPages)
+func newHistoryModal(history []PasswordHistory) modalModel {
+	return modalModel{mode: "history", history: history}
+}
+
+func newErrorModal(text string) modalModel {
+	return modalModel{mode: "error", text: text}
+}
+
+func (m *Model) updateModal(key string) (Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.overlay = overlayNone
+	case "left":
+		if m.modals.btnFocus > 0 {
+			m.modals.btnFocus--
 		}
-		return event
-	})
-	uiPages.AddPage("history", newResponsiveModal(uiHistoryList, 50, 15, 80, 25, 0.6, 0.65), true, false)
+	case "right", "tab":
+		if m.modals.btnFocus < 1 {
+			m.modals.btnFocus++
+		}
+	case "enter":
+		if m.overlay == overlayDelete {
+			if m.modals.btnFocus == 0 {
+				deleteEntry(m)
+			}
+			m.overlay = overlayNone
+		} else if m.overlay == overlayFolderDelete {
+			if m.modals.btnFocus == 0 {
+				m.doFolderDelete()
+			}
+			m.overlay = overlayNone
+		}
+	}
+	return *m, nil
 }
 
-func showHistory() {
-	if uiHistoryList == nil || uiPages == nil {
-		return
-	}
-	uiHistoryList.Clear()
-	for i := len(uiCurrentEnt.History) - 1; i >= 0; i-- {
-		uiHistoryList.AddItem(uiCurrentEnt.History[i].Password, uiCurrentEnt.History[i].Date, 0, nil)
-	}
-	uiPages.SwitchToPage("history")
+func (m Model) viewDeleteModal() string {
+	var b strings.Builder
+	b.WriteString(m.modals.text)
+	b.WriteString("\n\n")
+	b.WriteString(renderButton("Delete", m.modals.btnFocus == 0, true))
+	b.WriteString("  ")
+	b.WriteString(renderButton("Cancel", m.modals.btnFocus == 1, false))
+	return centerModal(b.String(), m.width, m.height, 40, 7, 60, 10, 0.4, 0.3)
 }
 
-func showDeleteModal() {
-	uiDeleteModal.SetText("Delete " + uiCurrentEnt.Title + "?")
-	uiPages.SwitchToPage("delete")
+func (m Model) viewHistory() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(" History "))
+	b.WriteString("\n\n")
+	for i := len(m.modals.history) - 1; i >= 0; i-- {
+		h := m.modals.history[i]
+		b.WriteString(h.Password)
+		b.WriteString(dimStyle.Render(" — " + h.Date))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("Esc to close"))
+	return centerModal(b.String(), m.width, m.height, 50, 15, 80, 25, 0.6, 0.65)
+}
+
+func (m Model) viewErrorModal() string {
+	var b strings.Builder
+	b.WriteString(errorStyle.Render(m.modals.text))
+	b.WriteString("\n\n")
+	b.WriteString(renderButton("OK", true, false))
+	return centerModal(b.String(), m.width, m.height, 45, 7, 70, 10, 0.45, 0.3)
 }

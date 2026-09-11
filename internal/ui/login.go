@@ -1,66 +1,134 @@
 package ui
 
 import (
+	"strings"
+
 	"passbook/internal/store"
 	"passbook/internal/utils"
 
-	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-var (
-	uiLoginForm     *tview.Form
-	uiLoginModal    tview.Primitive
-	uiLoginStrength *strengthMeter
-	uiFreshInstall  bool
-)
+type loginModel struct {
+	freshInstall bool
+	password     textinput.Model
+	strength     string
+	errorMsg     string
+	buttonFocus  int // 0=submit, 1=quit
+	focusField   int // 0=password, 1=buttons
+}
 
-func goToMain(pwd string) {
+func newLoginModel(fresh bool) loginModel {
+	pw := newTextInput("Master Password", true)
+	pw.Focus()
+	return loginModel{
+		freshInstall: fresh,
+		password:     pw,
+		focusField:   0,
+	}
+}
+
+func (m *Model) updateLoginKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	key := msg.String()
+	switch key {
+	case "esc":
+		return *m, tea.Quit
+	case "tab", "down":
+		if m.login.focusField == 0 {
+			m.login.focusField = 1
+			m.login.password.Blur()
+		} else {
+			m.login.buttonFocus = (m.login.buttonFocus + 1) % 2
+		}
+	case "shift+tab", "up":
+		if m.login.focusField == 1 {
+			if m.login.buttonFocus > 0 {
+				m.login.buttonFocus--
+			} else {
+				m.login.focusField = 0
+				return *m, focusInput(&m.login.password)
+			}
+		}
+	case "left":
+		if m.login.focusField == 1 && m.login.buttonFocus > 0 {
+			m.login.buttonFocus--
+		}
+	case "right":
+		if m.login.focusField == 1 && m.login.buttonFocus < 1 {
+			m.login.buttonFocus++
+		}
+	case "enter":
+		if m.login.focusField == 0 {
+			m.goToMain(m.login.password.Value())
+			return *m, nil
+		}
+		if m.login.buttonFocus == 0 {
+			m.goToMain(m.login.password.Value())
+		} else {
+			return *m, tea.Quit
+		}
+	default:
+		if m.login.focusField == 0 {
+			var cmd tea.Cmd
+			m.login.password, cmd = m.login.password.Update(msg)
+			m.login.strength = formatStrengthBar(m.login.password.Value())
+			m.login.errorMsg = ""
+			return *m, cmd
+		}
+	}
+	return *m, nil
+}
+
+func (m *Model) goToMain(pwd string) {
 	if pwd == "" {
 		return
 	}
 
-	dbExisted := store.DBExists(uiDBPath)
+	dbExisted := store.DBExists(m.dbPath)
 	freshInstall := !dbExisted
 
-	s, err := store.Open(uiDBPath, pwd)
+	s, err := store.Open(m.dbPath, pwd)
 	if err != nil {
 		if freshInstall {
-			store.RemoveDBFiles(uiDBPath)
+			store.RemoveDBFiles(m.dbPath)
 		}
-		showLoginError(loginErrorMessage(err, freshInstall))
+		m.login.errorMsg = loginErrorMessage(err, freshInstall)
 		return
 	}
-	uiStore = s
+	m.store = s
 
-	isNewVault := !uiStore.HasEntries() && !uiStore.PinConfigExists()
+	isNewVault := !m.store.HasEntries() && !m.store.PinConfigExists()
 
 	if isNewVault {
 		_, level, _ := utils.PasswordStrength(pwd)
 		if level < utils.StrengthGood {
-			closeAndCleanupStore(!dbExisted)
-			showLoginError("Password is too weak.")
+			m.closeAndCleanupStore(!dbExisted)
+			m.login.errorMsg = "Password is too weak."
 			return
 		}
-		showPinSetup()
+		m.screen = screenPinSetup
+		m.pin = newPinModel()
 		return
 	}
 
-	pinCfg, _ := uiStore.ReadPinConfig()
+	pinCfg, _ := m.store.ReadPinConfig()
 	if pinCfg != nil && pinCfg.Mode != "" {
-		showPinVerify(pinCfg)
+		m.screen = screenPinVerify
+		m.pin = newPinVerifyModel(pinCfg)
 	} else {
-		showPinSetup()
+		m.screen = screenPinSetup
+		m.pin = newPinModel()
 	}
 }
 
-func closeAndCleanupStore(removeDB bool) {
-	if uiStore != nil {
-		uiStore.Close()
-		uiStore = nil
+func (m *Model) closeAndCleanupStore(removeDB bool) {
+	if m.store != nil {
+		m.store.Close()
+		m.store = nil
 	}
 	if removeDB {
-		store.RemoveDBFiles(uiDBPath)
+		store.RemoveDBFiles(m.dbPath)
 	}
 }
 
@@ -74,72 +142,37 @@ func loginErrorMessage(err error, freshInstall bool) string {
 	return "Wrong password."
 }
 
-func submitLogin() {
-	uiLoginHasError = false
-	pwd := uiLoginForm.GetFormItem(0).(*tview.InputField).GetText()
-	goToMain(pwd)
-}
-
-func loginFormEnterPressed() bool {
-	focused := uiApp.GetFocus()
-	for i := 0; i < uiLoginForm.GetButtonCount(); i++ {
-		if focused == uiLoginForm.GetButton(i) {
-			return false
-		}
-	}
-	submitLogin()
-	return uiLoginHasError
-}
-
-func setupLogin() {
-	uiFreshInstall = !store.DBExists(uiDBPath)
-
-	uiLoginStrength = newStrengthMeter()
-
-	uiLoginForm = tview.NewForm()
-	uiLoginForm.AddPasswordField("Master Password", "", 0, '*', func(text string) {
-		uiLoginStrength.Update(text)
-	})
-	uiLoginStrength.AddTo(uiLoginForm)
-
-	submitLabel := "Login"
+func (m Model) viewLogin() string {
 	title := " PassBook Login "
-	if uiFreshInstall {
-		submitLabel = "Create Vault"
+	submitLabel := "Login"
+	if m.freshInstall {
 		title = " PassBook Setup "
+		submitLabel = "Create Vault"
 	}
 
-	uiLoginForm.AddButton(submitLabel, submitLogin)
-	uiLoginForm.AddButton("Quit", func() { uiApp.Stop() })
-
-	uiLoginForm.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Key() {
-		case tcell.KeyEsc:
-			uiApp.Stop()
-			return nil
-		case tcell.KeyEnter:
-			if loginFormEnterPressed() {
-				return nil
-			}
-		}
-		return event
-	})
-	uiLoginForm.SetBorder(true).SetTitle(title).SetTitleAlign(tview.AlignCenter)
-	styleForm(uiLoginForm)
-	enableButtonNav(uiLoginForm)
-
-	uiLoginModal = newResponsiveModal(uiLoginForm, 55, 10, 80, 15, 0.5, 0.4)
-	uiPages.AddPage("login", uiLoginModal, true, true)
-}
-
-var uiLoginHasError bool
-
-func showLoginError(msg string) {
-	if uiLoginStrength != nil {
-		for _, tv := range uiLoginStrength.views {
-			tv.SetText("[red]" + msg)
-		}
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(title))
+	b.WriteString("\n\n")
+	b.WriteString(labelStyle.Render("Master Password: "))
+	b.WriteString("\n")
+	b.WriteString(m.login.password.View())
+	b.WriteString("\n")
+	if m.login.strength != "" {
+		b.WriteString(m.login.strength)
+		b.WriteString("\n")
 	}
-	uiLoginHasError = true
-	uiApp.SetFocus(uiLoginForm.GetFormItem(0).(*tview.InputField))
+	if m.login.errorMsg != "" {
+		b.WriteString(errorStyle.Render(m.login.errorMsg))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+
+	submitFocused := m.login.focusField == 1 && m.login.buttonFocus == 0
+	quitFocused := m.login.focusField == 1 && m.login.buttonFocus == 1
+	b.WriteString(renderButton(submitLabel, submitFocused, false))
+	b.WriteString("  ")
+	b.WriteString(renderButton("Quit", quitFocused, false))
+
+	content := b.String()
+	return centerModal(content, m.width, m.height, 55, 10, 80, 15, 0.5, 0.4)
 }

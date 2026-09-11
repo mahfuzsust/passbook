@@ -1,22 +1,16 @@
 package ui
 
-import (
-	"testing"
-
-	"github.com/rivo/tview"
-)
+import "testing"
 
 func TestCollectLoginFields(t *testing.T) {
-	resetEditorTestState()
 	ent := &Entry{Type: string(TypeLogin)}
-	addLoginFields(ent)
+	e := editorModel{entryType: TypeLogin}
+	e.username.SetValue("user")
+	e.password.SetValue("newpass")
+	e.link.SetValue("http://example.com")
+	e.totpSecret.SetValue("ABC123")
 
-	uiEditorForm.GetFormItemByLabel("Username").(*tview.InputField).SetText("user")
-	uiEditorPasswordField.SetText("newpass")
-	uiEditorForm.GetFormItemByLabel("Link").(*tview.InputField).SetText("http://example.com")
-	uiEditorForm.GetFormItemByLabel("TOTP Secret").(*tview.InputField).SetText("ABC123")
-
-	collectLoginFields(ent, "oldpass")
+	collectLoginFields(ent, e, "oldpass")
 	if ent.Username != "user" || ent.Password != "newpass" || ent.Link != "http://example.com" || ent.TotpSecret != "ABC123" {
 		t.Fatalf("unexpected values in entry after collect")
 	}
@@ -26,16 +20,14 @@ func TestCollectLoginFields(t *testing.T) {
 }
 
 func TestCollectLoginFieldsNoHistoryWhenSame(t *testing.T) {
-	resetEditorTestState()
 	ent := &Entry{Type: string(TypeLogin)}
-	addLoginFields(ent)
+	e := editorModel{entryType: TypeLogin}
+	e.username.SetValue("user")
+	e.password.SetValue("same")
+	e.link.SetValue("http://example.com")
+	e.totpSecret.SetValue("ABC123")
 
-	uiEditorForm.GetFormItemByLabel("Username").(*tview.InputField).SetText("user")
-	uiEditorPasswordField.SetText("same")
-	uiEditorForm.GetFormItemByLabel("Link").(*tview.InputField).SetText("http://example.com")
-	uiEditorForm.GetFormItemByLabel("TOTP Secret").(*tview.InputField).SetText("ABC123")
-
-	collectLoginFields(ent, "same")
+	collectLoginFields(ent, e, "same")
 	if len(ent.History) != 0 {
 		t.Fatalf("did not expect password history when unchanged")
 	}
