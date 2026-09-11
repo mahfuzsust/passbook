@@ -29,6 +29,25 @@ func TestFormatStrengthBarNonEmpty(t *testing.T) {
 	}
 }
 
+func TestRenderProgressBar(t *testing.T) {
+	if got := renderProgressBar(1, 10); got != strings.Repeat("█", 10) {
+		t.Fatalf("expected fully filled bar, got %q", got)
+	}
+	if got := renderProgressBar(0, 10); got != strings.Repeat("░", 10) {
+		t.Fatalf("expected fully empty bar, got %q", got)
+	}
+	if got := renderProgressBar(-1, 10); got != strings.Repeat("░", 10) {
+		t.Fatalf("expected negative fraction clamped to empty, got %q", got)
+	}
+	if got := renderProgressBar(2, 10); got != strings.Repeat("█", 10) {
+		t.Fatalf("expected fraction >1 clamped to full, got %q", got)
+	}
+	mid := renderProgressBar(0.5, 10)
+	if len([]rune(mid)) != 10 {
+		t.Fatalf("expected bar to stay at requested width, got %q (%d runes)", mid, len([]rune(mid)))
+	}
+}
+
 func TestFormatBytes(t *testing.T) {
 	cases := map[int64]string{
 		500:             "500 B",

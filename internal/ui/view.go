@@ -148,8 +148,7 @@ func formatTOTPDisplay(secret string) (code, bar string) {
 	}
 	sec := time.Now().Unix() % 30
 	remain := 30 - sec
-	bars := int((float64(remain) / 30.0) * 20.0)
-	barStr := strings.Repeat("█", bars) + strings.Repeat("▒", 20-bars)
+	barStr := renderProgressBar(float64(remain)/30.0, 24)
 
 	yellowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
 	if remain <= 5 {
@@ -159,6 +158,30 @@ func formatTOTPDisplay(secret string) (code, bar string) {
 		return codeVal, yellowStyle.Render(fmt.Sprintf("%02ds %s", remain, barStr))
 	}
 	return codeVal, successStyle.Render(fmt.Sprintf("%02ds %s", remain, barStr))
+}
+
+// renderProgressBar draws a smooth progress bar using eighth-block
+// characters for sub-cell precision instead of chunky whole-block steps.
+func renderProgressBar(fraction float64, width int) string {
+	if fraction < 0 {
+		fraction = 0
+	}
+	if fraction > 1 {
+		fraction = 1
+	}
+	eighths := []rune{' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'}
+	totalEighths := int(fraction*float64(width)*8 + 0.5)
+	filled := totalEighths / 8
+	remainder := totalEighths % 8
+
+	var b strings.Builder
+	b.WriteString(strings.Repeat("█", filled))
+	if filled < width && remainder > 0 {
+		b.WriteRune(eighths[remainder])
+		filled++
+	}
+	b.WriteString(strings.Repeat("░", width-filled))
+	return b.String()
 }
 
 // handleViewAction processes per-action copy/view keys on the entry detail
