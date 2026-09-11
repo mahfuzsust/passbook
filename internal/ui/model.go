@@ -129,6 +129,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.main.viewStatus = ""
 				m.main.viewStatusClearAt = time.Time{}
 			}
+			if !m.main.showSensitiveClearAt.IsZero() && time.Now().After(m.main.showSensitiveClearAt) {
+				m.main.showSensitive = false
+				m.main.showSensitiveClearAt = time.Time{}
+			}
 		}
 		return m, tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg{} })
 

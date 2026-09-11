@@ -47,7 +47,7 @@ func renderEntryView(m Model) string {
 			if i < 9 {
 				b.WriteString(dimStyle.Render(fmt.Sprintf("[%d] ", i+1)))
 			}
-			b.WriteString(linkStyle.Render("➤ "+att.FileName))
+			b.WriteString(linkStyle.Render("➤ " + att.FileName))
 			b.WriteString(dimStyle.Render(fmt.Sprintf(" (%s)", formatBytes(att.Size))))
 			b.WriteString("\n")
 		}
@@ -230,6 +230,11 @@ func (m *Model) handleViewAction(key string) (bool, tea.Cmd) {
 		return true, nil
 	case "v":
 		m.main.showSensitive = !m.main.showSensitive
+		if m.main.showSensitive {
+			m.main.showSensitiveClearAt = time.Now().Add(5 * time.Second)
+		} else {
+			m.main.showSensitiveClearAt = time.Time{}
+		}
 		return true, nil
 	case "h":
 		if EntryType(ent.Type) == TypeLogin && len(ent.History) > 0 {
@@ -244,7 +249,7 @@ func (m *Model) handleViewAction(key string) (bool, tea.Cmd) {
 		return true, nil
 	}
 	if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
-		idx := int(key[0]-'1')
+		idx := int(key[0] - '1')
 		if idx < len(ent.Attachments) {
 			m.downloadAttachment(ent.Attachments[idx])
 		}

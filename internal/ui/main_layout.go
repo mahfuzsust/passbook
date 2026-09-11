@@ -11,18 +11,19 @@ import (
 )
 
 type mainModel struct {
-	search            textinput.Model
-	searchFocused     bool
-	tree              treeState
-	currentFolderID   int64
-	currentEntryID    int64
-	currentEnt        *Entry
-	showSensitive     bool
-	viewStatus        string
-	viewStatusClearAt time.Time
-	totpCode          string
-	totpBar           string
-	showContent       bool
+	search               textinput.Model
+	searchFocused        bool
+	tree                 treeState
+	currentFolderID      int64
+	currentEntryID       int64
+	currentEnt           *Entry
+	showSensitive        bool
+	showSensitiveClearAt time.Time
+	viewStatus           string
+	viewStatusClearAt    time.Time
+	totpCode             string
+	totpBar              string
+	showContent          bool
 }
 
 func newMainModel() mainModel {
@@ -149,6 +150,7 @@ func (m *Model) loadEntry(id int64) {
 	m.main.currentEntryID = id
 	m.main.currentFolderID = 0
 	m.main.showSensitive = false
+	m.main.showSensitiveClearAt = time.Time{}
 	m.main.showContent = true
 	m.main.updateTOTP()
 }
