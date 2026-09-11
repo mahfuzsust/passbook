@@ -5,13 +5,20 @@ import (
 	"runtime"
 )
 
+// startCommand is overridden in tests to avoid actually launching a browser.
+var startCommand = func(cmd *exec.Cmd) error { return cmd.Start() }
+
 func OpenURL(url string) error {
 	cmd := buildOpenCommand(url)
-	return cmd.Start()
+	return startCommand(cmd)
 }
 
 func buildOpenCommand(url string) *exec.Cmd {
-	switch runtime.GOOS {
+	return buildOpenCommandForOS(runtime.GOOS, url)
+}
+
+func buildOpenCommandForOS(goos, url string) *exec.Cmd {
+	switch goos {
 	case "darwin":
 		return exec.Command("open", url)
 	case "windows":

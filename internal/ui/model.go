@@ -1,3 +1,13 @@
+// Package ui implements The Elm Architecture (Model / Update / View):
+//   - Model: the single Model struct below holds all application state.
+//   - Update: Model.Update(msg) is the only place state transitions happen,
+//     dispatching by message/screen/overlay to the update* handlers in this
+//     package (e.g. updateMainKey, updateEditorKey, updatePinKey). Handlers
+//     return the new Model plus an optional tea.Cmd for effects that must
+//     run outside Update (timers, quitting, deferred messages).
+//   - View: Model.View() and the view* functions render the current Model
+//     to a string with no side effects; they all take Model by value so
+//     they cannot mutate state.
 package ui
 
 import (
