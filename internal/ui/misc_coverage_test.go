@@ -181,12 +181,14 @@ func TestRenderLoginViewContentAndFormatTOTPDisplay(t *testing.T) {
 		Type: string(TypeLogin), Username: "alice", Password: "secret",
 		Link: "http://example.com", TotpSecret: "JBSWY3DPEHPK3PXP",
 	}}}
+	rows, totpBar := loginViewRows(m)
 	var b strings.Builder
-	renderLoginViewContent(&b, m)
+	renderFieldRows(&b, rows)
 	out := b.String()
 	if !strings.Contains(out, "alice") || !strings.Contains(out, "http://example.com") {
 		t.Fatalf("expected login fields rendered, got %q", out)
 	}
+	_ = totpBar
 
 	code, bar := formatTOTPDisplay("JBSWY3DPEHPK3PXP")
 	if code == "" || bar == "" {

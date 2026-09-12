@@ -16,6 +16,42 @@ import (
 	"passbook/internal/platform"
 )
 
+// fieldRow is one row of the entry-detail grid: a label, its value, and an
+// optional dim hint of the keys that act on it (e.g. "[c] copy").
+type fieldRow struct {
+	label string
+	value string
+	hint  string
+}
+
+// renderFieldRows prints rows as an aligned two-column grid, padding labels
+// to the widest label so values line up in a single column.
+func renderFieldRows(b *strings.Builder, rows []fieldRow) {
+	maxLabel := 0
+	for _, r := range rows {
+		if w := lipgloss.Width(r.label); w > maxLabel {
+			maxLabel = w
+		}
+	}
+	for _, r := range rows {
+		b.WriteString(labelStyle.Render(padRight(r.label, maxLabel)))
+		b.WriteString("  ")
+		b.WriteString(r.value)
+		if r.hint != "" {
+			b.WriteString(" ")
+			b.WriteString(dimStyle.Render(r.hint))
+		}
+		b.WriteString("\n")
+	}
+}
+
+func padRight(s string, width int) string {
+	if w := lipgloss.Width(s); w < width {
+		return s + strings.Repeat(" ", width-w)
+	}
+	return s
+}
+
 func renderEntryView(m Model) string {
 	ent := m.main.currentEnt
 	if ent == nil {
@@ -27,16 +63,20 @@ func renderEntryView(m Model) string {
 	b.WriteString(titleStyle.Render(" " + icon + " " + ent.Title + " "))
 	b.WriteString("\n\n")
 
-	b.WriteString(labelStyle.Render("Title:"))
-	b.WriteString(" ")
-	b.WriteString(ent.Title)
-	b.WriteString("\n\n")
-
+	rows := []fieldRow{{label: "Title:", value: ent.Title}}
+	var totpBar string
 	switch EntryType(ent.Type) {
 	case TypeLogin:
-		renderLoginViewContent(&b, m)
+		var extra []fieldRow
+		extra, totpBar = loginViewRows(m)
+		rows = append(rows, extra...)
 	case TypeCard:
-		renderCardViewContent(&b, m)
+		rows = append(rows, cardViewRows(m)...)
+	}
+	renderFieldRows(&b, rows)
+	if totpBar != "" {
+		b.WriteString(totpBar)
+		b.WriteString("\n")
 	}
 
 	if len(ent.Attachments) > 0 {
@@ -71,14 +111,12 @@ func renderEntryView(m Model) string {
 	return b.String()
 }
 
-func renderLoginViewContent(b *strings.Builder, m Model) {
+// loginViewRows returns the grid rows for a login entry plus the TOTP
+// progress bar, which is rendered on its own line below the grid.
+func loginViewRows(m Model) (rows []fieldRow, totpBar string) {
 	ent := m.main.currentEnt
 	if ent.Username != "" {
-		b.WriteString(labelStyle.Render("Username:"))
-		b.WriteString(" ")
-		b.WriteString(ent.Username)
-		b.WriteString(dimStyle.Render(" [u] copy"))
-		b.WriteString("\n")
+		rows = append(rows, fieldRow{label: "Username:", value: ent.Username, hint: "[u] copy"})
 	}
 
 	if ent.Password != "" {
@@ -86,59 +124,36 @@ func renderLoginViewContent(b *strings.Builder, m Model) {
 		if m.main.showSensitive {
 			pass = ent.Password
 		}
-		b.WriteString(labelStyle.Render("Password:"))
-		b.WriteString(" ")
-		b.WriteString(pass)
-		b.WriteString(dimStyle.Render(" [v] reveal [c] copy [h] history"))
-		b.WriteString("\n")
+		rows = append(rows, fieldRow{label: "Password:", value: pass, hint: "[v] reveal [c] copy [h] history"})
 	}
 
 	if strings.TrimSpace(ent.Link) != "" {
-		b.WriteString(labelStyle.Render("Link:"))
-		b.WriteString(" ")
-		b.WriteString(linkStyle.Render(ent.Link))
-		b.WriteString(dimStyle.Render(" [o] open [l] copy"))
-		b.WriteString("\n")
+		rows = append(rows, fieldRow{label: "Link:", value: linkStyle.Render(ent.Link), hint: "[o] open [l] copy"})
 	}
 
 	secret := strings.ReplaceAll(ent.TotpSecret, " ", "")
 	if secret != "" {
-		b.WriteString("\n")
-		b.WriteString(labelStyle.Render("TOTP:"))
-		b.WriteString(" ")
-		b.WriteString(m.main.totpCode)
-		b.WriteString(dimStyle.Render(" [t] copy"))
-		b.WriteString("\n")
-		b.WriteString(m.main.totpBar)
-		b.WriteString("\n")
+		rows = append(rows, fieldRow{label: "TOTP:", value: m.main.totpCode, hint: "[t] copy"})
+		totpBar = m.main.totpBar
 	}
+	return rows, totpBar
 }
 
-func renderCardViewContent(b *strings.Builder, m Model) {
+func cardViewRows(m Model) []fieldRow {
 	ent := m.main.currentEnt
 	num := ent.CardNumber
 	if !m.main.showSensitive && len(num) > 4 {
 		num = "**** **** **** " + num[len(num)-4:]
 	}
-	b.WriteString(labelStyle.Render("Number:"))
-	b.WriteString(" ")
-	b.WriteString(num)
-	b.WriteString(dimStyle.Render(" [v] reveal [c] copy"))
-	b.WriteString("\n")
-
-	b.WriteString(labelStyle.Render("Expiry:"))
-	b.WriteString(" ")
-	b.WriteString(ent.Expiry)
-	b.WriteString("\n")
-
 	cvv := "***"
 	if m.main.showSensitive {
 		cvv = ent.CVV
 	}
-	b.WriteString(labelStyle.Render("CVV:"))
-	b.WriteString(" ")
-	b.WriteString(cvv)
-	b.WriteString("\n")
+	return []fieldRow{
+		{label: "Number:", value: num, hint: "[v] reveal [c] copy"},
+		{label: "Expiry:", value: ent.Expiry},
+		{label: "CVV:", value: cvv},
+	}
 }
 
 func formatTOTPDisplay(secret string) (code, bar string) {
