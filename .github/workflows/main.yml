@@ -51,22 +51,40 @@ jobs:
         run: |
           set -euo pipefail
 
-          LATEST_TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || true)
+          MAIN_VER=$(grep -oE 'version = "[^"]+"' cmd/passbook/main.go | head -1 | cut -d'"' -f2 || true)
+          MAIN_VER="${MAIN_VER#v}"
+
+          LATEST_TAG=$(git tag -l "v[0-9]*" | sort -V | tail -n1)
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || true)
+          fi
+
+          is_greater() {
+            [ "$1" != "$2" ] && [ "$(printf "%s\n%s" "$1" "$2" | sort -V | tail -n1)" = "$1" ]
+          }
+
           if [ -n "$LATEST_TAG" ]; then
             BASE_VERSION="${LATEST_TAG#v}"
             BASE_VERSION="${BASE_VERSION%%-*}"
+
+            if [ -n "$MAIN_VER" ] && is_greater "$MAIN_VER" "$BASE_VERSION" && ! git rev-parse "refs/tags/v${MAIN_VER}" >/dev/null 2>&1; then
+              TAG="v${MAIN_VER}"
+            else
+              IFS='.' read -r major minor patch <<< "$BASE_VERSION"
+              if ! [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ && "$patch" =~ ^[0-9]+$ ]]; then
+                echo "Invalid base version: ${BASE_VERSION}"
+                exit 1
+              fi
+              NEXT_VERSION="${major}.${minor}.$((patch + 1))"
+              TAG="v${NEXT_VERSION}"
+            fi
           else
-            BASE_VERSION=$(grep -oE 'version = "[^"]+"' cmd/passbook/main.go | head -1 | cut -d'"' -f2)
+            if [ -n "$MAIN_VER" ]; then
+              TAG="v${MAIN_VER}"
+            else
+              TAG="v0.1.0"
+            fi
           fi
-
-          IFS='.' read -r major minor patch <<< "$BASE_VERSION"
-          if ! [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ && "$patch" =~ ^[0-9]+$ ]]; then
-            echo "Invalid base version: ${BASE_VERSION}"
-            exit 1
-          fi
-
-          NEXT_VERSION="${major}.${minor}.$((patch + 1))"
-          TAG="v${NEXT_VERSION}"
 
           if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
             echo "Tag ${TAG} already exists, skipping"
@@ -80,7 +98,7 @@ jobs:
           git push origin "${TAG}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "created=true" >> "$GITHUB_OUTPUT"
-          echo "Created ${TAG} (from latest release ${LATEST_TAG:-none}, base ${BASE_VERSION})"
+          echo "Created ${TAG} (from latest tag ${LATEST_TAG:-none}, base ${BASE_VERSION:-none})"
 
       - name: Trigger release workflow
         if: steps.tag.outputs.created == 'true'
