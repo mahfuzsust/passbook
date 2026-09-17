@@ -117,9 +117,3 @@ homebrew_casks:
     license: "MIT"
     url:
       verified: github.com/mahfuzsust/passbook
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/passbook"]
-          end
